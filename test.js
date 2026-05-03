@@ -526,6 +526,40 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 11: Audio Recorder buffers bot audio without throwing');
+    try {
+        const { AudioRecorder } = require('./audio-recorder');
+        const recorder = new AudioRecorder({ outputFormat: 'wav' });
+        recorder.isRecording = true;
+        recorder.isPaused = false;
+        recorder.startTime = Date.now() - 1000;
+
+        const fakeBotAudio = Buffer.alloc(1024);
+        recorder.addBotAudio(fakeBotAudio, { startTime: Date.now() });
+        await new Promise((resolve) => setImmediate(resolve));
+
+        if (recorder.botAudioBuffer.length !== 1) {
+            throw new Error(`Expected 1 bot chunk, got ${recorder.botAudioBuffer.length}`);
+        }
+
+        const chunk = recorder.botAudioBuffer[0];
+        if (!Number.isFinite(chunk.timestamp) || chunk.timestamp < 0) {
+            throw new Error(`Bot chunk timestamp invalid: ${chunk.timestamp}`);
+        }
+        if (chunk.buffer !== fakeBotAudio) {
+            throw new Error('Bot chunk buffer not stored');
+        }
+        if (recorder.stats.botAudioChunks !== 1) {
+            throw new Error(`Expected botAudioChunks=1, got ${recorder.stats.botAudioChunks}`);
+        }
+
+        console.log('  Bot audio chunk lands in botAudioBuffer with finite timestamp');
+        passed++;
+    } catch (error) {
+        console.log(`  Audio Recorder bot audio failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\n========================================');
     console.log(`Tests complete: ${passed} passed, ${failed} failed`);
     console.log('========================================');

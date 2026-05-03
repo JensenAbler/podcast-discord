@@ -297,9 +297,14 @@ class AudioRecorder {
                 ? providedStartTime - this.startTime
                 : Date.now() - this.startTime;
 
+            if (!Number.isFinite(timestamp)) {
+                console.warn(`[AudioRecorder] Skipping bot audio: invalid timestamp ${timestamp}`);
+                return;
+            }
+
             this.botAudioBuffer.push({
                 buffer: audioBuffer,
-                timestamp: this.clampDelay(timestamp, 'bot audio timestamp'),
+                timestamp,
                 volume
             });
             this.stats.botAudioChunks++;
