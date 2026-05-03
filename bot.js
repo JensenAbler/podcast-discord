@@ -185,11 +185,6 @@ class AlphaClawdVoiceBot {
         
         // Set up voice manager utterance handler
         this.voiceManager.setUtteranceHandler(async (guildId, utterance) => {
-            // Save transcript regardless
-            if (utterance.transcription) {
-                this.voiceManager.saveTranscriptEntry(guildId, { ...utterance });
-            }
-
             // Debug: inject individual utterance for Gateway UI visibility
             if (this.debugInject && this.wsClient.isAuthenticated) {
                 try {
@@ -1105,6 +1100,13 @@ class AlphaClawdVoiceBot {
             }
 
             console.log(`[Bot] Direct generator response: "${response.speech.substring(0, 50)}..."`);
+
+            this.voiceManager.saveTranscriptEntry(guildId, {
+                speaker: 'Alpha-Clawd',
+                speakerRole: 'host',
+                transcription: response.speech,
+                timestamp: new Date().toISOString()
+            });
 
             // Play a cached filler only after the generator decides to answer.
             await this.playFillerClip(guildId);

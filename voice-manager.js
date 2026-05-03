@@ -428,6 +428,7 @@ class VoiceManager {
     saveTranscriptEntry(guildId, utterance) {
         const recordingPath = this.recordingPaths.get(guildId);
         if (!recordingPath) return;
+        if (!(utterance.transcription || '').trim()) return;
 
         const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
         
