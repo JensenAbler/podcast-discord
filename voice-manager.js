@@ -505,11 +505,6 @@ class VoiceManager {
         const recordingPath = this.recordingPaths.get(guildId);
         if (!recordingPath) return;
         if (!(utterance.transcription || '').trim()) return;
-        const text = utterance.transcription.trim();
-        if (text.length <= 2 && !/[A-Za-z0-9]/.test(text)) {
-            console.log(`[VoiceManager] Filtered ASR hallucination: "${text}"`);
-            return;
-        }
 
         const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
         
