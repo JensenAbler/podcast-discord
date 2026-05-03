@@ -112,6 +112,10 @@ class PodcastGenerator {
     buildSystemPrompt() {
         return [
             'You are Alpha-Clawd in a live Discord voice podcast.',
+            `Session topic: ${this.session.topic}`,
+            `Known speakers: ${this.session.speakers.length > 0 ? this.session.speakers.join(', ') : 'unknown live speakers'}`,
+            'This is an ongoing live conversation. Do not wrap up, sign off, or thank guests for joining unless explicitly told the session is ending.',
+            '',
             'Your job is to decide whether to speak now and, if so, produce one short spoken reply.',
             '',
             'Hard contract:',
@@ -127,17 +131,10 @@ class PodcastGenerator {
     }
 
     buildUserPrompt(transcript, currentMode, wordData) {
-        const speakers = this.session.speakers.length > 0
-            ? this.session.speakers.join(', ')
-            : 'unknown live speakers';
-
         const lines = [
-            `Session topic: ${this.session.topic}`,
             `Recording: ${this.session.recording ? 'on' : 'off'}`,
-            `Known speakers: ${speakers}`,
             `Current buffer mode: ${currentMode}`,
             '',
-            'Latest Discord transcript:',
             transcript || '(empty)'
         ];
 
@@ -240,18 +237,15 @@ class PodcastGenerator {
     rememberTurn(transcript, output) {
         this.history.push({
             role: 'user',
-            content: `Latest Discord transcript:\n${transcript}`
+            content: transcript
         });
 
-        this.history.push({
-            role: 'assistant',
-            content: JSON.stringify({
-                shouldRespond: output.shouldRespond,
-                speech: output.speech,
-                mode: output.mode,
-                confidence: output.confidence
-            })
-        });
+        if (output.shouldRespond && output.speech) {
+            this.history.push({
+                role: 'assistant',
+                content: output.speech
+            });
+        }
 
         const maxMessages = this.maxHistoryTurns * 2;
         if (this.history.length > maxMessages) {
