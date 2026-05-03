@@ -1,8 +1,18 @@
 /**
  * Audio Receiver - Receive audio from Discord users, buffer until silence
- * 
+ *
  * Handles receiving Opus-encoded audio from Discord voice channels,
  * converting to PCM, buffering per speaker, and detecting silence.
+ *
+ * Lifecycle:
+ * - A Discord receive subscription is a voice-channel resource. It is opened
+ *   once for a user and kept alive until the user leaves, the bot leaves, or
+ *   the receive stream errors/closes.
+ * - An utterance buffer is a short-lived in-memory chunk list. SilenceDetector
+ *   rolls this buffer over by snapshotting current chunks, clearing the list,
+ *   and resetting the detector for the next utterance.
+ * - Silence never calls cleanupUser. cleanupUser is reserved for real teardown
+ *   and is where the underlying Discord stream subscription is destroyed.
  */
 
 const { EndBehaviorType } = require('@discordjs/voice');
@@ -33,15 +43,20 @@ class AudioReceiver {
         this.stt = options.stt;
         this.enableTranscription = this.options.enableTranscription;
 
-        // Speaker audio buffers: userId -> { chunks: Buffer[], startTime: Date, detector: SilenceDetector }
+        // Speaker audio buffers: userId -> { chunks: Buffer[], startTime, speakerInfo, detector }
         this.speakerBuffers = new Map();
-        
+
         // Speaker tracker for conversation history
         this.speakerTracker = new SpeakerTracker();
-        
+
         // Active subscriptions to clean up
-        this.subscriptions = new Map(); // userId -> { stream, decoder, detector }
-        
+        this.subscriptions = new Map(); // userId -> { stream, decoder, handler, detector, closing }
+
+        // Transcription work that must finish before a recording can be finalized.
+        this.processingUtterances = new Set();
+        this.processingChains = new Map();
+
+        this.activeSpeakers = new Set();
         this.connection = null;
         this.isRunning = false;
     }
@@ -77,44 +92,44 @@ class AudioReceiver {
      */
     handleUserStartSpeaking(userId) {
         if (!this.isRunning) return;
-        
+
         // Skip bot's own audio to prevent feedback/duplication
         if (userId === this.options.botUserId) {
             return;
         }
 
-        // Skip if already tracking this user
-        if (this.subscriptions.has(userId)) {
-            return;
+        if (!this.activeSpeakers.has(userId)) {
+            this.activeSpeakers.add(userId);
+            console.log(`[AudioReceiver] User ${userId} started speaking`);
+            this.options.onSpeakingStart(userId);
         }
 
-        console.log(`[AudioReceiver] User ${userId} started speaking`);
-        
-        // Notify that user started speaking
-        this.options.onSpeakingStart(userId);
+        this.subscribeToUser(userId);
+    }
 
-        // Get speaker info
-        const speakerInfo = this.getSpeakerInfo(userId);
+    /**
+     * Subscribe to a user's Discord receive stream without marking them speaking.
+     * This is safe to call repeatedly; the stream stays open until real teardown.
+     * @param {string} userId - Discord user ID
+     * @returns {boolean} - Whether a subscription exists or was opened
+     */
+    subscribeToUser(userId) {
+        if (!this.isRunning || !this.connection) return false;
+        if (userId === this.options.botUserId) return false;
 
-        // Create silence detector for this user
-        const silenceDetector = new SilenceDetector({
-            silenceDuration: this.options.silenceDuration,
-            onSilence: () => this.handleSilenceDetected(userId)
-        });
+        const buffer = this.ensureUserBuffer(userId);
 
-        // Initialize buffer for this speaker
-        this.speakerBuffers.set(userId, {
-            chunks: [],
-            startTime: Date.now(),
-            speakerInfo: speakerInfo,
-            detector: silenceDetector
-        });
+        if (this.subscriptions.has(userId)) {
+            return true;
+        }
 
-        // Subscribe to user's audio stream
+        console.log(`[AudioReceiver] Opening persistent audio subscription for ${userId}`);
+
+        // Subscribe to user's audio stream. Manual end behavior keeps the stream
+        // alive across silence boundaries; cleanupUser performs the actual close.
         const audioStream = this.connection.receiver.subscribe(userId, {
             end: {
-                behavior: EndBehaviorType.AfterSilence,
-                duration: 1000
+                behavior: EndBehaviorType.Manual
             }
         });
 
@@ -133,35 +148,79 @@ class AudioReceiver {
             }
         });
 
-        // Set up pipeline: Opus -> PCM -> Handler
-        audioStream.pipe(opusDecoder).pipe(pcmHandler);
-
-        // Store subscription for cleanup
-        this.subscriptions.set(userId, {
+        const subscription = {
             stream: audioStream,
             decoder: opusDecoder,
             handler: pcmHandler,
-            detector: silenceDetector
-        });
+            detector: buffer.detector,
+            closing: false
+        };
 
-        // Handle stream end
-        audioStream.on('end', () => {
-            console.log(`[AudioReceiver] Audio stream ended for ${userId}`);
-            // Process any remaining audio before cleanup
-            const buffer = this.speakerBuffers.get(userId);
-            if (buffer && buffer.chunks.length > 0 && !buffer.processing) {
-                console.log(`[AudioReceiver] Processing remaining audio for ${userId}`);
-                this.handleSilenceDetected(userId);
-            } else {
-                this.cleanupUser(userId);
-            }
-        });
+        this.subscriptions.set(userId, subscription);
+
+        const finishUnexpectedly = (eventName) => {
+            if (subscription.closing) return;
+            subscription.closing = true;
+
+            console.log(`[AudioReceiver] Audio stream ${eventName} for ${userId}`);
+            this.flushUser(userId, `audio stream ${eventName}`)
+                .finally(() => this.cleanupUser(userId, `audio stream ${eventName}`));
+        };
+
+        // Set up pipeline: Opus -> PCM -> Handler
+        audioStream.pipe(opusDecoder).pipe(pcmHandler);
+
+        // Handle stream end/close. With Manual end behavior, these should only
+        // happen unexpectedly or after explicit teardown.
+        audioStream.once('end', () => finishUnexpectedly('ended'));
+        audioStream.once('close', () => finishUnexpectedly('closed'));
 
         // Handle errors
-        audioStream.on('error', (error) => {
+        audioStream.once('error', (error) => {
             console.error(`[AudioReceiver] Audio stream error for ${userId}:`, error);
-            this.cleanupUser(userId);
+            this.cleanupUser(userId, 'audio stream error');
         });
+
+        opusDecoder.once('error', (error) => {
+            console.error(`[AudioReceiver] Opus decoder error for ${userId}:`, error);
+            this.cleanupUser(userId, 'opus decoder error');
+        });
+
+        pcmHandler.once('error', (error) => {
+            console.error(`[AudioReceiver] PCM handler error for ${userId}:`, error);
+            this.cleanupUser(userId, 'pcm handler error');
+        });
+
+        return true;
+    }
+
+    /**
+     * Ensure a user has an utterance buffer and silence detector.
+     * @param {string} userId - Discord user ID
+     * @returns {Object} - Speaker buffer
+     */
+    ensureUserBuffer(userId) {
+        const existing = this.speakerBuffers.get(userId);
+        if (existing) {
+            return existing;
+        }
+
+        const speakerInfo = this.getSpeakerInfo(userId);
+
+        const silenceDetector = new SilenceDetector({
+            silenceDuration: this.options.silenceDuration,
+            onSilence: () => this.handleSilenceDetected(userId)
+        });
+
+        const buffer = {
+            chunks: [],
+            startTime: null,
+            speakerInfo: speakerInfo,
+            detector: silenceDetector
+        };
+
+        this.speakerBuffers.set(userId, buffer);
+        return buffer;
     }
 
     /**
@@ -169,11 +228,11 @@ class AudioReceiver {
      * @param {string} userId - Discord user ID
      */
     handleUserStopSpeaking(userId) {
-        console.log(`[AudioReceiver] User ${userId} stopped speaking`);
-        
-        // Notify that user stopped speaking
-        this.options.onSpeakingStop(userId);
-        
+        if (this.activeSpeakers.delete(userId)) {
+            console.log(`[AudioReceiver] User ${userId} stopped speaking`);
+            this.options.onSpeakingStop(userId);
+        }
+
         const buffer = this.speakerBuffers.get(userId);
         if (buffer && buffer.detector) {
             // Notify detector that speaking stopped
@@ -190,6 +249,10 @@ class AudioReceiver {
         const buffer = this.speakerBuffers.get(userId);
         if (!buffer) return;
 
+        if (buffer.chunks.length === 0) {
+            buffer.startTime = Date.now();
+        }
+
         // Add chunk to buffer
         buffer.chunks.push(chunk);
 
@@ -202,10 +265,10 @@ class AudioReceiver {
         }
 
         // Check for max utterance duration
-        const duration = Date.now() - buffer.startTime;
+        const duration = buffer.startTime ? Date.now() - buffer.startTime : 0;
         if (duration > this.options.maxUtteranceDuration) {
             console.log(`[AudioReceiver] Max utterance duration reached for ${userId}`);
-            this.handleSilenceDetected(userId);
+            this.flushUser(userId, 'max utterance duration');
         }
     }
 
@@ -213,47 +276,137 @@ class AudioReceiver {
      * Handle silence detected for a user
      * @param {string} userId - Discord user ID
      */
-    async handleSilenceDetected(userId) {
+    handleSilenceDetected(userId) {
+        console.log(`[AudioReceiver] Silence detected for ${userId}, rolling over utterance buffer`);
+        return this.flushUser(userId, 'silence detected');
+    }
+
+    /**
+     * Snapshot and clear the current in-memory chunks for a user.
+     * @param {string} userId - Discord user ID
+     * @param {string} reason - Reason for the rollover
+     * @returns {Object|null} - Snapshot to process
+     */
+    snapshotUserBuffer(userId, reason) {
         const buffer = this.speakerBuffers.get(userId);
-        if (!buffer || buffer.processing) return;
+        if (!buffer) return null;
 
-        // Mark as processing to prevent double-processing
-        buffer.processing = true;
+        const chunks = buffer.chunks;
+        const startTime = buffer.startTime || Date.now();
+        const duration = buffer.startTime ? Date.now() - buffer.startTime : 0;
+        const audioBuffer = chunks.length > 0 ? Buffer.concat(chunks) : Buffer.alloc(0);
 
-        console.log(`[AudioReceiver] Silence detected for ${userId}, processing utterance`);
+        buffer.chunks = [];
+        buffer.startTime = null;
+
+        if (buffer.detector) {
+            buffer.detector.reset();
+        }
+
+        if (audioBuffer.length === 0) {
+            console.log(`[AudioReceiver] No buffered audio for ${userId} on ${reason}`);
+            return null;
+        }
+
+        return {
+            userId: userId,
+            speakerInfo: buffer.speakerInfo,
+            audioBuffer: audioBuffer,
+            startTime: startTime,
+            duration: duration,
+            timestamp: new Date().toISOString(),
+            reason: reason
+        };
+    }
+
+    /**
+     * Flush a user's current utterance buffer without closing their subscription.
+     * @param {string} userId - Discord user ID
+     * @param {string} reason - Reason for the flush
+     * @returns {Promise<void>}
+     */
+    flushUser(userId, reason = 'manual flush') {
+        const snapshot = this.snapshotUserBuffer(userId, reason);
+        if (!snapshot) {
+            return Promise.resolve();
+        }
+
+        return this.enqueueUtterance(snapshot);
+    }
+
+    /**
+     * Flush all user buffers and wait for pending transcriptions to finish.
+     * @param {string} reason - Reason for the flush
+     * @returns {Promise<void>}
+     */
+    async flushAll(reason = 'flush all') {
+        const flushes = [];
+
+        for (const userId of Array.from(this.speakerBuffers.keys())) {
+            flushes.push(this.flushUser(userId, reason));
+        }
+
+        await Promise.allSettled(flushes);
+        await this.waitForPendingUtterances();
+    }
+
+    /**
+     * Wait for all queued utterance processing to finish.
+     * @returns {Promise<void>}
+     */
+    async waitForPendingUtterances() {
+        while (this.processingUtterances.size > 0) {
+            await Promise.allSettled(Array.from(this.processingUtterances));
+        }
+    }
+
+    /**
+     * Queue utterance processing per user so transcript rows remain ordered.
+     * @param {Object} snapshot - Snapshot created by snapshotUserBuffer
+     * @returns {Promise<void>}
+     */
+    enqueueUtterance(snapshot) {
+        const previous = this.processingChains.get(snapshot.userId) || Promise.resolve();
+        const task = previous
+            .catch(() => {})
+            .then(() => this.processUtteranceSnapshot(snapshot));
+
+        let tracked;
+        tracked = task.finally(() => {
+            this.processingUtterances.delete(tracked);
+            if (this.processingChains.get(snapshot.userId) === tracked) {
+                this.processingChains.delete(snapshot.userId);
+            }
+        });
+
+        this.processingUtterances.add(tracked);
+        this.processingChains.set(snapshot.userId, tracked);
+        return tracked;
+    }
+
+    /**
+     * Process an utterance snapshot.
+     * @param {Object} snapshot - Snapshot created by snapshotUserBuffer
+     */
+    async processUtteranceSnapshot(snapshot) {
+        const {
+            userId,
+            speakerInfo,
+            audioBuffer,
+            startTime,
+            duration,
+            timestamp
+        } = snapshot;
+
+        console.log(`[AudioReceiver] Processing ${duration}ms utterance from ${speakerInfo.name}`);
 
         try {
-            // Combine all chunks into single buffer
-            const audioBuffer = Buffer.concat(buffer.chunks);
-            const duration = Date.now() - buffer.startTime;
-            
-            if (audioBuffer.length === 0) {
-                console.log(`[AudioReceiver] Empty audio buffer for ${userId}, emitting empty utterance`);
-                this.options.onUtterance({
-                    userId: userId,
-                    speaker: buffer.speakerInfo.name,
-                    speakerRole: buffer.speakerInfo.role,
-                    transcription: '',
-                    transcriptionConfidence: 0,
-                    words: [],
-                    language: null,
-                    duration: duration,
-                    timestamp: new Date().toISOString(),
-                    sampleRate: 48000,
-                    channels: 2
-                });
-                this.cleanupUser(userId);
-                return;
-            }
-
-            console.log(`[AudioReceiver] Processing ${duration}ms utterance from ${buffer.speakerInfo.name}`);
-
             // Transcribe audio to text
             let transcription = '';
             let transcriptionConfidence = 0;
             let wordLevelData = [];
             let language = null;
-            
+
             if (this.enableTranscription && this.stt) {
                 try {
                     const sttResult = await this.stt.transcribe(audioBuffer);
@@ -261,21 +414,21 @@ class AudioReceiver {
                     transcriptionConfidence = sttResult.confidence || 0;
                     wordLevelData = sttResult.words || [];
                     language = sttResult.language || null;
-                    
+
                     console.log(`[AudioReceiver] Transcription: "${transcription}" (${wordLevelData.length} words)`);
                     console.log(`[AudioReceiver] STT result - confidence: ${transcriptionConfidence}, language: ${language}`);
-                    
+
                     // Debug: Log full STT result structure (first word as sample)
                     if (wordLevelData.length > 0) {
                         console.log(`[AudioReceiver] STT word sample:`, JSON.stringify(wordLevelData[0]));
                     } else {
-                        console.log(`[AudioReceiver] WARNING: No word-level data received from STT`);
+                        console.log('[AudioReceiver] WARNING: No word-level data received from STT');
                     }
-                    
+
                     // Log low-confidence words for debugging
                     const lowConfidenceWords = wordLevelData.filter(w => (w.confidence || 0) < 0.7);
                     if (lowConfidenceWords.length > 0) {
-                        console.log(`[AudioReceiver] Low confidence words: ${lowConfidenceWords.map(w => `"${w.text}"(${Math.round((w.confidence||0)*100)}%)`).join(', ')}`);
+                        console.log(`[AudioReceiver] Low confidence words: ${lowConfidenceWords.map(w => `"${w.text}"(${Math.round((w.confidence || 0) * 100)}%)`).join(', ')}`);
                     }
                 } catch (sttError) {
                     console.error('[AudioReceiver] STT error:', sttError.message);
@@ -286,14 +439,14 @@ class AudioReceiver {
             // Create utterance object with transcription (NOT raw audio buffer for transcript)
             const utterance = {
                 userId: userId,
-                speaker: buffer.speakerInfo.name,
-                speakerRole: buffer.speakerInfo.role,
+                speaker: speakerInfo.name,
+                speakerRole: speakerInfo.role,
                 transcription: transcription,
                 transcriptionConfidence: transcriptionConfidence,
                 words: wordLevelData, // Include full word-level data
                 language: language,
                 duration: duration,
-                timestamp: new Date().toISOString(),
+                timestamp: timestamp,
                 sampleRate: 48000,
                 channels: 2
             };
@@ -303,7 +456,7 @@ class AudioReceiver {
             const utteranceForRecording = {
                 ...utterance,
                 audioBuffer: audioBuffer, // Only for internal recording use
-                startTime: buffer.startTime // When speech started (for correct timestamp alignment)
+                startTime: startTime // When speech started (for correct timestamp alignment)
             };
 
             // Track in conversation history
@@ -314,9 +467,6 @@ class AudioReceiver {
 
         } catch (error) {
             this.options.onError(error);
-        } finally {
-            // Clean up this user's buffer
-            this.cleanupUser(userId);
         }
     }
 
@@ -335,7 +485,7 @@ class AudioReceiver {
         try {
             const client = this.options.client;
             const guildId = this.options.guildId;
-            
+
             if (client && guildId) {
                 const guild = client.guilds.cache.get(guildId);
                 if (guild) {
@@ -367,20 +517,46 @@ class AudioReceiver {
     /**
      * Clean up resources for a user
      * @param {string} userId - Discord user ID
+     * @param {string} reason - Teardown reason for logs
      */
-    cleanupUser(userId) {
+    cleanupUser(userId, reason = 'teardown') {
+        console.log(`[AudioReceiver] cleanupUser for ${userId}: ${reason}`);
+
         const subscription = this.subscriptions.get(userId);
+        const buffer = this.speakerBuffers.get(userId);
+        const detector = buffer?.detector || subscription?.detector;
+
+        if (this.activeSpeakers.delete(userId)) {
+            this.options.onSpeakingStop(userId);
+        }
+
         if (subscription) {
+            subscription.closing = true;
+
             // Clean up streams
             try {
-                subscription.stream.destroy();
-                subscription.decoder.destroy();
-                subscription.handler.destroy();
-                subscription.detector.destroy();
+                if (subscription.stream && !subscription.stream.destroyed) {
+                    subscription.stream.destroy();
+                }
+                if (subscription.decoder && !subscription.decoder.destroyed) {
+                    subscription.decoder.destroy();
+                }
+                if (subscription.handler && !subscription.handler.destroyed) {
+                    subscription.handler.destroy();
+                }
             } catch (error) {
                 // Ignore cleanup errors
             }
+
             this.subscriptions.delete(userId);
+        }
+
+        if (detector) {
+            try {
+                detector.destroy();
+            } catch (error) {
+                // Ignore cleanup errors
+            }
         }
 
         this.speakerBuffers.delete(userId);
@@ -416,16 +592,21 @@ class AudioReceiver {
      */
     destroy() {
         console.log('[AudioReceiver] Destroying receiver');
-        
+
         this.isRunning = false;
 
         // Clean up all user subscriptions
-        for (const userId of this.subscriptions.keys()) {
-            this.cleanupUser(userId);
+        for (const userId of Array.from(this.subscriptions.keys())) {
+            this.cleanupUser(userId, 'receiver destroy');
+        }
+
+        for (const userId of Array.from(this.speakerBuffers.keys())) {
+            this.cleanupUser(userId, 'receiver destroy');
         }
 
         this.subscriptions.clear();
         this.speakerBuffers.clear();
+        this.activeSpeakers.clear();
         this.connection = null;
     }
 }

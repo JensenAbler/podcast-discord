@@ -32,6 +32,7 @@ class VoiceManager {
         this.transmitters = new Map(); // guildId -> AudioTransmitter
         this.players = new Map(); // guildId -> audioPlayer
         this.recorders = new Map(); // guildId -> AudioRecorder
+        this.connectionChannels = new Map(); // guildId -> channelId
         this.isRecording = new Map(); // guildId -> boolean
         this.recordingPaths = new Map(); // guildId -> path
         this.recordingMetadata = new Map(); // guildId -> recording metadata
@@ -58,6 +59,9 @@ class VoiceManager {
         if (!fs.existsSync(this.options.recordingDir)) {
             fs.mkdirSync(this.options.recordingDir, { recursive: true });
         }
+
+        this.handleVoiceStateUpdate = this.handleVoiceStateUpdate.bind(this);
+        this.client.on('voiceStateUpdate', this.handleVoiceStateUpdate);
     }
 
     /**
@@ -96,6 +100,7 @@ class VoiceManager {
 
         // Store connection
         this.connections.set(guildId, connection);
+        this.connectionChannels.set(guildId, channel.id);
 
         // Create audio player for transmitting
         const player = createAudioPlayer();
@@ -146,6 +151,7 @@ class VoiceManager {
 
         // Start receiving audio
         receiver.start(connection);
+        this.subscribeReceiverToChannelMembers(receiver, channel);
 
         return {
             guildId,
@@ -153,6 +159,56 @@ class VoiceManager {
             channelName: channel.name,
             status: 'connected'
         };
+    }
+
+    /**
+     * Open persistent receive subscriptions for users already in the joined channel.
+     * @param {AudioReceiver} receiver - Audio receiver for the guild
+     * @param {VoiceChannel} channel - Discord voice channel
+     */
+    subscribeReceiverToChannelMembers(receiver, channel) {
+        const botUserId = this.client.user?.id;
+
+        for (const member of channel.members.values()) {
+            if (member.id === botUserId) continue;
+            receiver.subscribeToUser(member.id);
+        }
+    }
+
+    /**
+     * Keep receiver subscriptions aligned with actual voice-channel membership.
+     * @param {VoiceState} oldState - Previous Discord voice state
+     * @param {VoiceState} newState - New Discord voice state
+     */
+    async handleVoiceStateUpdate(oldState, newState) {
+        const guildId = oldState.guild?.id || newState.guild?.id;
+        const channelId = this.connectionChannels.get(guildId);
+        if (!channelId) return;
+
+        const userId = newState.id || oldState.id;
+        if (!userId || userId === this.client.user?.id) return;
+
+        const receiver = this.receivers.get(guildId);
+        if (!receiver) return;
+
+        const joinedTrackedChannel = newState.channelId === channelId && oldState.channelId !== channelId;
+        const leftTrackedChannel = oldState.channelId === channelId && newState.channelId !== channelId;
+
+        if (joinedTrackedChannel) {
+            console.log(`[VoiceManager] User ${userId} joined active voice channel; opening receiver subscription`);
+            receiver.subscribeToUser(userId);
+            return;
+        }
+
+        if (leftTrackedChannel) {
+            console.log(`[VoiceManager] User ${userId} left active voice channel; closing receiver subscription`);
+            try {
+                await receiver.flushUser(userId, 'user left voice channel');
+            } catch (error) {
+                console.error(`[VoiceManager] Error flushing audio for ${userId} on leave:`, error);
+            }
+            receiver.cleanupUser(userId, 'user left voice channel');
+        }
     }
 
     /**
@@ -201,6 +257,7 @@ class VoiceManager {
             connection.destroy();
             this.connections.delete(guildId);
         }
+        this.connectionChannels.delete(guildId);
         
         // Also kick from Discord voice channel if still there (handles restart case)
         try {
@@ -364,7 +421,12 @@ class VoiceManager {
 
         const recordingPath = this.recordingPaths.get(guildId);
         const recorder = this.recorders.get(guildId);
+        const receiver = this.receivers.get(guildId);
         let audioResult = null;
+
+        if (receiver) {
+            await receiver.flushAll('recording stop');
+        }
 
         // Stop the audio recorder
         if (recorder) {
@@ -429,6 +491,11 @@ class VoiceManager {
         const recordingPath = this.recordingPaths.get(guildId);
         if (!recordingPath) return;
         if (!(utterance.transcription || '').trim()) return;
+        const text = utterance.transcription.trim();
+        if (text.length <= 2 && !/[A-Za-z0-9]/.test(text)) {
+            console.log(`[VoiceManager] Filtered ASR hallucination: "${text}"`);
+            return;
+        }
 
         const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
         

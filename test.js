@@ -7,11 +7,14 @@
 const {
     SilenceDetector,
     SpeakerTracker,
+    AudioReceiver,
     FishAudioProvider,
     GatewayBridge,
     PodcastGenerator
 } = require('./index');
+const { EndBehaviorType } = require('@discordjs/voice');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
+const { PassThrough } = require('stream');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -208,6 +211,67 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Conversation buffer failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 7: Audio Receiver keeps subscription across silence');
+    try {
+        const utterances = [];
+        const fakeStream = new PassThrough();
+        let subscribeOptions = null;
+
+        const receiver = new AudioReceiver({
+            botUserId: 'bot-user',
+            stt: {
+                transcribe: async () => ({
+                    text: 'hello from the buffer',
+                    confidence: 0.98,
+                    words: []
+                })
+            },
+            onUtterance: (utterance) => utterances.push(utterance)
+        });
+
+        receiver.start({
+            receiver: {
+                speaking: {
+                    on: () => {}
+                },
+                subscribe: (userId, options) => {
+                    subscribeOptions = options;
+                    return fakeStream;
+                }
+            }
+        });
+
+        receiver.handleUserStartSpeaking('user-a');
+        receiver.handleAudioChunk('user-a', Buffer.alloc(48000 * 2 * 2));
+        await receiver.flushUser('user-a', 'test silence');
+
+        const buffer = receiver.speakerBuffers.get('user-a');
+
+        if (!receiver.subscriptions.has('user-a')) {
+            throw new Error('Subscription was torn down by buffer flush');
+        }
+        if (subscribeOptions?.end?.behavior !== EndBehaviorType.Manual) {
+            throw new Error('Receiver subscription is not manual-end');
+        }
+        if (!buffer || buffer.chunks.length !== 0 || buffer.startTime !== null) {
+            throw new Error('Utterance buffer did not roll over cleanly');
+        }
+        if (buffer.detector.hasSilenceBeenDetected()) {
+            throw new Error('Silence detector was not reset');
+        }
+        if (utterances.length !== 1 || utterances[0].transcription !== 'hello from the buffer') {
+            throw new Error('Snapshot utterance was not processed');
+        }
+
+        receiver.destroy();
+
+        console.log('  Audio receiver rolls over chunks without closing the subscription');
+        passed++;
+    } catch (error) {
+        console.log(`  Audio receiver lifecycle failed: ${error.message}`);
         failed++;
     }
 
