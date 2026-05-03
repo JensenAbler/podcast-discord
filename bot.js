@@ -219,7 +219,12 @@ class AlphaClawdVoiceBot {
                 words: utterance.words,
                 language: utterance.language,
                 duration: utterance.duration,
-                timestamp: Date.now()
+                speechStartedAt: utterance.speechStartedAt,
+                speechEndedAt: utterance.speechEndedAt,
+                speechDuration: utterance.speechDuration,
+                asrStartedAt: utterance.asrStartedAt,
+                asrCompletedAt: utterance.asrCompletedAt,
+                timestamp: utterance.timestamp || Date.now()
             });
         });
 
@@ -230,8 +235,14 @@ class AlphaClawdVoiceBot {
         });
 
         this.voiceManager.setSpeakingStopHandler((guildId, userId) => {
-            console.log(`[Bot] User ${userId} stopped speaking, resuming buffer grace window`);
+            console.log(`[Bot] User ${userId} stopped speaking`);
             this.conversationBuffer.setUserSpeaking(userId, false);
+        });
+
+        this.voiceManager.setAsrPendingHandler((guildId, userId, metadata = {}) => {
+            const reason = metadata.reason || 'receiver candidate';
+            console.log(`[Bot] Receiver marked ASR pending for ${userId}: ${reason}`);
+            this.conversationBuffer.markAsrPending(userId, metadata);
         });
     }
 
@@ -1139,6 +1150,11 @@ class AlphaClawdVoiceBot {
                 .filter(w => w.type === 'audio_event' || /\[.*\]/.test(w.text || w.word))
                 .map(w => w.text || w.word),
             duration: u.duration,
+            speechStartedAt: u.speechStartedAt,
+            speechEndedAt: u.speechEndedAt,
+            speechDuration: u.speechDuration,
+            asrStartedAt: u.asrStartedAt,
+            asrCompletedAt: u.asrCompletedAt,
             timestamp: u.timestamp
         }));
 
@@ -1238,26 +1254,57 @@ class AlphaClawdVoiceBot {
         const source = options.source || 'buffer';
 
         try {
+            const generatedAt = response.generatedAt || new Date().toISOString();
             console.log(`[Bot] Direct generator response (${source}): "${response.speech.substring(0, 50)}..."`);
-
-            this.voiceManager.saveTranscriptEntry(guildId, {
-                speaker: 'Alpha-Clawd',
-                speakerRole: 'host',
-                transcription: response.speech,
-                timestamp: new Date().toISOString()
-            });
 
             // Play a cached filler only after the generator decides to answer.
             if (options.playFiller !== false) {
                 await this.playFillerClip(guildId);
             }
 
+            const ttsStartedAt = new Date().toISOString();
             const audioBuffer = await this.voiceProvider.synthesize(response.speech, {
                 voiceId: this.voiceId
             });
+            const ttsCompletedAt = new Date().toISOString();
 
-            this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
-            await this.voiceManager.speak(guildId, audioBuffer);
+            let botAudioRecorded = false;
+            const playback = await this.voiceManager.speakWithTiming(guildId, audioBuffer, {
+                onStart: (timing) => {
+                    const playbackStartMs = Date.parse(timing.playbackStartedAt);
+                    this.voiceManager.addBotAudioToRecording(guildId, audioBuffer, {
+                        startTime: Number.isNaN(playbackStartMs) ? undefined : playbackStartMs
+                    });
+                    botAudioRecorded = true;
+                }
+            });
+            const playbackTiming = await playback.finished;
+
+            if (!botAudioRecorded) {
+                this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
+            }
+
+            const playbackStartedAt = playbackTiming.playbackStartedAt || playback.timing.playbackStartedAt;
+            const playbackEndedAt = playbackTiming.playbackEndedAt || playback.timing.playbackEndedAt;
+            const playbackStartedMs = Date.parse(playbackStartedAt);
+            const playbackEndedMs = Date.parse(playbackEndedAt);
+            const playbackDuration = !Number.isNaN(playbackStartedMs) && !Number.isNaN(playbackEndedMs)
+                ? Math.max(0, playbackEndedMs - playbackStartedMs)
+                : 0;
+
+            this.voiceManager.saveTranscriptEntry(guildId, {
+                speaker: 'Alpha-Clawd',
+                speakerRole: 'host',
+                transcription: response.speech,
+                timestamp: generatedAt,
+                generatedAt,
+                ttsStartedAt,
+                ttsCompletedAt,
+                playbackRequestedAt: playbackTiming.playbackRequestedAt || playback.timing.playbackRequestedAt,
+                playbackStartedAt,
+                playbackEndedAt,
+                duration: playbackDuration
+            });
 
             if (options.rememberAssistant) {
                 this.podcastGenerator.rememberAssistantResponse(response);

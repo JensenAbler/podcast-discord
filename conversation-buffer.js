@@ -2,8 +2,9 @@
  * ConversationBuffer - ASR-aware utterance accumulation.
  *
  * The grace timer starts only after all active speakers have stopped and all
- * pending ASR results have completed. This keeps "user paused" separate from
- * "transcription landed" so slow ASR cannot orphan an utterance in the buffer.
+ * receiver-announced ASR candidates have completed. This keeps "user paused"
+ * separate from "transcription landed" so slow ASR cannot orphan an utterance
+ * in the buffer without treating every Discord speaking-stop flap as ASR work.
  *
  * States:
  * - IDLE: ready, no active speakers, no pending ASR, empty buffer
@@ -38,7 +39,10 @@ class ConversationBuffer {
         this.state = BufferState.IDLE;
         this.activeSpeakers = new Set();
         this.pendingASR = new Set();
+        this.pendingAsrCounts = new Map();
+        this.pendingAsrReasons = new Map();
         this.pendingAsrTimers = new Map();
+        this.nextInsertionOrder = 0;
 
         this.graceTimer = null;
         this.cooldownTimer = null;
@@ -55,7 +59,7 @@ class ConversationBuffer {
      * Add a completed ASR result to the buffer.
      * Empty transcriptions clear pending-ASR tracking but do not enter the buffer.
      *
-     * @param {Object} utterance - {userId, speaker, speakerRole, transcription, words, language, duration, timestamp}
+     * @param {Object} utterance - {userId, speaker, speakerRole, transcription, words, language, speechStartedAt, speechEndedAt, asrCompletedAt}
      * @returns {number} Current buffered utterance count.
      */
     addUtterance(utterance = {}) {
@@ -71,7 +75,8 @@ class ConversationBuffer {
 
         const bufferedUtterance = {
             ...utterance,
-            transcription
+            transcription,
+            insertionOrder: this.nextInsertionOrder++
         };
 
         this.buffer.push(bufferedUtterance);
@@ -116,7 +121,6 @@ class ConversationBuffer {
             this.clearGraceTimer();
         } else {
             this.activeSpeakers.delete(userId);
-            this.markAsrPending(userId);
             console.log(`[ConversationBuffer] User ${userId} stopped; active=${this.activeSpeakers.size}, pendingASR=${this.pendingASR.size}`);
         }
 
@@ -208,7 +212,7 @@ class ConversationBuffer {
      * Internal flush - sends buffer to callback and clears it.
      */
     doFlush() {
-        const utterances = [...this.buffer];
+        const utterances = this.getOrderedUtterances();
         this.buffer = [];
 
         console.log(`[ConversationBuffer] Flushing ${utterances.length} utterance(s)`);
@@ -285,8 +289,11 @@ class ConversationBuffer {
      */
     clear() {
         this.buffer = [];
+        this.nextInsertionOrder = 0;
         this.activeSpeakers.clear();
         this.pendingASR.clear();
+        this.pendingAsrCounts.clear();
+        this.pendingAsrReasons.clear();
         this.clearGraceTimer();
         this.clearCooldownTimer();
         this.clearPendingAsrTimers();
@@ -311,22 +318,81 @@ class ConversationBuffer {
         return String(utterance.transcription || utterance.text || '').trim();
     }
 
+    getOrderedUtterances() {
+        return [...this.buffer].sort((a, b) => {
+            const aTime = this.getUtteranceSortTime(a);
+            const bTime = this.getUtteranceSortTime(b);
+            const timeDiff = aTime - bTime;
+            if (Number.isFinite(timeDiff) && timeDiff !== 0) {
+                return timeDiff;
+            }
+
+            return (a.insertionOrder ?? 0) - (b.insertionOrder ?? 0);
+        });
+    }
+
+    getUtteranceSortTime(utterance) {
+        const fields = [
+            utterance.speechStartedAt,
+            utterance.speechEndedAt,
+            utterance.asrCompletedAt || utterance.timestamp
+        ];
+
+        for (const field of fields) {
+            const parsed = this.parseTimestamp(field);
+            if (Number.isFinite(parsed)) {
+                return parsed;
+            }
+        }
+
+        return Number.MAX_SAFE_INTEGER;
+    }
+
+    parseTimestamp(value) {
+        if (typeof value === 'number') {
+            return value;
+        }
+
+        const parsed = Date.parse(value);
+        return Number.isNaN(parsed) ? NaN : parsed;
+    }
+
     describeUser(userId, utterance = {}) {
         if (utterance.speaker && userId) return `${utterance.speaker} (${userId})`;
         if (utterance.speaker) return utterance.speaker;
         return userId || 'unknown user';
     }
 
-    markAsrPending(userId) {
-        if (!userId) return;
+    markAsrPending(userId, metadata = {}) {
+        const normalizedUserId = this.normalizeUserId(userId);
+        if (!normalizedUserId) return;
 
-        this.pendingASR.add(userId);
-        this.clearPendingAsrTimer(userId);
+        const reason = typeof metadata === 'string'
+            ? metadata
+            : metadata.reason || 'receiver candidate';
+        const nextCount = (this.pendingAsrCounts.get(normalizedUserId) || 0) + 1;
+
+        this.pendingAsrCounts.set(normalizedUserId, nextCount);
+        this.pendingAsrReasons.set(normalizedUserId, reason);
+        this.pendingASR.add(normalizedUserId);
 
         const timeoutMs = this.config.pendingAsrTimeout;
         if (!timeoutMs || timeoutMs <= 0) {
+            this.evaluateState('ASR pending');
             return;
         }
+
+        this.armPendingAsrTimer(normalizedUserId, timeoutMs);
+        console.log(`[ConversationBuffer] ASR pending for ${normalizedUserId} (${reason}); count=${nextCount}, active=${this.activeSpeakers.size}, pendingASR=${this.pendingASR.size}`);
+        this.evaluateState('ASR pending');
+    }
+
+    armPendingAsrTimer(userId, timeoutMs = this.config.pendingAsrTimeout) {
+        if (!timeoutMs || timeoutMs <= 0) {
+            return;
+        }
+
+        this.clearPendingAsrTimer(userId);
 
         const timer = setTimeout(() => {
             this.pendingAsrTimers.delete(userId);
@@ -334,7 +400,11 @@ class ConversationBuffer {
                 return;
             }
 
-            console.log(`[ConversationBuffer] WARNING: ASR pending timeout after ${timeoutMs}ms for user ${userId}; clearing stuck entry`);
+            const stuckCount = this.pendingAsrCounts.get(userId) || 1;
+            const stuckReason = this.pendingAsrReasons.get(userId) || 'unknown';
+            this.pendingAsrCounts.delete(userId);
+            this.pendingAsrReasons.delete(userId);
+            console.log(`[ConversationBuffer] WARNING: ASR pending timeout after ${timeoutMs}ms for user ${userId}; clearing ${stuckCount} stuck entr${stuckCount === 1 ? 'y' : 'ies'} (last reason: ${stuckReason})`);
             this.evaluateState('pending ASR timeout');
         }, timeoutMs);
 
@@ -342,22 +412,36 @@ class ConversationBuffer {
     }
 
     markAsrComplete(userId) {
-        if (userId && this.pendingASR.has(userId)) {
-            this.pendingASR.delete(userId);
-            this.clearPendingAsrTimer(userId);
+        const normalizedUserId = this.normalizeUserId(userId);
+
+        if (normalizedUserId && this.pendingASR.has(normalizedUserId)) {
+            const nextCount = Math.max(0, (this.pendingAsrCounts.get(normalizedUserId) || 1) - 1);
+            if (nextCount > 0) {
+                this.pendingAsrCounts.set(normalizedUserId, nextCount);
+                this.armPendingAsrTimer(normalizedUserId);
+                console.log(`[ConversationBuffer] ASR completed for ${normalizedUserId}; ${nextCount} pending entr${nextCount === 1 ? 'y' : 'ies'} remain`);
+                return;
+            }
+
+            this.pendingASR.delete(normalizedUserId);
+            this.pendingAsrCounts.delete(normalizedUserId);
+            this.pendingAsrReasons.delete(normalizedUserId);
+            this.clearPendingAsrTimer(normalizedUserId);
             return;
         }
 
-        if (!userId && this.pendingASR.size === 1) {
+        if (!normalizedUserId && this.pendingASR.size === 1) {
             const [pendingUserId] = Array.from(this.pendingASR);
             this.pendingASR.delete(pendingUserId);
+            this.pendingAsrCounts.delete(pendingUserId);
+            this.pendingAsrReasons.delete(pendingUserId);
             this.clearPendingAsrTimer(pendingUserId);
             console.log(`[ConversationBuffer] WARNING: ASR result had no userId; matched sole pending user ${pendingUserId}`);
             return;
         }
 
-        if (userId) {
-            console.log(`[ConversationBuffer] ASR completed for ${userId} with no pending entry`);
+        if (normalizedUserId) {
+            console.log(`[ConversationBuffer] ASR completed for ${normalizedUserId} with no pending entry`);
         } else if (this.pendingASR.size > 0) {
             console.log(`[ConversationBuffer] WARNING: ASR result had no userId and ${this.pendingASR.size} pending speakers remain`);
         }

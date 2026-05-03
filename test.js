@@ -8,6 +8,7 @@ const {
     SilenceDetector,
     SpeakerTracker,
     AudioReceiver,
+    VoiceManager,
     FishAudioProvider,
     GatewayBridge,
     PodcastGenerator,
@@ -15,9 +16,27 @@ const {
 } = require('./index');
 const { EndBehaviorType } = require('@discordjs/voice');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
+const { EpisodePostProcessor } = require('./post-processor');
 const { PassThrough } = require('stream');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+function createSpeechPcm(durationMs = 200) {
+    const sampleRate = 48000;
+    const channels = 2;
+    const bytesPerSample = 2;
+    const sampleCount = Math.floor(sampleRate * (durationMs / 1000)) * channels;
+    const buffer = Buffer.alloc(sampleCount * bytesPerSample);
+
+    for (let offset = 0; offset < buffer.length; offset += bytesPerSample) {
+        buffer.writeInt16LE(1200, offset);
+    }
+
+    return buffer;
+}
 
 async function runTests() {
     console.log('Running Alpha-Clawd Voice Host smoke tests\n');
@@ -160,8 +179,17 @@ async function runTests() {
         });
         buffer.onFlush((utterances) => flushed.push(utterances));
 
+        buffer.setUserSpeaking('noise-only', true);
+        buffer.setUserSpeaking('noise-only', false);
+        await sleep(40);
+
+        if (flushed.length !== 0 || buffer.getState().state !== BufferState.IDLE) {
+            throw new Error('Raw speaking stop created pending ASR without a receiver candidate');
+        }
+
         buffer.setUserSpeaking('user-a', true);
         buffer.setUserSpeaking('user-a', false);
+        buffer.markAsrPending('user-a', { reason: 'test candidate' });
         await sleep(40);
 
         if (flushed.length !== 0 || buffer.getState().state !== BufferState.AWAITING_ASR) {
@@ -182,8 +210,10 @@ async function runTests() {
 
         buffer.setUserSpeaking('user-a', true);
         buffer.setUserSpeaking('user-a', false);
+        buffer.markAsrPending('user-a', { reason: 'first candidate' });
         buffer.setUserSpeaking('user-b', true);
         buffer.setUserSpeaking('user-b', false);
+        buffer.markAsrPending('user-b', { reason: 'second candidate' });
         buffer.addUtterance({
             userId: 'user-a',
             speaker: 'Jensen',
@@ -208,6 +238,7 @@ async function runTests() {
 
         buffer.setUserSpeaking('user-c', true);
         buffer.setUserSpeaking('user-c', false);
+        buffer.markAsrPending('user-c', { reason: 'empty candidate' });
         buffer.addUtterance({
             userId: 'user-c',
             speaker: 'Quiet Guest',
@@ -221,13 +252,51 @@ async function runTests() {
 
         buffer.setUserSpeaking('user-d', true);
         buffer.setUserSpeaking('user-d', false);
+        buffer.markAsrPending('user-d', { reason: 'stuck candidate' });
         await sleep(120);
 
         if (flushed.length !== 2 || buffer.getState().state !== BufferState.IDLE) {
             throw new Error('Pending ASR timeout did not clear stuck state');
         }
 
-        console.log('  Conversation buffer waits for ASR, handles multi-speaker, empty-ASR, and timeout paths');
+        const orderedFlushed = [];
+        const orderingBuffer = new ConversationBuffer({
+            gracePeriod: 25,
+            cooldownPeriod: 25,
+            pendingAsrTimeout: 100
+        });
+        orderingBuffer.onFlush((utterances) => orderedFlushed.push(utterances));
+        orderingBuffer.addUtterance({
+            userId: 'user-b',
+            speaker: 'Second Speaker',
+            transcription: 'I arrived first from ASR',
+            speechStartedAt: '2026-05-03T00:00:03.000Z',
+            speechEndedAt: '2026-05-03T00:00:04.000Z',
+            asrCompletedAt: '2026-05-03T00:00:04.200Z'
+        });
+        orderingBuffer.addUtterance({
+            userId: 'user-a',
+            speaker: 'First Speaker',
+            transcription: 'I started speaking first',
+            speechStartedAt: '2026-05-03T00:00:01.000Z',
+            speechEndedAt: '2026-05-03T00:00:05.000Z',
+            asrCompletedAt: '2026-05-03T00:00:05.200Z'
+        });
+        orderingBuffer.addUtterance({
+            userId: 'user-c',
+            speaker: 'Fallback Speaker',
+            transcription: 'My start is missing',
+            speechEndedAt: '2026-05-03T00:00:06.000Z',
+            asrCompletedAt: '2026-05-03T00:00:06.200Z'
+        });
+        await sleep(40);
+
+        const orderedSpeakers = orderedFlushed[0]?.map(utterance => utterance.speaker).join(', ');
+        if (orderedSpeakers !== 'First Speaker, Second Speaker, Fallback Speaker') {
+            throw new Error(`Buffer did not flush by spoken timeline: ${orderedSpeakers}`);
+        }
+
+        console.log('  Conversation buffer waits only for receiver ASR candidates and clears completion/timeout paths');
         passed++;
     } catch (error) {
         console.log(`  Conversation buffer failed: ${error.message}`);
@@ -278,6 +347,7 @@ async function runTests() {
     console.log('\nTest 8: Audio Receiver keeps subscription across silence');
     try {
         const utterances = [];
+        const pendingAsr = [];
         const fakeStream = new PassThrough();
         let subscribeOptions = null;
 
@@ -290,7 +360,8 @@ async function runTests() {
                     words: []
                 })
             },
-            onUtterance: (utterance) => utterances.push(utterance)
+            onUtterance: (utterance) => utterances.push(utterance),
+            onAsrPending: (userId, metadata) => pendingAsr.push({ userId, metadata })
         });
 
         receiver.start({
@@ -306,7 +377,8 @@ async function runTests() {
         });
 
         receiver.handleUserStartSpeaking('user-a');
-        receiver.handleAudioChunk('user-a', Buffer.alloc(48000 * 2 * 2));
+        receiver.handleAudioChunk('user-a', createSpeechPcm(250));
+        receiver.handleUserStopSpeaking('user-a');
         await receiver.flushUser('user-a', 'test silence');
 
         const buffer = receiver.speakerBuffers.get('user-a');
@@ -326,6 +398,12 @@ async function runTests() {
         if (utterances.length !== 1 || utterances[0].transcription !== 'hello from the buffer') {
             throw new Error('Snapshot utterance was not processed');
         }
+        if (!utterances[0].speechStartedAt || !utterances[0].speechEndedAt || !utterances[0].asrCompletedAt) {
+            throw new Error(`Snapshot timing metadata missing: ${JSON.stringify(utterances[0])}`);
+        }
+        if (pendingAsr.length !== 1 || pendingAsr[0].metadata.reason !== 'speaking stop with buffered audio') {
+            throw new Error(`Receiver did not emit exactly one ASR pending candidate: ${JSON.stringify(pendingAsr)}`);
+        }
 
         receiver.destroy();
 
@@ -333,6 +411,71 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Audio receiver lifecycle failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 9: Transcript timing uses bot playback metadata');
+    try {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'podcast-discord-transcript-'));
+        const guildId = 'guild-transcript';
+        const manager = new VoiceManager({ on: () => {} }, { recordingDir: tempDir });
+        manager.recordingPaths.set(guildId, tempDir);
+
+        manager.saveTranscriptEntry(guildId, {
+            speaker: 'Alpha-Clawd',
+            speakerRole: 'host',
+            transcription: 'Generated first but heard second.',
+            timestamp: '2026-05-03T00:00:00.000Z',
+            generatedAt: '2026-05-03T00:00:00.000Z',
+            ttsStartedAt: '2026-05-03T00:00:01.000Z',
+            ttsCompletedAt: '2026-05-03T00:00:02.000Z',
+            playbackRequestedAt: '2026-05-03T00:00:02.100Z',
+            playbackStartedAt: '2026-05-03T00:00:05.000Z',
+            playbackEndedAt: '2026-05-03T00:00:07.000Z',
+            duration: 2000
+        });
+
+        fs.appendFileSync(path.join(tempDir, 'transcript.jsonl'), JSON.stringify({
+            timestamp: '2026-05-03T00:00:09.000Z',
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'Heard before the bot line.',
+            speechStartedAt: '2026-05-03T00:00:03.000Z',
+            speechEndedAt: '2026-05-03T00:00:04.000Z',
+            duration: 1000
+        }) + '\n');
+
+        const transcriptEntry = JSON.parse(fs.readFileSync(path.join(tempDir, 'transcript.jsonl'), 'utf8').split(/\r?\n/)[0]);
+        if (
+            transcriptEntry.generatedAt !== '2026-05-03T00:00:00.000Z' ||
+            transcriptEntry.playbackStartedAt !== '2026-05-03T00:00:05.000Z' ||
+            transcriptEntry.playbackEndedAt !== '2026-05-03T00:00:07.000Z'
+        ) {
+            throw new Error(`Bot timing metadata was not saved: ${JSON.stringify(transcriptEntry)}`);
+        }
+
+        const processor = new EpisodePostProcessor();
+        const result = processor.buildTranscriptFromJsonl(path.join(tempDir, 'transcript.jsonl'), {
+            startedAt: '2026-05-03T00:00:00.000Z',
+            duration: 10
+        });
+
+        const expectedText = [
+            '00:00:03 Jensen: Heard before the bot line.',
+            '00:00:05 Alpha-Clawd: Generated first but heard second.',
+            ''
+        ].join('\n');
+
+        if (result.text !== expectedText) {
+            throw new Error(`Transcript did not render by audible playback time:\n${result.text}`);
+        }
+
+        fs.rmSync(tempDir, { recursive: true, force: true });
+
+        console.log('  Bot timing metadata is saved and transcript rendering uses playback start');
+        passed++;
+    } catch (error) {
+        console.log(`  Transcript timing failed: ${error.message}`);
         failed++;
     }
 

@@ -34,6 +34,9 @@ class SilenceDetector {
         this.isSpeaking = false;
         this.silenceDetected = false;
         this.unprocessedData = Buffer.alloc(0);
+        this.firstSpeechAtMs = null;
+        this.lastSpeechAtMs = null;
+        this.lastFrameAtMs = null;
         
         // Debug stats
         this.stats = {
@@ -67,6 +70,8 @@ class SilenceDetector {
      */
     processFrame(frame) {
         this.stats.totalFrames++;
+        const now = Date.now();
+        this.lastFrameAtMs = now;
 
         // Calculate RMS (root mean square) amplitude
         const amplitude = this.calculateRMS(frame);
@@ -87,6 +92,10 @@ class SilenceDetector {
             this.stats.speakingFrames++;
             this.consecutiveSilentFrames = 0;
             this.isSpeaking = true;
+            if (this.firstSpeechAtMs === null) {
+                this.firstSpeechAtMs = now;
+            }
+            this.lastSpeechAtMs = now;
         }
     }
 
@@ -155,7 +164,10 @@ class SilenceDetector {
             consecutiveSilentFrames: this.consecutiveSilentFrames,
             framesNeededForSilence: this.framesNeededForSilence,
             silenceDetected: this.silenceDetected,
-            speakingDuration: (this.stats.speakingFrames * this.options.frameDuration) / 1000
+            speakingDuration: (this.stats.speakingFrames * this.options.frameDuration) / 1000,
+            firstSpeechAtMs: this.firstSpeechAtMs,
+            lastSpeechAtMs: this.lastSpeechAtMs,
+            lastFrameAtMs: this.lastFrameAtMs
         };
     }
 
@@ -167,6 +179,9 @@ class SilenceDetector {
         this.isSpeaking = false;
         this.silenceDetected = false;
         this.unprocessedData = Buffer.alloc(0);
+        this.firstSpeechAtMs = null;
+        this.lastSpeechAtMs = null;
+        this.lastFrameAtMs = null;
         this.framesNeededForSilence = Math.floor(
             this.options.silenceDuration / this.options.frameDuration
         );

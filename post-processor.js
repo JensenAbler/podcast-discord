@@ -149,7 +149,7 @@ class EpisodePostProcessor {
     }
 
     getSortTimestamp(entry) {
-        const timestamp = entry.timestamp ?? entry.startTime ?? entry.start;
+        const timestamp = this.getTranscriptTimestampValue(entry);
         if (typeof timestamp === 'number') {
             return timestamp;
         }
@@ -159,7 +159,7 @@ class EpisodePostProcessor {
     }
 
     formatTranscriptTimestamp(entry, baseTime) {
-        const timestamp = entry.timestamp ?? entry.startTime ?? entry.start;
+        const timestamp = this.getTranscriptTimestampValue(entry);
         let seconds = 0;
 
         if (typeof timestamp === 'number') {
@@ -181,6 +181,18 @@ class EpisodePostProcessor {
             minutes,
             remainingSeconds
         ].map(value => String(value).padStart(2, '0')).join(':');
+    }
+
+    getTranscriptTimestampValue(entry) {
+        if (entry.playbackStartedAt) {
+            return entry.playbackStartedAt;
+        }
+
+        if (entry.speechStartedAt) {
+            return entry.speechStartedAt;
+        }
+
+        return entry.timestamp ?? entry.startTime ?? entry.start;
     }
 
     getTranscriptLanguages(entries) {

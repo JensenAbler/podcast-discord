@@ -118,6 +118,7 @@ class VoiceManager {
             onUtterance: (utterance) => this.handleUtterance(guildId, utterance),
             onSpeakingStart: (userId) => this.handleSpeakingStart(guildId, userId),
             onSpeakingStop: (userId) => this.handleSpeakingStop(guildId, userId),
+            onAsrPending: (userId, metadata) => this.handleAsrPending(guildId, userId, metadata),
             onError: (error) => console.error('[VoiceManager] Receiver error:', error)
         });
         this.receivers.set(guildId, receiver);
@@ -323,16 +324,28 @@ class VoiceManager {
     }
 
     /**
+     * Handle a receiver-announced pending ASR candidate.
+     * @param {string} guildId - Discord guild ID
+     * @param {string} userId - Discord user ID
+     * @param {Object} metadata - Candidate metadata
+     */
+    handleAsrPending(guildId, userId, metadata = {}) {
+        if (this.onAsrPending) {
+            this.onAsrPending(guildId, userId, metadata);
+        }
+    }
+
+    /**
      * Add bot audio to the mixed recording
      * @param {string} guildId - Discord guild ID
      * @param {Buffer} audioBuffer - Audio buffer (MP3 from ElevenLabs)
      */
-    addBotAudioToRecording(guildId, audioBuffer) {
+    addBotAudioToRecording(guildId, audioBuffer, options = {}) {
         if (!this.isRecording.get(guildId)) return;
 
         const recorder = this.recorders.get(guildId);
         if (recorder) {
-            recorder.addBotAudio(audioBuffer, { volume: 0.9 });
+            recorder.addBotAudio(audioBuffer, { volume: 0.9, ...options });
         }
     }
 
@@ -342,14 +355,68 @@ class VoiceManager {
      * @param {Buffer|string} audio - Audio buffer or file path
      * @returns {Promise<void>}
      */
-    async speak(guildId, audio) {
+    async speak(guildId, audio, options = {}) {
         const transmitter = this.transmitters.get(guildId);
         if (!transmitter) {
             console.error(`[VoiceManager] No transmitter for guild ${guildId}. Available: ${Array.from(this.transmitters.keys()).join(', ')}`);
             throw new Error('Not connected to voice channel');
         }
 
-        await transmitter.play(audio);
+        await transmitter.play(audio, options);
+    }
+
+    /**
+     * Speak audio and expose playback timing callbacks.
+     * @param {string} guildId - Discord guild ID
+     * @param {Buffer|string} audio - Audio buffer or file path
+     * @param {Object} options - Playback options
+     * @returns {Promise<Object>} - { timing, finished }
+     */
+    async speakWithTiming(guildId, audio, options = {}) {
+        const timing = {
+            playbackRequestedAt: new Date().toISOString(),
+            playbackStartedAt: null,
+            playbackEndedAt: null
+        };
+
+        let resolveFinished;
+        let rejectFinished;
+        const finished = new Promise((resolve, reject) => {
+            resolveFinished = resolve;
+            rejectFinished = reject;
+        });
+
+        try {
+            await this.speak(guildId, audio, {
+                ...options,
+                onStart: () => {
+                    timing.playbackStartedAt = new Date().toISOString();
+                    if (typeof options.onStart === 'function') {
+                        options.onStart(timing);
+                    }
+                },
+                onFinish: () => {
+                    timing.playbackEndedAt = new Date().toISOString();
+                    if (typeof options.onFinish === 'function') {
+                        options.onFinish(timing);
+                    }
+                    resolveFinished({ ...timing });
+                },
+                onError: (error) => {
+                    timing.playbackErrorAt = new Date().toISOString();
+                    if (typeof options.onError === 'function') {
+                        options.onError(error, timing);
+                    }
+                    rejectFinished(error);
+                }
+            });
+        } catch (error) {
+            timing.playbackErrorAt = new Date().toISOString();
+            resolveFinished({ ...timing });
+            throw error;
+        }
+
+        return { timing, finished };
     }
 
     /**
@@ -517,8 +584,19 @@ class VoiceManager {
             text: utterance.transcription || '',
             textConfidence: utterance.transcriptionConfidence || null,
             language: utterance.language || null,
-            duration: utterance.duration || 0,
+            duration: utterance.duration ?? 0,
             userId: utterance.userId,
+            speechStartedAt: utterance.speechStartedAt || null,
+            speechEndedAt: utterance.speechEndedAt || null,
+            speechDuration: utterance.speechDuration ?? null,
+            asrStartedAt: utterance.asrStartedAt || null,
+            asrCompletedAt: utterance.asrCompletedAt || null,
+            generatedAt: utterance.generatedAt || null,
+            ttsStartedAt: utterance.ttsStartedAt || null,
+            ttsCompletedAt: utterance.ttsCompletedAt || null,
+            playbackRequestedAt: utterance.playbackRequestedAt || null,
+            playbackStartedAt: utterance.playbackStartedAt || null,
+            playbackEndedAt: utterance.playbackEndedAt || null,
             words: (utterance.words || []).map(w => ({
                 text: w.text || w.word,
                 start: w.start,
@@ -650,6 +728,14 @@ class VoiceManager {
      */
     setSpeakingStopHandler(handler) {
         this.onSpeakingStop = handler;
+    }
+
+    /**
+     * Set the ASR pending handler callback
+     * @param {Function} handler - (guildId, userId, metadata) => void
+     */
+    setAsrPendingHandler(handler) {
+        this.onAsrPending = handler;
     }
 
     /**

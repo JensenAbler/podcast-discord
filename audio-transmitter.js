@@ -28,6 +28,7 @@ class AudioTransmitter {
         this.queue = [];
         this.isPlaying = false;
         this.currentResource = null;
+        this.currentPlayback = null;
 
         if (this.player) {
             this.setupPlayerEvents();
@@ -41,13 +42,21 @@ class AudioTransmitter {
         this.player.on(AudioPlayerStatus.Playing, () => {
             console.log('[AudioTransmitter] Started playing audio');
             this.isPlaying = true;
+            if (typeof this.currentPlayback?.options?.onStart === 'function') {
+                this.currentPlayback.options.onStart();
+            }
             this.options.onStart();
         });
 
         this.player.on(AudioPlayerStatus.Idle, () => {
             console.log('[AudioTransmitter] Finished playing audio');
+            const completedPlayback = this.currentPlayback;
             this.isPlaying = false;
             this.currentResource = null;
+            this.currentPlayback = null;
+            if (typeof completedPlayback?.options?.onFinish === 'function') {
+                completedPlayback.options.onFinish();
+            }
             this.options.onFinish();
             
             // Play next in queue if any
@@ -56,8 +65,13 @@ class AudioTransmitter {
 
         this.player.on('error', (error) => {
             console.error('[AudioTransmitter] Player error:', error);
+            const failedPlayback = this.currentPlayback;
             this.isPlaying = false;
             this.currentResource = null;
+            this.currentPlayback = null;
+            if (typeof failedPlayback?.options?.onError === 'function') {
+                failedPlayback.options.onError(error);
+            }
             this.options.onError(error);
             
             // Try to continue with queue
@@ -135,6 +149,7 @@ class AudioTransmitter {
             }
 
             this.currentResource = resource;
+            this.currentPlayback = { options };
 
             // Play the resource
             this.player.play(resource);
@@ -173,12 +188,27 @@ class AudioTransmitter {
      * Stop current playback
      */
     stop() {
+        const stoppedPlayback = this.currentPlayback;
+        const queuedItems = [...this.queue];
+        this.currentPlayback = null;
+        this.queue = [];
+
         if (this.player) {
             this.player.stop();
         }
+
         this.isPlaying = false;
         this.currentResource = null;
-        this.queue = [];
+
+        if (typeof stoppedPlayback?.options?.onFinish === 'function') {
+            stoppedPlayback.options.onFinish();
+        }
+
+        for (const item of queuedItems) {
+            if (typeof item.reject === 'function') {
+                item.reject(new Error('Playback stopped before queued audio started'));
+            }
+        }
     }
 
     /**
@@ -219,6 +249,11 @@ class AudioTransmitter {
      * Clear the queue
      */
     clearQueue() {
+        for (const item of this.queue) {
+            if (typeof item.reject === 'function') {
+                item.reject(new Error('Playback queue cleared'));
+            }
+        }
         this.queue = [];
     }
 

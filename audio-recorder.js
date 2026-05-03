@@ -276,7 +276,7 @@ class AudioRecorder {
         const volume = options.volume || 0.9; // Slightly lower for bot
 
         // Convert MP3 to PCM if needed (ElevenLabs returns MP3)
-        this.convertAndMixBotAudio(pcmBuffer, volume);
+        this.convertAndMixBotAudio(pcmBuffer, volume, options);
     }
 
     /**
@@ -284,16 +284,22 @@ class AudioRecorder {
      * @param {Buffer} audioBuffer - Audio buffer (MP3 or PCM)
      * @param {number} volume - Volume multiplier
      */
-    async convertAndMixBotAudio(audioBuffer, volume) {
+    async convertAndMixBotAudio(audioBuffer, volume, options = {}) {
         try {
             // For now, we'll write bot audio to a separate file and mix later
             // Real-time MP3 decoding requires more complex handling
             // Store for post-processing or use ffmpeg filter_complex
 
             // Store in buffer for now (will be mixed in finalization)
+            const hasProvidedStartTime = options.startTime !== undefined && options.startTime !== null;
+            const providedStartTime = hasProvidedStartTime ? Number(options.startTime) : NaN;
+            const timestamp = hasProvidedStartTime && Number.isFinite(providedStartTime)
+                ? providedStartTime - this.startTime
+                : Date.now() - this.startTime;
+
             this.botAudioBuffer.push({
                 buffer: audioBuffer,
-                timestamp: Date.now() - this.startTime,
+                timestamp: this.clampDelay(timestamp, 'bot audio timestamp'),
                 volume
             });
             this.stats.botAudioChunks++;

@@ -31,6 +31,7 @@ class AudioReceiver {
             onUtterance: options.onUtterance || (() => {}),
             onSpeakingStart: options.onSpeakingStart || (() => {}),
             onSpeakingStop: options.onSpeakingStop || (() => {}),
+            onAsrPending: options.onAsrPending || (() => {}),
             onError: options.onError || console.error,
             enableTranscription: options.enableTranscription !== false, // Default true
             botUserId: options.botUserId, // Bot's own user ID to filter self-audio
@@ -216,7 +217,8 @@ class AudioReceiver {
             chunks: [],
             startTime: null,
             speakerInfo: speakerInfo,
-            detector: silenceDetector
+            detector: silenceDetector,
+            asrPendingNotified: false
         };
 
         this.speakerBuffers.set(userId, buffer);
@@ -237,6 +239,7 @@ class AudioReceiver {
         if (buffer && buffer.detector) {
             // Notify detector that speaking stopped
             buffer.detector.speakingStopped();
+            this.notifyAsrPendingForCandidate(userId, buffer, 'speaking stop with buffered audio');
         }
     }
 
@@ -282,6 +285,43 @@ class AudioReceiver {
     }
 
     /**
+     * Whether the current receiver buffer represents speech-like audio that
+     * should eventually become an ASR result.
+     * @param {Object} buffer - Speaker buffer
+     * @returns {boolean}
+     */
+    hasAsrCandidate(buffer) {
+        if (!buffer || buffer.chunks.length === 0) return false;
+
+        const stats = buffer.detector?.getStats?.();
+        return !stats || stats.speakingFrames > 0;
+    }
+
+    /**
+     * Announce one pending ASR candidate for the current buffer.
+     * @param {string} userId - Discord user ID
+     * @param {Object} buffer - Speaker buffer
+     * @param {string} reason - Reason for the pending ASR candidate
+     */
+    notifyAsrPendingForCandidate(userId, buffer, reason) {
+        if (!this.hasAsrCandidate(buffer) || buffer.asrPendingNotified) {
+            return;
+        }
+
+        buffer.asrPendingNotified = true;
+        const duration = buffer.startTime ? Date.now() - buffer.startTime : 0;
+        const stats = buffer.detector?.getStats?.() || {};
+
+        this.options.onAsrPending(userId, {
+            reason,
+            chunkCount: buffer.chunks.length,
+            duration,
+            speakingFrames: stats.speakingFrames || 0,
+            silentFrames: stats.silentFrames || 0
+        });
+    }
+
+    /**
      * Snapshot and clear the current in-memory chunks for a user.
      * @param {string} userId - Discord user ID
      * @param {string} reason - Reason for the rollover
@@ -292,20 +332,41 @@ class AudioReceiver {
         if (!buffer) return null;
 
         const chunks = buffer.chunks;
-        const startTime = buffer.startTime || Date.now();
-        const duration = buffer.startTime ? Date.now() - buffer.startTime : 0;
+        const snapshotAtMs = Date.now();
+        const startTime = buffer.startTime || snapshotAtMs;
+        const duration = buffer.startTime ? snapshotAtMs - buffer.startTime : 0;
         const audioBuffer = chunks.length > 0 ? Buffer.concat(chunks) : Buffer.alloc(0);
+        const detectorStats = buffer.detector?.getStats?.() || {};
+        const speechStartedAtMs = detectorStats.firstSpeechAtMs || startTime;
+        const speechEndedAtMs = detectorStats.lastSpeechAtMs || snapshotAtMs;
+        const speechDuration = Math.max(0, speechEndedAtMs - speechStartedAtMs);
 
         buffer.chunks = [];
         buffer.startTime = null;
 
-        if (buffer.detector) {
-            buffer.detector.reset();
-        }
-
         if (audioBuffer.length === 0) {
             console.log(`[AudioReceiver] No buffered audio for ${userId} on ${reason}`);
+            buffer.asrPendingNotified = false;
+            if (buffer.detector) {
+                buffer.detector.reset();
+            }
             return null;
+        }
+
+        if (!buffer.asrPendingNotified) {
+            this.options.onAsrPending(userId, {
+                reason: `snapshot: ${reason}`,
+                chunkCount: chunks.length,
+                duration,
+                speakingFrames: detectorStats.speakingFrames || 0,
+                silentFrames: detectorStats.silentFrames || 0
+            });
+        }
+
+        buffer.asrPendingNotified = false;
+
+        if (buffer.detector) {
+            buffer.detector.reset();
         }
 
         return {
@@ -314,7 +375,10 @@ class AudioReceiver {
             audioBuffer: audioBuffer,
             startTime: startTime,
             duration: duration,
-            timestamp: new Date().toISOString(),
+            speechStartedAt: new Date(speechStartedAtMs).toISOString(),
+            speechEndedAt: new Date(speechEndedAtMs).toISOString(),
+            speechDuration,
+            timestamp: new Date(speechStartedAtMs).toISOString(),
             reason: reason
         };
     }
@@ -395,7 +459,10 @@ class AudioReceiver {
             audioBuffer,
             startTime,
             duration,
-            timestamp
+            timestamp,
+            speechStartedAt,
+            speechEndedAt,
+            speechDuration
         } = snapshot;
 
         console.log(`[AudioReceiver] Processing ${duration}ms utterance from ${speakerInfo.name}`);
@@ -406,6 +473,7 @@ class AudioReceiver {
             let transcriptionConfidence = 0;
             let wordLevelData = [];
             let language = null;
+            const asrStartedAt = new Date().toISOString();
 
             if (this.enableTranscription && this.stt) {
                 try {
@@ -435,6 +503,7 @@ class AudioReceiver {
                     // Continue without transcription - don't block the flow
                 }
             }
+            const asrCompletedAt = new Date().toISOString();
 
             // Create utterance object with transcription (NOT raw audio buffer for transcript)
             const utterance = {
@@ -447,6 +516,11 @@ class AudioReceiver {
                 language: language,
                 duration: duration,
                 timestamp: timestamp,
+                speechStartedAt,
+                speechEndedAt,
+                speechDuration,
+                asrStartedAt,
+                asrCompletedAt,
                 sampleRate: 48000,
                 channels: 2
             };
