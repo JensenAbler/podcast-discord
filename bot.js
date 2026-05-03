@@ -185,11 +185,13 @@ class AlphaClawdVoiceBot {
         
         // Set up voice manager utterance handler
         this.voiceManager.setUtteranceHandler(async (guildId, utterance) => {
+            const transcription = (utterance.transcription || '').trim();
+
             // Debug: inject individual utterance for Gateway UI visibility
-            if (this.debugInject && this.wsClient.isAuthenticated) {
+            if (this.debugInject && transcription && this.wsClient.isAuthenticated) {
                 try {
                     await this.wsClient.injectMessage(
-                        `[Podcast Voice] ${utterance.speaker}: ${utterance.transcription}`,
+                        `[Podcast Voice] ${utterance.speaker}: ${transcription}`,
                         { label: 'discord-voice' }
                     );
                 } catch (err) {
@@ -200,9 +202,10 @@ class AlphaClawdVoiceBot {
             // Buffer the utterance (buffer handles timing and flush)
             // Include full word-level data from ElevenLabs STT for confidence analysis
             this.conversationBuffer.addUtterance({
+                userId: utterance.userId,
                 speaker: utterance.speaker,
                 speakerRole: utterance.speakerRole,
-                transcription: utterance.transcription,
+                transcription: transcription,
                 transcriptionConfidence: utterance.transcriptionConfidence,
                 words: utterance.words,
                 language: utterance.language,
@@ -214,12 +217,12 @@ class AlphaClawdVoiceBot {
         // Set up speaking start/stop handlers to prevent buffer flush while user is speaking
         this.voiceManager.setSpeakingStartHandler((guildId, userId) => {
             console.log(`[Bot] User ${userId} started speaking, pausing buffer flush`);
-            this.conversationBuffer.setUserSpeaking(true);
+            this.conversationBuffer.setUserSpeaking(userId, true);
         });
 
         this.voiceManager.setSpeakingStopHandler((guildId, userId) => {
             console.log(`[Bot] User ${userId} stopped speaking, resuming buffer grace window`);
-            this.conversationBuffer.setUserSpeaking(false);
+            this.conversationBuffer.setUserSpeaking(userId, false);
         });
     }
 
@@ -411,8 +414,8 @@ class AlphaClawdVoiceBot {
                         .setDescription('Buffering mode')
                         .setRequired(true)
                         .addChoices(
-                            { name: 'Chatty (2s silence)', value: 'chatty' },
-                            { name: 'Buffered (10s silence)', value: 'buffered' }
+                            { name: 'Chatty (~700ms grace)', value: 'chatty' },
+                            { name: 'Buffered (10s grace)', value: 'buffered' }
                         )
                 ),
             new SlashCommandBuilder()
@@ -919,10 +922,10 @@ class AlphaClawdVoiceBot {
 
         const recordingInfo = this.voiceManager.getRecordingInfo(guildId);
         const state = this.recordingState.get(guildId) || 'IDLE';
-        const bufferMode = this.conversationBuffer?.config.gracePeriod === 2000 ? 'chatty' : 'buffered';
-        const bufferCount = this.conversationBuffer?.buffer.length || 0;
-        const bufferReady = this.conversationBuffer?.isReady ?? true;
         const bufferState = this.conversationBuffer?.getState();
+        const bufferMode = this.getBufferModeName();
+        const bufferCount = bufferState?.utteranceCount || 0;
+        const bufferReady = bufferState?.isReady ?? true;
 
         const voiceMode = this.voiceProvider?.getMode() || 'unknown';
         const info = this.voiceProvider?.getInfo();

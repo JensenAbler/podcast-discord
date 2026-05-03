@@ -225,15 +225,27 @@ class AudioReceiver {
         try {
             // Combine all chunks into single buffer
             const audioBuffer = Buffer.concat(buffer.chunks);
+            const duration = Date.now() - buffer.startTime;
             
             if (audioBuffer.length === 0) {
-                console.log(`[AudioReceiver] Empty audio buffer for ${userId}, skipping`);
+                console.log(`[AudioReceiver] Empty audio buffer for ${userId}, emitting empty utterance`);
+                this.options.onUtterance({
+                    userId: userId,
+                    speaker: buffer.speakerInfo.name,
+                    speakerRole: buffer.speakerInfo.role,
+                    transcription: '',
+                    transcriptionConfidence: 0,
+                    words: [],
+                    language: null,
+                    duration: duration,
+                    timestamp: new Date().toISOString(),
+                    sampleRate: 48000,
+                    channels: 2
+                });
                 this.cleanupUser(userId);
                 return;
             }
 
-            const duration = Date.now() - buffer.startTime;
-            
             console.log(`[AudioReceiver] Processing ${duration}ms utterance from ${buffer.speakerInfo.name}`);
 
             // Transcribe audio to text

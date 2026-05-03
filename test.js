@@ -11,6 +11,9 @@ const {
     GatewayBridge,
     PodcastGenerator
 } = require('./index');
+const { ConversationBuffer, BufferState } = require('./conversation-buffer');
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function runTests() {
     console.log('Running Alpha-Clawd Voice Host smoke tests\n');
@@ -121,6 +124,90 @@ async function runTests() {
         }
     } catch (error) {
         console.log(`  Podcast generator failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 6: Conversation Buffer ASR-aware state machine');
+    try {
+        const flushed = [];
+        const buffer = new ConversationBuffer({
+            gracePeriod: 25,
+            cooldownPeriod: 25,
+            pendingAsrTimeout: 100
+        });
+        buffer.onFlush((utterances) => flushed.push(utterances));
+
+        buffer.setUserSpeaking('user-a', true);
+        buffer.setUserSpeaking('user-a', false);
+        await sleep(40);
+
+        if (flushed.length !== 0 || buffer.getState().state !== BufferState.AWAITING_ASR) {
+            throw new Error('Buffer flushed before ASR completed');
+        }
+
+        buffer.addUtterance({
+            userId: 'user-a',
+            speaker: 'Jensen',
+            transcription: 'This should flush after ASR lands',
+            words: [{ text: 'This' }]
+        });
+        await sleep(40);
+
+        if (flushed.length !== 1 || flushed[0].length !== 1) {
+            throw new Error('Buffer did not flush after ASR-driven grace period');
+        }
+
+        buffer.setUserSpeaking('user-a', true);
+        buffer.setUserSpeaking('user-a', false);
+        buffer.setUserSpeaking('user-b', true);
+        buffer.setUserSpeaking('user-b', false);
+        buffer.addUtterance({
+            userId: 'user-a',
+            speaker: 'Jensen',
+            transcription: 'First speaker ready'
+        });
+        await sleep(40);
+
+        if (flushed.length !== 1 || buffer.getState().state !== BufferState.AWAITING_ASR) {
+            throw new Error('Buffer flushed before all speakers completed ASR');
+        }
+
+        buffer.addUtterance({
+            userId: 'user-b',
+            speaker: 'Jade',
+            transcription: 'Second speaker ready'
+        });
+        await sleep(40);
+
+        if (flushed.length !== 2 || flushed[1].length !== 2) {
+            throw new Error('Buffer did not flush once all speaker ASR completed');
+        }
+
+        buffer.setUserSpeaking('user-c', true);
+        buffer.setUserSpeaking('user-c', false);
+        buffer.addUtterance({
+            userId: 'user-c',
+            speaker: 'Quiet Guest',
+            transcription: ''
+        });
+        await sleep(40);
+
+        if (flushed.length !== 2 || buffer.getState().state !== BufferState.IDLE) {
+            throw new Error('Empty ASR result did not clear pending state without flushing');
+        }
+
+        buffer.setUserSpeaking('user-d', true);
+        buffer.setUserSpeaking('user-d', false);
+        await sleep(120);
+
+        if (flushed.length !== 2 || buffer.getState().state !== BufferState.IDLE) {
+            throw new Error('Pending ASR timeout did not clear stuck state');
+        }
+
+        console.log('  Conversation buffer waits for ASR, handles multi-speaker, empty-ASR, and timeout paths');
+        passed++;
+    } catch (error) {
+        console.log(`  Conversation buffer failed: ${error.message}`);
         failed++;
     }
 
