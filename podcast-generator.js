@@ -49,13 +49,7 @@ class PodcastGenerator {
         }
 
         const transcript = input.transcript || this.formatUtterances(input.utterances || []);
-        const currentMode = input.currentMode || 'chatty';
-        const userContent = this.buildUserPrompt(transcript, currentMode, input.wordData);
-        const messages = [
-            { role: 'system', content: this.buildSystemPrompt() },
-            ...this.getRecentHistory(),
-            { role: 'user', content: userContent }
-        ];
+        const messages = this.buildMessages(input);
 
         const body = {
             model: this.model,
@@ -104,9 +98,23 @@ class PodcastGenerator {
         }
 
         const output = this.normalizeOutput(parsed);
-        this.rememberTurn(transcript, output);
+        if (input.remember !== false) {
+            this.rememberTurn(transcript, output);
+        }
         console.log(`[PodcastGenerator] Completed in ${duration}ms: respond=${output.shouldRespond}, mode=${output.mode}, chars=${output.speech.length}`);
         return output;
+    }
+
+    buildMessages(input = {}) {
+        const transcript = input.transcript || this.formatUtterances(input.utterances || []);
+        const currentMode = input.currentMode || 'chatty';
+
+        return [
+            { role: 'system', content: this.buildSystemPrompt() },
+            ...this.getRecentHistory(),
+            { role: 'user', content: this.buildUserPrompt(transcript, currentMode, input.wordData, input) },
+            { role: 'system', content: this.buildDecisionPrompt() }
+        ];
     }
 
     buildSystemPrompt() {
@@ -130,20 +138,27 @@ class PodcastGenerator {
         ].join('\n');
     }
 
-    buildUserPrompt(transcript, currentMode, wordData) {
+    buildUserPrompt(transcript, currentMode, wordData, options = {}) {
         const lines = [
             `Recording: ${this.session.recording ? 'on' : 'off'}`,
-            `Current buffer mode: ${currentMode}`,
-            '',
-            transcript || '(empty)'
+            `Current buffer mode: ${currentMode}`
         ];
+
+        if (options.idleCheck && Number.isFinite(Number(options.idleSeconds))) {
+            lines.push(`No new participant speech for about ${Math.max(0, Math.round(Number(options.idleSeconds)))} seconds.`);
+        }
+
+        lines.push('', transcript || '(empty)');
 
         if (wordData) {
             lines.push('', 'STT confidence hints:', wordData);
         }
 
-        lines.push('', 'Decide whether Alpha-Clawd should speak now.');
         return lines.join('\n');
+    }
+
+    buildDecisionPrompt() {
+        return 'Decide whether Alpha-Clawd should speak now.';
     }
 
     getResponseSchema() {
@@ -235,18 +250,35 @@ class PodcastGenerator {
     }
 
     rememberTurn(transcript, output) {
-        this.history.push({
-            role: 'user',
-            content: transcript
-        });
-
-        if (output.shouldRespond && output.speech) {
+        if (String(transcript || '').trim()) {
             this.history.push({
-                role: 'assistant',
-                content: output.speech
+                role: 'user',
+                content: transcript
             });
         }
 
+        if (output.shouldRespond && output.speech) {
+            this.rememberAssistantResponse(output);
+            return;
+        }
+
+        this.trimHistory();
+    }
+
+    rememberAssistantResponse(output) {
+        if (!output?.shouldRespond || !output.speech) {
+            return;
+        }
+
+        this.history.push({
+            role: 'assistant',
+            content: output.speech
+        });
+
+        this.trimHistory();
+    }
+
+    trimHistory() {
         const maxMessages = this.maxHistoryTurns * 2;
         if (this.history.length > maxMessages) {
             this.history = this.history.slice(-maxMessages);

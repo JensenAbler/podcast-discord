@@ -566,6 +566,26 @@ class VoiceManager {
     }
 
     /**
+     * Get playback status for a guild.
+     * @param {string} guildId - Discord guild ID
+     * @returns {Object}
+     */
+    getPlaybackStatus(guildId) {
+        const transmitter = this.transmitters.get(guildId);
+        if (!transmitter) {
+            return {
+                isPlaying: false,
+                queueLength: 0
+            };
+        }
+
+        return {
+            isPlaying: transmitter.isCurrentlyPlaying(),
+            queueLength: transmitter.getQueueLength()
+        };
+    }
+
+    /**
      * Get recording info for a guild
      * @param {string} guildId - Discord guild ID
      * @returns {Object|null}

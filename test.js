@@ -125,6 +125,25 @@ async function runTests() {
         } else {
             throw new Error(`Unexpected normalized output: ${JSON.stringify(output)}`);
         }
+
+        const messages = generator.buildMessages({
+            transcript: 'Jensen: Testing the turn decision prompt',
+            currentMode: 'chatty'
+        });
+        const userMessage = messages[messages.length - 2];
+        const decisionMessage = messages[messages.length - 1];
+
+        if (
+            userMessage.role === 'user' &&
+            !userMessage.content.includes('Decide whether Alpha-Clawd should speak now') &&
+            decisionMessage.role === 'system' &&
+            decisionMessage.content === 'Decide whether Alpha-Clawd should speak now.'
+        ) {
+            console.log('  Turn decision prompt is sent as a trailing system message');
+            passed++;
+        } else {
+            throw new Error(`Unexpected message layout: ${JSON.stringify(messages)}`);
+        }
     } catch (error) {
         console.log(`  Podcast generator failed: ${error.message}`);
         failed++;

@@ -70,7 +70,7 @@ const { VoiceManager } = require('./voice-manager');
 const { VoiceProvider } = require('./voice-provider');
 const { GatewayBridge } = require('./gateway-bridge');
 const { GatewayWsClient } = require('./gateway-ws-client');
-const { ConversationBuffer, CHATTY_MODE, BUFFERED_MODE } = require('./conversation-buffer');
+const { ConversationBuffer, CHATTY_MODE, BUFFERED_MODE, BufferState } = require('./conversation-buffer');
 const { getRecordingDir } = require('./paths');
 const { PodcastGenerator } = require('./podcast-generator');
 
@@ -92,6 +92,10 @@ class AlphaClawdVoiceBot {
         this.recordingState = new Map(); // guildId -> 'IDLE' | 'AWAITING_CONSENT' | 'RECORDING' | 'PAUSED'
         this.consentWaiters = new Map(); // guildId -> { userId, timeout }
         this.disabledCronJobs = []; // Track cron jobs disabled during podcast
+        this.idleDecisionIntervalMs = Number(process.env.PODCAST_IDLE_DECISION_INTERVAL_MS || 5000);
+        this.idleDecisionTimers = new Map(); // guildId -> interval
+        this.idleDecisionInFlight = new Set(); // guildId
+        this.lastParticipantSpeechAt = new Map(); // guildId -> ms timestamp
 
         // Recording states
         this.RecordingState = {
@@ -201,6 +205,10 @@ class AlphaClawdVoiceBot {
 
             // Buffer the utterance (buffer handles timing and flush)
             // Include full word-level data from ElevenLabs STT for confidence analysis
+            if (transcription) {
+                this.lastParticipantSpeechAt.set(guildId, Date.now());
+            }
+
             this.conversationBuffer.addUtterance({
                 userId: utterance.userId,
                 speaker: utterance.speaker,
@@ -240,6 +248,107 @@ class AlphaClawdVoiceBot {
 
     shouldConnectGatewayWs() {
         return this.useGatewayGenerator() || this.gatewayMirror;
+    }
+
+    startIdleDecisionLoop(guildId) {
+        if (this.useGatewayGenerator() || this.idleDecisionIntervalMs <= 0) {
+            return;
+        }
+
+        this.stopIdleDecisionLoop(guildId);
+        this.lastParticipantSpeechAt.delete(guildId);
+
+        const timer = setInterval(() => {
+            this.handleIdleDecisionTick(guildId).catch((error) => {
+                console.error('[Bot] Idle decision tick failed:', error);
+            });
+        }, this.idleDecisionIntervalMs);
+
+        if (typeof timer.unref === 'function') {
+            timer.unref();
+        }
+
+        this.idleDecisionTimers.set(guildId, timer);
+        console.log(`[Bot] Started idle decision loop (${this.idleDecisionIntervalMs}ms)`);
+    }
+
+    stopIdleDecisionLoop(guildId) {
+        const timer = this.idleDecisionTimers.get(guildId);
+        if (timer) {
+            clearInterval(timer);
+            this.idleDecisionTimers.delete(guildId);
+            console.log('[Bot] Stopped idle decision loop');
+        }
+
+        this.idleDecisionInFlight.delete(guildId);
+        this.lastParticipantSpeechAt.delete(guildId);
+    }
+
+    canRunIdleDecision(guildId) {
+        if (this.useGatewayGenerator()) return false;
+        if (this.recordingState.get(guildId) !== this.RecordingState.RECORDING) return false;
+        if (!this.lastParticipantSpeechAt.has(guildId)) return false;
+
+        const bufferState = this.conversationBuffer.getState();
+        if (
+            bufferState.state !== BufferState.IDLE ||
+            bufferState.utteranceCount > 0 ||
+            bufferState.activeSpeakerCount > 0 ||
+            bufferState.pendingAsrCount > 0
+        ) {
+            return false;
+        }
+
+        const playback = this.voiceManager.getPlaybackStatus(guildId);
+        return !playback.isPlaying && playback.queueLength === 0;
+    }
+
+    async handleIdleDecisionTick(guildId) {
+        if (!this.canRunIdleDecision(guildId)) {
+            return;
+        }
+
+        if (this.idleDecisionInFlight.has(guildId)) {
+            return;
+        }
+
+        this.idleDecisionInFlight.add(guildId);
+
+        try {
+            const lastSpeechAt = this.lastParticipantSpeechAt.get(guildId) || Date.now();
+            const idleSeconds = (Date.now() - lastSpeechAt) / 1000;
+
+            console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s without participant speech`);
+            const response = await this.podcastGenerator.generate({
+                transcript: '',
+                currentMode: this.getBufferModeName(),
+                idleCheck: true,
+                idleSeconds,
+                remember: false
+            });
+
+            this.applyGeneratorMode(response.mode);
+
+            if (!response.shouldRespond) {
+                console.log(`[Bot] Idle generator chose silence (confidence=${response.confidence})`);
+                return;
+            }
+
+            if (!this.canRunIdleDecision(guildId)) {
+                console.log('[Bot] Idle generator response discarded because live state changed');
+                return;
+            }
+
+            await this.speakDirectGeneratorResponse(guildId, response, {
+                source: 'idle',
+                playFiller: false,
+                rememberAssistant: true
+            });
+        } catch (error) {
+            console.error('[Bot] Idle generator failed:', error);
+        } finally {
+            this.idleDecisionInFlight.delete(guildId);
+        }
     }
 
     /**
@@ -752,6 +861,7 @@ class AlphaClawdVoiceBot {
                 recording: true,
                 speakers: Object.values(this.speakerMap).map(s => `${s.name} (${s.role || 'speaker'})`)
             });
+            this.startIdleDecisionLoop(guildId);
 
             // Notify Gateway/OpenClaw when it is driving responses or mirroring is enabled.
             if (this.wsClient.isAuthenticated && this.shouldConnectGatewayWs()) {
@@ -851,6 +961,7 @@ class AlphaClawdVoiceBot {
             let recordingPath = null;
 
             if (wasRecording) {
+                this.stopIdleDecisionLoop(guildId);
                 this.podcastGenerator.endSession();
             }
 
@@ -957,6 +1068,7 @@ class AlphaClawdVoiceBot {
         this.recordingState.set(guildId, this.RecordingState.IDLE);
         this.consentWaiters.delete(guildId);
         this.isProcessing.set(guildId, false);
+        this.stopIdleDecisionLoop(guildId);
         this.podcastGenerator.endSession();
 
         await interaction.reply({
@@ -1102,32 +1214,46 @@ class AlphaClawdVoiceBot {
                 return;
             }
 
-            console.log(`[Bot] Direct generator response: "${response.speech.substring(0, 50)}..."`);
-
-            this.voiceManager.saveTranscriptEntry(guildId, {
-                speaker: 'Alpha-Clawd',
-                speakerRole: 'host',
-                transcription: response.speech,
-                timestamp: new Date().toISOString()
+            await this.speakDirectGeneratorResponse(guildId, response, {
+                source: 'buffer',
+                playFiller: true
             });
-
-            // Play a cached filler only after the generator decides to answer.
-            await this.playFillerClip(guildId);
-
-            const audioBuffer = await this.voiceProvider.synthesize(response.speech, {
-                voiceId: this.voiceId
-            });
-
-            this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
-            await this.voiceManager.speak(guildId, audioBuffer);
-
-            console.log('[Bot] Direct generator playback complete, starting cooldown');
-            this.conversationBuffer.startCooldown();
         } catch (error) {
             console.error('[Bot] Direct generator failed:', error);
             const lastSpeaker = utterances[utterances.length - 1]?.speaker || 'there';
             await this.fallbackResponse(guildId, lastSpeaker);
         }
+    }
+
+    async speakDirectGeneratorResponse(guildId, response, options = {}) {
+        const source = options.source || 'buffer';
+        console.log(`[Bot] Direct generator response (${source}): "${response.speech.substring(0, 50)}..."`);
+
+        this.voiceManager.saveTranscriptEntry(guildId, {
+            speaker: 'Alpha-Clawd',
+            speakerRole: 'host',
+            transcription: response.speech,
+            timestamp: new Date().toISOString()
+        });
+
+        // Play a cached filler only after the generator decides to answer.
+        if (options.playFiller !== false) {
+            await this.playFillerClip(guildId);
+        }
+
+        const audioBuffer = await this.voiceProvider.synthesize(response.speech, {
+            voiceId: this.voiceId
+        });
+
+        this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
+        await this.voiceManager.speak(guildId, audioBuffer);
+
+        if (options.rememberAssistant) {
+            this.podcastGenerator.rememberAssistantResponse(response);
+        }
+
+        console.log(`[Bot] Direct generator playback complete (${source}), starting cooldown`);
+        this.conversationBuffer.startCooldown();
     }
 
     /**
