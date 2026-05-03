@@ -9,4 +9,14 @@ npm install
 npm start
 ```
 
+## Response generator
+
+The live spoken reply generator defaults to `PODCAST_GENERATOR=direct`, which calls OpenAI directly with a strict JSON schema for turn-taking:
+
+- `shouldRespond`: speak or stay quiet
+- `speech`: exact TTS text
+- `mode`: `chatty`, `buffered`, or `unchanged`
+
+Set `PODCAST_GENERATOR=gateway` to use the legacy Gateway/OpenClaw agent path. Direct mode uses `OPENAI_API_KEY` and defaults to `PODCAST_GENERATOR_MODEL=gpt-4.1-mini`.
+
 Contract files live in `../clawcast-network/contracts`.

@@ -8,7 +8,8 @@ const {
     SilenceDetector,
     SpeakerTracker,
     FishAudioProvider,
-    GatewayBridge
+    GatewayBridge,
+    PodcastGenerator
 } = require('./index');
 
 async function runTests() {
@@ -91,6 +92,35 @@ async function runTests() {
         }
     } catch (error) {
         console.log(`  Gateway bridge failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 5: Podcast Generator');
+    try {
+        const generator = new PodcastGenerator({
+            apiKey: 'sk-test-placeholder',
+            maxSpeechChars: 80
+        });
+
+        const output = generator.normalizeOutput({
+            shouldRespond: true,
+            speech: '**Absolutely.** [ACTION:mode:chatty] I am with you on that.',
+            mode: 'chatty',
+            confidence: 0.8
+        });
+
+        if (
+            output.shouldRespond === true &&
+            output.mode === 'chatty' &&
+            output.speech === 'Absolutely. I am with you on that.'
+        ) {
+            console.log('  Structured output normalization works');
+            passed++;
+        } else {
+            throw new Error(`Unexpected normalized output: ${JSON.stringify(output)}`);
+        }
+    } catch (error) {
+        console.log(`  Podcast generator failed: ${error.message}`);
         failed++;
     }
 

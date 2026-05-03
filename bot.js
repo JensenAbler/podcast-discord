@@ -72,6 +72,7 @@ const { GatewayBridge } = require('./gateway-bridge');
 const { GatewayWsClient } = require('./gateway-ws-client');
 const { ConversationBuffer, CHATTY_MODE, BUFFERED_MODE } = require('./conversation-buffer');
 const { getRecordingDir } = require('./paths');
+const { PodcastGenerator } = require('./podcast-generator');
 
 class AlphaClawdVoiceBot {
     constructor(options = {}) {
@@ -114,6 +115,8 @@ class AlphaClawdVoiceBot {
         this.elevenLabsKey = options.elevenLabsKey || this.loadElevenLabsKey();
         this.fishAudioKey = options.fishAudioKey || process.env.FISH_AUDIO_API_KEY || process.env.FISH_API_KEY;
         this.openaiKey = options.openaiKey || process.env.OPENAI_API_KEY;
+        this.generatorMode = this.normalizeGeneratorMode(options.generatorMode || process.env.PODCAST_GENERATOR || 'direct');
+        this.gatewayMirror = process.env.PODCAST_GATEWAY_MIRROR === 'true';
 
         // Initialize Voice Provider (unified TTS + STT)
         this.voiceProvider = new VoiceProvider({
@@ -131,6 +134,15 @@ class AlphaClawdVoiceBot {
             whisperLanguage: process.env.WHISPER_LANGUAGE || 'en'
         });
         this.voiceId = this.voiceProvider.voiceId;
+
+        // Direct structured generator for live podcast responses.
+        this.podcastGenerator = new PodcastGenerator({
+            apiKey: this.openaiKey,
+            model: process.env.PODCAST_GENERATOR_MODEL,
+            timeout: process.env.PODCAST_GENERATOR_TIMEOUT_MS,
+            maxCompletionTokens: process.env.PODCAST_GENERATOR_MAX_TOKENS,
+            maxHistoryTurns: process.env.PODCAST_GENERATOR_HISTORY_TURNS
+        });
 
         // Initialize voice manager with unified voice provider
         this.voiceManager = new VoiceManager(this.client, {
@@ -214,6 +226,22 @@ class AlphaClawdVoiceBot {
             console.log(`[Bot] User ${userId} stopped speaking, resuming buffer grace window`);
             this.conversationBuffer.setUserSpeaking(false);
         });
+    }
+
+    normalizeGeneratorMode(mode) {
+        const normalized = String(mode || 'direct').toLowerCase();
+        if (normalized === 'openclaw') return 'gateway';
+        if (normalized === 'clawdbot') return 'gateway';
+        if (normalized === 'gateway') return 'gateway';
+        return 'direct';
+    }
+
+    useGatewayGenerator() {
+        return this.generatorMode === 'gateway';
+    }
+
+    shouldConnectGatewayWs() {
+        return this.useGatewayGenerator() || this.gatewayMirror;
     }
 
     /**
@@ -721,8 +749,14 @@ class AlphaClawdVoiceBot {
                 await this.voiceManager.speak(guildId, synthesizedBuffer);
             }
 
-            // Notify the agent that podcast session has started
-            if (this.wsClient.isAuthenticated) {
+            this.podcastGenerator.startSession({
+                topic: topic || 'general discussion',
+                recording: true,
+                speakers: Object.values(this.speakerMap).map(s => `${s.name} (${s.role || 'speaker'})`)
+            });
+
+            // Notify Gateway/OpenClaw when it is driving responses or mirroring is enabled.
+            if (this.wsClient.isAuthenticated && this.shouldConnectGatewayWs()) {
                 try {
                     const PODCAST_GUIDELINES = [
                         'Respond conversationally, as if speaking out loud',
@@ -818,8 +852,12 @@ class AlphaClawdVoiceBot {
             const wasRecording = this.recordingState.get(guildId) === this.RecordingState.RECORDING;
             let recordingPath = null;
 
-            // Notify the agent that podcast session has ended
-            if (wasRecording && this.wsClient.isAuthenticated) {
+            if (wasRecording) {
+                this.podcastGenerator.endSession();
+            }
+
+            // Notify Gateway/OpenClaw when it is driving responses or mirroring is enabled.
+            if (wasRecording && this.wsClient.isAuthenticated && this.shouldConnectGatewayWs()) {
                 try {
                     await this.wsClient.injectPodcastEvent({
                         event: 'session_end',
@@ -893,11 +931,15 @@ class AlphaClawdVoiceBot {
 
         const voiceMode = this.voiceProvider?.getMode() || 'unknown';
         const info = this.voiceProvider?.getInfo();
+        const generatorInfo = this.useGatewayGenerator()
+            ? { provider: 'gateway-openclaw', model: this.wsClient.sessionKey }
+            : this.podcastGenerator.getInfo();
         
         let message = `📊 **Status**\n\n`;
         message += `Connected: ${status.connected ? '✅' : '❌'}\n`;
         message += `State: ${state}\n`;
         message += `Voice Mode: **${voiceMode}** (${info?.tts.provider}/${info?.stt.provider})\n`;
+        message += `Generator: **${this.generatorMode}** (${generatorInfo.provider}/${generatorInfo.model})\n`;
         message += `Buffer Mode: **${bufferMode}** | ${bufferCount} utterance(s) | Ready: ${bufferReady ? '✅' : '⏳'}\n`;
         
         if (recordingInfo) {
@@ -917,6 +959,7 @@ class AlphaClawdVoiceBot {
         this.recordingState.set(guildId, this.RecordingState.IDLE);
         this.consentWaiters.delete(guildId);
         this.isProcessing.set(guildId, false);
+        this.podcastGenerator.endSession();
 
         await interaction.reply({
             content: '✅ Bot state reset to IDLE.',
@@ -933,11 +976,11 @@ class AlphaClawdVoiceBot {
     }
 
     /**
-     * Handle buffer flush - send batched utterances to Gateway
+     * Handle buffer flush - send batched utterances to the configured generator
      * @param {Array} utterances - Array of {speaker, transcription, timestamp, words}
      */
     async handleBufferFlush(utterances) {
-        if (!this.wsClient.isAuthenticated) {
+        if (this.useGatewayGenerator() && !this.wsClient.isAuthenticated) {
             console.warn('[Bot] Cannot flush buffer: WebSocket not authenticated');
             return;
         }
@@ -990,6 +1033,7 @@ class AlphaClawdVoiceBot {
         const isElevenLabsMode = this.voiceProvider.mode === 'elevenlabs';
         
         let messageText;
+        let wordDataSummary = null;
         if (isElevenLabsMode) {
             const wordLevelSummary = utterancesWithWordData.map(u => {
                 const avgConfidence = u.words.length > 0 
@@ -999,11 +1043,17 @@ class AlphaClawdVoiceBot {
                 const events = u.audioEvents.length > 0 ? ` [Events: ${u.audioEvents.join(', ')}]` : '';
                 return `${u.speaker}: "${u.transcription}" (avg conf: ${avgConfidence}, ${u.wordCount} words${lowConfCount > 0 ? `, ${lowConfCount} low-conf` : ''}${events})`;
             }).join('\n');
+            wordDataSummary = wordLevelSummary;
             messageText = `[Podcast Voice - Conversation Buffer]\n${formatted}\n\n[Word-Level Data]:\n${wordLevelSummary}`;
-            console.log(`[Bot] Flushing ${utterances.length} utterance(s) to Gateway with word-level data (ElevenLabs mode)`);
+            console.log(`[Bot] Flushing ${utterances.length} utterance(s) to ${this.generatorMode} generator with word-level data (ElevenLabs mode)`);
         } else {
             messageText = `[Podcast Voice - Conversation Buffer]\n${formatted}`;
-            console.log(`[Bot] Flushing ${utterances.length} utterance(s) to Gateway (${this.voiceProvider.mode} mode, no word-level data)`);
+            console.log(`[Bot] Flushing ${utterances.length} utterance(s) to ${this.generatorMode} generator (${this.voiceProvider.mode} mode, no word-level data)`);
+        }
+
+        if (!this.useGatewayGenerator()) {
+            await this.handleDirectGeneratorFlush(guildId, utterances, formatted, wordDataSummary);
+            return;
         }
 
         // Play instant filler clip to bridge TTS delay (cached, no API call)
@@ -1019,6 +1069,59 @@ class AlphaClawdVoiceBot {
             });
         } catch (error) {
             console.error('[Bot] Failed to send buffered utterances:', error);
+        }
+    }
+
+    getBufferModeName() {
+        return this.conversationBuffer?.config.gracePeriod === BUFFERED_MODE.gracePeriod
+            ? 'buffered'
+            : 'chatty';
+    }
+
+    applyGeneratorMode(mode) {
+        if (!mode || mode === 'unchanged') {
+            return;
+        }
+
+        const newMode = mode === 'buffered' ? BUFFERED_MODE : CHATTY_MODE;
+        this.conversationBuffer.setMode(newMode);
+        console.log(`[Bot] Generator requested mode switch: ${mode}`);
+    }
+
+    async handleDirectGeneratorFlush(guildId, utterances, transcript, wordData) {
+        try {
+            const response = await this.podcastGenerator.generate({
+                utterances,
+                transcript,
+                wordData,
+                currentMode: this.getBufferModeName()
+            });
+
+            this.applyGeneratorMode(response.mode);
+
+            if (!response.shouldRespond) {
+                console.log(`[Bot] Direct generator chose silence (confidence=${response.confidence})`);
+                return;
+            }
+
+            console.log(`[Bot] Direct generator response: "${response.speech.substring(0, 50)}..."`);
+
+            // Play a cached filler only after the generator decides to answer.
+            await this.playFillerClip(guildId);
+
+            const audioBuffer = await this.voiceProvider.synthesize(response.speech, {
+                voiceId: this.voiceId
+            });
+
+            this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
+            await this.voiceManager.speak(guildId, audioBuffer);
+
+            console.log('[Bot] Direct generator playback complete, starting cooldown');
+            this.conversationBuffer.startCooldown();
+        } catch (error) {
+            console.error('[Bot] Direct generator failed:', error);
+            const lastSpeaker = utterances[utterances.length - 1]?.speaker || 'there';
+            await this.fallbackResponse(guildId, lastSpeaker);
         }
     }
 
@@ -1042,6 +1145,7 @@ class AlphaClawdVoiceBot {
             
             this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
             await this.voiceManager.speak(guildId, audioBuffer);
+            this.conversationBuffer.startCooldown();
         } catch (error) {
             console.error('[Bot] Fallback error:', error);
         }
@@ -1081,16 +1185,34 @@ class AlphaClawdVoiceBot {
             console.log(`[Bot] Voice providers validated: TTS=${info.tts.provider}, STT=${info.stt.provider}`);
         }
 
+        if (!this.useGatewayGenerator()) {
+            const generatorValidation = this.podcastGenerator.validate();
+            if (!generatorValidation.valid) {
+                console.warn('[Bot] Podcast generator validation issues:');
+                generatorValidation.errors.forEach(e => console.warn(`  - ${e}`));
+                console.warn('[Bot] Direct generator will use fallback responses until configured');
+            } else {
+                console.log(`[Bot] Podcast generator ready: ${generatorValidation.provider}/${generatorValidation.model}`);
+            }
+        }
+
         // Initialize Gateway bridge (HTTP response server)
         await this.gatewayBridge.initialize();
 
-        // Connect WebSocket client
-        try {
-            await this.wsClient.connect();
-            console.log('[Bot] WebSocket client connected and authenticated');
-        } catch (error) {
-            console.error('[Bot] WebSocket connection failed:', error.message);
-            console.warn('[Bot] Will use fallback responses');
+        // Connect WebSocket client only when Gateway/OpenClaw is the generator,
+        // or when explicitly mirroring direct sessions into Gateway for visibility.
+        if (this.shouldConnectGatewayWs()) {
+            try {
+                await this.wsClient.connect();
+                console.log('[Bot] WebSocket client connected and authenticated');
+            } catch (error) {
+                console.error('[Bot] WebSocket connection failed:', error.message);
+                if (this.useGatewayGenerator()) {
+                    console.warn('[Bot] Will use fallback responses');
+                }
+            }
+        } else {
+            console.log('[Bot] Skipping Gateway WebSocket connection (direct generator mode)');
         }
 
         // Check Gateway availability
@@ -1098,7 +1220,10 @@ class AlphaClawdVoiceBot {
         if (gatewayAvailable) {
             console.log('[Bot] Gateway connection verified');
         } else {
-            console.warn('[Bot] Gateway not available - will use fallback responses');
+            const gatewayWarning = this.useGatewayGenerator()
+                ? 'Gateway not available - will use fallback responses'
+                : 'Gateway not available - cron pause/resume and mirroring may be unavailable';
+            console.warn(`[Bot] ${gatewayWarning}`);
         }
 
         await this.client.login(this.token);
@@ -1110,6 +1235,11 @@ class AlphaClawdVoiceBot {
     async handleWsResponse(response) {
         const { text, runId, message } = response;
         console.log(`[Bot] Received WebSocket response: "${text?.substring(0, 50)}..."`);
+
+        if (!this.useGatewayGenerator()) {
+            console.log('[Bot] Ignoring Gateway response because direct generator mode is active');
+            return;
+        }
         
         const guildId = this.getActiveGuildId();
         

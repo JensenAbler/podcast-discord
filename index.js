@@ -19,6 +19,7 @@ const { FishAudioProvider } = require('./fish-audio-provider');
 const { ElevenLabsIntegration } = require('./elevenlabs-integration');
 const { GatewayBridge } = require('./gateway-bridge');
 const { AlphaClawdVoiceBot } = require('./bot');
+const { PodcastGenerator } = require('./podcast-generator');
 
 module.exports = {
     // Core voice components
@@ -32,6 +33,7 @@ module.exports = {
     FishAudioProvider,
     ElevenLabsIntegration,
     GatewayBridge,
+    PodcastGenerator,
     
     // Main bot class
     AlphaClawdVoiceBot
