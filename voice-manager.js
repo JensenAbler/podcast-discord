@@ -83,7 +83,6 @@ class VoiceManager {
             adapterCreator: channel.guild.voiceAdapterCreator,
             selfDeaf: false,
             selfMute: false,
-            encryptionMode: 'xsalsa20_poly1305_lite'
         });
 
         // Wait for connection to be ready
