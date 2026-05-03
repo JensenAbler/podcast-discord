@@ -20,7 +20,6 @@ const path = require('path');
 const { AudioReceiver } = require('./audio-receiver');
 const { AudioTransmitter } = require('./audio-transmitter');
 const { AudioRecorder } = require('./audio-recorder');
-const { ElevenLabsIntegration } = require('./elevenlabs-integration');
 const { EpisodePostProcessor } = require('./post-processor');
 const { getRecordingDir } = require('./paths');
 
@@ -46,12 +45,10 @@ class VoiceManager {
 
         // Initialize STT service for transcription.
         this.stt = options.stt;
-        this.elevenLabs = options.elevenLabs || options.stt;
         this.enableTranscription = this.options.enableTranscription;
 
         // Initialize post-processor for episode finalization
         this.postProcessor = new EpisodePostProcessor({
-            elevenLabs: this.elevenLabs,
             recordingDir: this.options.recordingDir
         });
 
@@ -441,16 +438,20 @@ class VoiceManager {
 
         this.isRecording.set(guildId, false);
 
-        // Compile final transcript
+        // Compile final recording metadata
         const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
         const finalPath = path.join(recordingPath, 'episode-complete.json');
+        const startedAt = audioResult
+            ? audioResult.startTime
+            : this.recordingMetadata.get(guildId)?.startTime || null;
 
         const recording = {
             guildId,
             recordingPath,
             transcriptPath,
+            startedAt,
             stoppedAt: new Date().toISOString(),
-            files: fs.readdirSync(recordingPath),
+            files: this.listRecordingFiles(recordingPath, ['episode-complete.json']),
             mixedAudio: audioResult ? path.basename(audioResult.audioFilePath) : null,
             duration: audioResult ? audioResult.duration : 0,
             consent: {
@@ -466,12 +467,13 @@ class VoiceManager {
         // Clean up metadata
         this.recordingMetadata.delete(guildId);
 
-        // Post-process: transcribe full audio and generate clean transcript
+        // Post-process: generate clean transcript artifacts from transcript.jsonl
         try {
             console.log('[VoiceManager] Starting post-processing...');
             const postProcessResult = await this.postProcessor.processEpisode(recording);
             recording.postProcessed = true;
             recording.transcriptFile = postProcessResult.files?.transcript;
+            recording.transcriptJsonFile = postProcessResult.files?.transcriptJson;
             console.log('[VoiceManager] Post-processing complete');
         } catch (error) {
             console.error('[VoiceManager] Post-processing failed:', error.message);
@@ -479,7 +481,19 @@ class VoiceManager {
             recording.postProcessError = error.message;
         }
 
+        recording.files = this.listRecordingFiles(recordingPath, ['episode-complete.json']);
+        fs.writeFileSync(finalPath, JSON.stringify(recording, null, 2));
+
         return recording;
+    }
+
+    listRecordingFiles(recordingPath, additionalFiles = []) {
+        const files = new Set(fs.existsSync(recordingPath) ? fs.readdirSync(recordingPath) : []);
+        for (const file of additionalFiles) {
+            files.add(file);
+        }
+
+        return Array.from(files).sort();
     }
 
     /**
