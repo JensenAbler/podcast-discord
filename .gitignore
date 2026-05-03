@@ -1,0 +1,24 @@
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.local
+
+# Dependencies and caches
+node_modules/
+cached-audio/*.mp3
+logs/
+*.log
+tmp/
+temp/
+
+# Generated audio/session output
+recordings/
+production/
+episodes/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
