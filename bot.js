@@ -215,6 +215,8 @@ class AlphaClawdVoiceBot {
                 speaker: utterance.speaker,
                 speakerRole: utterance.speakerRole,
                 transcription: transcription,
+                rawTranscription: utterance.rawTranscription,
+                audioEvents: utterance.audioEvents,
                 transcriptionConfidence: utterance.transcriptionConfidence,
                 words: utterance.words,
                 language: utterance.language,
@@ -1133,6 +1135,8 @@ class AlphaClawdVoiceBot {
             speaker: u.speaker,
             speakerRole: u.speakerRole || 'guest',
             transcription: u.transcription,
+            rawTranscription: u.rawTranscription,
+            audioEvents: u.audioEvents || [],
             confidence: u.transcriptionConfidence,
             language: u.language,
             wordCount: u.words?.length || 0,
@@ -1146,7 +1150,7 @@ class AlphaClawdVoiceBot {
             lowConfidenceWords: (u.words || [])
                 .filter(w => (w.confidence || w.probability || 1) < 0.7)
                 .map(w => w.text || w.word),
-            audioEvents: (u.words || [])
+            wordAudioEvents: (u.words || [])
                 .filter(w => w.type === 'audio_event' || /\[.*\]/.test(w.text || w.word))
                 .map(w => w.text || w.word),
             duration: u.duration,
@@ -1169,8 +1173,9 @@ class AlphaClawdVoiceBot {
                     ? (u.words.reduce((sum, w) => sum + (w.confidence || 0), 0) / u.words.length).toFixed(2)
                     : 'N/A';
                 const lowConfCount = u.lowConfidenceWords.length;
-                const events = u.audioEvents.length > 0 ? ` [Events: ${u.audioEvents.join(', ')}]` : '';
-                return `${u.speaker}: "${u.transcription}" (avg conf: ${avgConfidence}, ${u.wordCount} words${lowConfCount > 0 ? `, ${lowConfCount} low-conf` : ''}${events})`;
+                const events = [...u.audioEvents, ...u.wordAudioEvents];
+                const eventSummary = events.length > 0 ? ` [Events: ${events.join(', ')}]` : '';
+                return `${u.speaker}: "${u.transcription}" (avg conf: ${avgConfidence}, ${u.wordCount} words${lowConfCount > 0 ? `, ${lowConfCount} low-conf` : ''}${eventSummary})`;
             }).join('\n');
             wordDataSummary = wordLevelSummary;
             messageText = `[Podcast Voice - Conversation Buffer]\n${formatted}\n\n[Word-Level Data]:\n${wordLevelSummary}`;

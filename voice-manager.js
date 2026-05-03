@@ -582,6 +582,7 @@ class VoiceManager {
             speaker: utterance.speaker || 'Unknown',
             speakerRole: utterance.speakerRole || 'guest',
             text: utterance.transcription || '',
+            rawTranscription: utterance.rawTranscription || null,
             textConfidence: utterance.transcriptionConfidence || null,
             language: utterance.language || null,
             duration: utterance.duration ?? 0,
@@ -608,9 +609,12 @@ class VoiceManager {
             lowConfidenceWords: (utterance.words || [])
                 .filter(w => (w.confidence || w.probability || 1) < 0.7)
                 .map(w => w.text || w.word),
-            audioEvents: (utterance.words || [])
-                .filter(w => w.type === 'audio_event' || /\[.*\]/.test(w.text || w.word))
-                .map(w => w.text || w.word)
+            audioEvents: [
+                ...(utterance.audioEvents || []),
+                ...(utterance.words || [])
+                    .filter(w => w.type === 'audio_event' || /\[.*\]/.test(w.text || w.word))
+                    .map(w => w.text || w.word)
+            ]
         };
 
         const entry = JSON.stringify(cleanEntry);

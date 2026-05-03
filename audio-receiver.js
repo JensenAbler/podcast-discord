@@ -470,20 +470,28 @@ class AudioReceiver {
         try {
             // Transcribe audio to text
             let transcription = '';
+            let rawTranscription = '';
             let transcriptionConfidence = 0;
             let wordLevelData = [];
             let language = null;
+            let audioEvents = [];
             const asrStartedAt = new Date().toISOString();
 
             if (this.enableTranscription && this.stt) {
                 try {
                     const sttResult = await this.stt.transcribe(audioBuffer);
-                    transcription = sttResult.text || '';
+                    rawTranscription = sttResult.text || '';
+                    const normalized = this.normalizeTranscription(rawTranscription);
+                    transcription = normalized.transcription;
+                    audioEvents = normalized.audioEvents;
                     transcriptionConfidence = sttResult.confidence || 0;
                     wordLevelData = sttResult.words || [];
                     language = sttResult.language || null;
 
                     console.log(`[AudioReceiver] Transcription: "${transcription}" (${wordLevelData.length} words)`);
+                    if (rawTranscription && rawTranscription !== transcription) {
+                        console.log(`[AudioReceiver] Raw transcription normalized from: "${rawTranscription}"`);
+                    }
                     console.log(`[AudioReceiver] STT result - confidence: ${transcriptionConfidence}, language: ${language}`);
 
                     // Debug: Log full STT result structure (first word as sample)
@@ -511,6 +519,8 @@ class AudioReceiver {
                 speaker: speakerInfo.name,
                 speakerRole: speakerInfo.role,
                 transcription: transcription,
+                rawTranscription: rawTranscription,
+                audioEvents,
                 transcriptionConfidence: transcriptionConfidence,
                 words: wordLevelData, // Include full word-level data
                 language: language,
@@ -542,6 +552,44 @@ class AudioReceiver {
         } catch (error) {
             this.options.onError(error);
         }
+    }
+
+    normalizeTranscription(text) {
+        const raw = String(text || '').trim();
+        if (!raw) {
+            return {
+                transcription: '',
+                audioEvents: []
+            };
+        }
+
+        if (this.isLikelyLaughterTranscription(raw)) {
+            return {
+                transcription: '[laughs]',
+                audioEvents: ['laughter']
+            };
+        }
+
+        return {
+            transcription: raw,
+            audioEvents: []
+        };
+    }
+
+    isLikelyLaughterTranscription(text) {
+        const compact = String(text || '')
+            .normalize('NFKC')
+            .toLowerCase()
+            .replace(/[\s.,!?;:'"\u201c\u201d\u2018\u2019\u3002\uff01\uff1f\u3001\uff0c\u2026~\-\u2014_()[\]{}]+/gu, '');
+
+        if (!compact) return false;
+
+        if (/^(ha|he|hi|ho|hu){2,}$/.test(compact)) return true;
+        if (/^(haha|hehe|hihi|hoho|huhu)+$/.test(compact)) return true;
+        if (/^(lol|lmao|rofl)+$/.test(compact)) return true;
+        if (/^[\u5475\u54c8\u563f\u563b\u55ec]{2,}$/u.test(compact)) return true;
+
+        return false;
     }
 
     /**

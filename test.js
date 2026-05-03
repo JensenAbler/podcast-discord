@@ -414,7 +414,54 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 9: Transcript timing uses bot playback metadata');
+    console.log('\nTest 9: Audio Receiver normalizes laughter-only ASR');
+    try {
+        const fishLaugh = '\u5475\u5475\u5475\u5475\u5475\u5475\u3002';
+        const utterances = [];
+        const receiver = new AudioReceiver({
+            stt: {
+                transcribe: async () => ({
+                    text: fishLaugh,
+                    confidence: 0.8,
+                    words: [{ text: fishLaugh, type: 'segment' }],
+                    language: 'en'
+                })
+            },
+            onUtterance: (utterance) => utterances.push(utterance)
+        });
+
+        await receiver.processUtteranceSnapshot({
+            userId: 'user-laugh',
+            speakerInfo: {
+                name: 'Jensen',
+                role: 'guest'
+            },
+            audioBuffer: Buffer.alloc(48000),
+            startTime: Date.now(),
+            duration: 500,
+            timestamp: '2026-05-03T00:00:00.000Z',
+            speechStartedAt: '2026-05-03T00:00:00.000Z',
+            speechEndedAt: '2026-05-03T00:00:00.500Z',
+            speechDuration: 500
+        });
+
+        if (
+            utterances.length !== 1 ||
+            utterances[0].transcription !== '[laughs]' ||
+            utterances[0].rawTranscription !== fishLaugh ||
+            utterances[0].audioEvents[0] !== 'laughter'
+        ) {
+            throw new Error(`Laughter ASR was not normalized/preserved: ${JSON.stringify(utterances[0])}`);
+        }
+
+        console.log('  Laughter-only ASR is normalized to [laughs] with raw text preserved');
+        passed++;
+    } catch (error) {
+        console.log(`  Laughter normalization failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 10: Transcript timing uses bot playback metadata');
     try {
         const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'podcast-discord-transcript-'));
         const guildId = 'guild-transcript';
