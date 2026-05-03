@@ -537,10 +537,15 @@ class AudioReceiver {
 
             // Keep audioBuffer for recording purposes (for mixed-audio.wav)
             // but DON'T include it in the utterance object for transcript.jsonl
+            // Use detector-derived speech start so the recorder mix lines up
+            // with the transcript (renderer also keys off speechStartedAt).
+            // buffer.startTime tracks the first chunk, which can precede real
+            // speech when Discord's voice activity opens on a breath or click.
+            const speechStartedAtMs = Date.parse(speechStartedAt);
             const utteranceForRecording = {
                 ...utterance,
-                audioBuffer: audioBuffer, // Only for internal recording use
-                startTime: startTime // When speech started (for correct timestamp alignment)
+                audioBuffer: audioBuffer,
+                startTime: Number.isFinite(speechStartedAtMs) ? speechStartedAtMs : startTime
             };
 
             // Track in conversation history

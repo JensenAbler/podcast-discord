@@ -526,7 +526,53 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 11: Audio Recorder buffers bot audio without throwing');
+    console.log('\nTest 11: Speaker audio mixes at detected speech start, not first-chunk time');
+    try {
+        const utterances = [];
+        const receiver = new AudioReceiver({
+            stt: {
+                transcribe: async () => ({
+                    text: 'late speech after pre-speech noise',
+                    confidence: 0.9,
+                    words: [],
+                    language: 'en'
+                })
+            },
+            onUtterance: (utterance) => utterances.push(utterance)
+        });
+
+        const chunkStartMs = Date.parse('2026-05-03T20:49:00.000Z');
+        const speechStartIso = '2026-05-03T20:49:07.000Z';
+        const speechEndIso = '2026-05-03T20:49:10.000Z';
+
+        await receiver.processUtteranceSnapshot({
+            userId: 'user-late-speech',
+            speakerInfo: { name: 'Jensen', role: 'guest' },
+            audioBuffer: Buffer.alloc(48000),
+            startTime: chunkStartMs,
+            duration: 10000,
+            timestamp: speechStartIso,
+            speechStartedAt: speechStartIso,
+            speechEndedAt: speechEndIso,
+            speechDuration: 3000
+        });
+
+        if (utterances.length !== 1) {
+            throw new Error(`Expected 1 utterance, got ${utterances.length}`);
+        }
+        const expected = Date.parse(speechStartIso);
+        if (utterances[0].startTime !== expected) {
+            throw new Error(`Expected recording startTime=${expected} (speech start), got ${utterances[0].startTime} (chunk start was ${chunkStartMs})`);
+        }
+
+        console.log('  Recording startTime equals detected speech start, not first-chunk time');
+        passed++;
+    } catch (error) {
+        console.log(`  Speaker mix alignment failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 12: Audio Recorder buffers bot audio without throwing');
     try {
         const { AudioRecorder } = require('./audio-recorder');
         const recorder = new AudioRecorder({ outputFormat: 'wav' });
