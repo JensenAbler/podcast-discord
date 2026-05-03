@@ -10,7 +10,8 @@ const {
     AudioReceiver,
     FishAudioProvider,
     GatewayBridge,
-    PodcastGenerator
+    PodcastGenerator,
+    AlphaClawdVoiceBot
 } = require('./index');
 const { EndBehaviorType } = require('@discordjs/voice');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
@@ -233,7 +234,48 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7: Audio Receiver keeps subscription across silence');
+    console.log('\nTest 7: Idle decision respects in-flight direct responses');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-a';
+        bot.generatorMode = 'direct';
+        bot.RecordingState = { RECORDING: 'RECORDING' };
+        bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
+        bot.lastParticipantSpeechAt = new Map([[guildId, Date.now()]]);
+        bot.directResponseInFlight = new Set();
+        bot.conversationBuffer = {
+            getState: () => ({
+                state: BufferState.IDLE,
+                utteranceCount: 0,
+                activeSpeakerCount: 0,
+                pendingAsrCount: 0
+            })
+        };
+        bot.voiceManager = {
+            getPlaybackStatus: () => ({
+                isPlaying: false,
+                queueLength: 0
+            })
+        };
+
+        if (!bot.canRunIdleDecision(guildId)) {
+            throw new Error('Idle decision should be allowed when the bot is fully idle');
+        }
+
+        bot.directResponseInFlight.add(guildId);
+
+        if (bot.canRunIdleDecision(guildId)) {
+            throw new Error('Idle decision was allowed during an in-flight direct response');
+        }
+
+        console.log('  Idle checks wait while direct response generation/synthesis is in progress');
+        passed++;
+    } catch (error) {
+        console.log(`  Idle decision guard failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 8: Audio Receiver keeps subscription across silence');
     try {
         const utterances = [];
         const fakeStream = new PassThrough();

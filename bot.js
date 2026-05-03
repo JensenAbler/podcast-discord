@@ -95,6 +95,7 @@ class AlphaClawdVoiceBot {
         this.idleDecisionIntervalMs = Number(process.env.PODCAST_IDLE_DECISION_INTERVAL_MS || 5000);
         this.idleDecisionTimers = new Map(); // guildId -> interval
         this.idleDecisionInFlight = new Set(); // guildId
+        this.directResponseInFlight = new Set(); // guildId
         this.lastParticipantSpeechAt = new Map(); // guildId -> ms timestamp
 
         // Recording states
@@ -281,6 +282,7 @@ class AlphaClawdVoiceBot {
         }
 
         this.idleDecisionInFlight.delete(guildId);
+        this.directResponseInFlight.delete(guildId);
         this.lastParticipantSpeechAt.delete(guildId);
     }
 
@@ -288,6 +290,7 @@ class AlphaClawdVoiceBot {
         if (this.useGatewayGenerator()) return false;
         if (this.recordingState.get(guildId) !== this.RecordingState.RECORDING) return false;
         if (!this.lastParticipantSpeechAt.has(guildId)) return false;
+        if (this.directResponseInFlight.has(guildId)) return false;
 
         const bufferState = this.conversationBuffer.getState();
         if (
@@ -1199,6 +1202,8 @@ class AlphaClawdVoiceBot {
     }
 
     async handleDirectGeneratorFlush(guildId, utterances, transcript, wordData) {
+        this.directResponseInFlight.add(guildId);
+
         try {
             const response = await this.podcastGenerator.generate({
                 utterances,
@@ -1222,38 +1227,49 @@ class AlphaClawdVoiceBot {
             console.error('[Bot] Direct generator failed:', error);
             const lastSpeaker = utterances[utterances.length - 1]?.speaker || 'there';
             await this.fallbackResponse(guildId, lastSpeaker);
+        } finally {
+            this.directResponseInFlight.delete(guildId);
         }
     }
 
     async speakDirectGeneratorResponse(guildId, response, options = {}) {
+        const alreadyInFlight = this.directResponseInFlight.has(guildId);
+        this.directResponseInFlight.add(guildId);
         const source = options.source || 'buffer';
-        console.log(`[Bot] Direct generator response (${source}): "${response.speech.substring(0, 50)}..."`);
 
-        this.voiceManager.saveTranscriptEntry(guildId, {
-            speaker: 'Alpha-Clawd',
-            speakerRole: 'host',
-            transcription: response.speech,
-            timestamp: new Date().toISOString()
-        });
+        try {
+            console.log(`[Bot] Direct generator response (${source}): "${response.speech.substring(0, 50)}..."`);
 
-        // Play a cached filler only after the generator decides to answer.
-        if (options.playFiller !== false) {
-            await this.playFillerClip(guildId);
+            this.voiceManager.saveTranscriptEntry(guildId, {
+                speaker: 'Alpha-Clawd',
+                speakerRole: 'host',
+                transcription: response.speech,
+                timestamp: new Date().toISOString()
+            });
+
+            // Play a cached filler only after the generator decides to answer.
+            if (options.playFiller !== false) {
+                await this.playFillerClip(guildId);
+            }
+
+            const audioBuffer = await this.voiceProvider.synthesize(response.speech, {
+                voiceId: this.voiceId
+            });
+
+            this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
+            await this.voiceManager.speak(guildId, audioBuffer);
+
+            if (options.rememberAssistant) {
+                this.podcastGenerator.rememberAssistantResponse(response);
+            }
+
+            console.log(`[Bot] Direct generator playback complete (${source}), starting cooldown`);
+            this.conversationBuffer.startCooldown();
+        } finally {
+            if (!alreadyInFlight) {
+                this.directResponseInFlight.delete(guildId);
+            }
         }
-
-        const audioBuffer = await this.voiceProvider.synthesize(response.speech, {
-            voiceId: this.voiceId
-        });
-
-        this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
-        await this.voiceManager.speak(guildId, audioBuffer);
-
-        if (options.rememberAssistant) {
-            this.podcastGenerator.rememberAssistantResponse(response);
-        }
-
-        console.log(`[Bot] Direct generator playback complete (${source}), starting cooldown`);
-        this.conversationBuffer.startCooldown();
     }
 
     /**
