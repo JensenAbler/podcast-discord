@@ -171,12 +171,34 @@ class AudioRecorder {
      */
     addSpeakerAudio(userId, pcmBuffer, options = {}) {
         if (!this.isRecording || this.isPaused) return;
+        if (!Buffer.isBuffer(pcmBuffer) || pcmBuffer.length === 0) return;
 
         const volume = options.volume || 1.0;
-        // Use provided startTime (when speech began) or fall back to current time
-        const timestamp = options.startTime 
-            ? options.startTime - this.startTime 
+        const hasProvidedStartTime = options.startTime !== undefined && options.startTime !== null;
+        const providedStartTime = hasProvidedStartTime ? Number(options.startTime) : NaN;
+        // Use provided startTime (when speech began) or fall back to current time.
+        // Some utterances can finish ASR after recording starts even though their
+        // audio began before it, so normalize those before they reach FFmpeg.
+        let timestamp = hasProvidedStartTime && Number.isFinite(providedStartTime)
+            ? providedStartTime - this.startTime
             : Date.now() - this.startTime;
+        let buffer = pcmBuffer;
+
+        if (!Number.isFinite(timestamp)) {
+            console.warn(`[AudioRecorder] Skipping speaker audio for ${userId}: invalid timestamp ${timestamp}`);
+            return;
+        }
+
+        if (timestamp < 0) {
+            const trimMs = -timestamp;
+            buffer = this.trimPcmStart(buffer, trimMs);
+            if (buffer.length === 0) {
+                console.warn(`[AudioRecorder] Skipping speaker audio for ${userId}: chunk ended before recording start`);
+                return;
+            }
+            console.warn(`[AudioRecorder] Trimmed ${Math.round(trimMs)}ms of pre-recording speaker audio for ${userId}`);
+            timestamp = 0;
+        }
 
         // Store speaker stream info
         if (!this.speakerStreams.has(userId)) {
@@ -194,11 +216,53 @@ class AudioRecorder {
         // Buffer with timestamp for proper mixing (don't write immediately)
         this.speakerAudioBuffer.push({
             userId,
-            buffer: pcmBuffer,
+            buffer,
             timestamp,
             volume
         });
         this.stats.speakerAudioChunks++;
+    }
+
+    /**
+     * Trim raw PCM from the start of a chunk, aligned to whole audio frames.
+     * @param {Buffer} buffer - PCM audio data
+     * @param {number} trimMs - Milliseconds to remove
+     * @returns {Buffer}
+     */
+    trimPcmStart(buffer, trimMs) {
+        if (!Number.isFinite(trimMs) || trimMs <= 0) return buffer;
+
+        const bytesPerSample = this.options.bitDepth / 8;
+        const frameSize = this.options.channels * bytesPerSample;
+        const framesToTrim = Math.ceil((trimMs / 1000) * this.options.sampleRate);
+        const bytesToTrim = framesToTrim * frameSize;
+
+        if (!Number.isFinite(bytesToTrim) || bytesToTrim <= 0) return buffer;
+        if (bytesToTrim >= buffer.length) return Buffer.alloc(0);
+
+        return buffer.slice(bytesToTrim);
+    }
+
+    /**
+     * Convert a chunk timestamp to a safe FFmpeg adelay value.
+     * @param {number} timestamp - Chunk offset in milliseconds
+     * @param {string} label - Chunk label for diagnostics
+     * @returns {number|null}
+     */
+    getSafeDelayMs(timestamp, label) {
+        const delayMs = Math.round(Number(timestamp));
+
+        if (!Number.isFinite(delayMs)) {
+            console.warn(`[AudioRecorder] Skipping ${label}: invalid delay ${timestamp}`);
+            return null;
+        }
+
+        if (delayMs < 0) {
+            console.warn(`[AudioRecorder] Clamping ${label}: negative delay ${delayMs}ms`);
+            return 0;
+        }
+
+        return delayMs;
     }
 
     /**
@@ -348,11 +412,15 @@ class AudioRecorder {
             // Process speaker audio chunks (convert PCM to temp files)
             for (let i = 0; i < this.speakerAudioBuffer.length; i++) {
                 const chunk = this.speakerAudioBuffer[i];
+                const delayMs = this.getSafeDelayMs(chunk.timestamp, `speaker chunk ${i}`);
+                if (delayMs === null || !chunk.buffer || chunk.buffer.length === 0) {
+                    continue;
+                }
+
                 const tempFile = path.join(tempDir, `speaker_chunk_${i}.raw`);
                 fs.writeFileSync(tempFile, chunk.buffer);
                 inputs.push('-f', 's16le', '-ar', '48000', '-ac', '2', '-i', tempFile);
 
-                const delayMs = Math.round(chunk.timestamp);
                 const volume = chunk.volume || 1.0;
 
                 // Create delayed stream with volume adjustment
@@ -364,11 +432,15 @@ class AudioRecorder {
             // Process bot audio chunks (MP3 from ElevenLabs)
             for (let i = 0; i < this.botAudioBuffer.length; i++) {
                 const chunk = this.botAudioBuffer[i];
+                const delayMs = this.getSafeDelayMs(chunk.timestamp, `bot chunk ${i}`);
+                if (delayMs === null || !chunk.buffer || chunk.buffer.length === 0) {
+                    continue;
+                }
+
                 const tempFile = path.join(tempDir, `bot_chunk_${i}.mp3`);
                 fs.writeFileSync(tempFile, chunk.buffer);
                 inputs.push('-i', tempFile);
 
-                const delayMs = Math.round(chunk.timestamp);
                 const volume = chunk.volume || 0.9;
 
                 delays.push(`[${inputIndex}:a]adelay=delays=${delayMs}|${delayMs},volume=${volume}[bot${i}];`);
@@ -377,7 +449,12 @@ class AudioRecorder {
             }
 
             // Build the amix filter - mix main audio with all streams
-            const totalInputs = 1 + this.speakerAudioBuffer.length + this.botAudioBuffer.length;
+            const totalInputs = 1 + mixes.length;
+            if (mixes.length === 0) {
+                console.warn('[AudioRecorder] No valid audio chunks to mix');
+                return;
+            }
+
             const mixFilter = `${mixes.join('')}[0:a]amix=inputs=${totalInputs}:duration=longest:dropout_transition=0.5[out]`;
 
             const filterComplex = [...delays, mixFilter].join('');
