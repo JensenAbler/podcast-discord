@@ -7,7 +7,9 @@
  */
 
 const { Readable } = require('stream');
-const { WebSocketSession, TTSRequest } = require('fish-audio-sdk');
+const WebSocket = require('ws');
+const msgpack = require('msgpack-lite');
+const { TTSRequest } = require('fish-audio-sdk');
 
 function envFlagEnabled(value, defaultValue = true) {
     if (value === undefined || value === null || value === '') {
@@ -145,7 +147,6 @@ class FishAudioProvider {
             }
         });
 
-        const ws = new WebSocketSession(this.apiKey, this.wsBaseUrl);
         let totalBytes = 0;
         let chunkCount = 0;
 
@@ -154,7 +155,7 @@ class FishAudioProvider {
         try {
             const processedTextStream = this.createProcessedTextStream(firstChunk, iterator);
 
-            for await (const audioChunk of ws.tts(request, processedTextStream)) {
+            for await (const audioChunk of this.streamWebSocketAudio(request.toJSON(), processedTextStream)) {
                 const buffer = Buffer.from(audioChunk);
                 totalBytes += buffer.length;
                 chunkCount++;
@@ -170,13 +171,191 @@ class FishAudioProvider {
         } catch (error) {
             console.error('[Fish Audio WS] Streaming synthesis failed:', error);
             throw error;
-        } finally {
-            try {
-                await ws.close();
-            } catch (error) {
-                console.error('[Fish Audio WS] Error closing WebSocket session:', error);
-            }
         }
+    }
+
+    async *streamWebSocketAudio(request, textStream) {
+        const ws = new WebSocket(`${this.wsBaseUrl}/v1/tts/live`, {
+            headers: {
+                Authorization: `Bearer ${this.apiKey}`
+            }
+        });
+        const queue = this.createAudioQueue();
+        let sawFinish = false;
+
+        ws.on('message', (message) => {
+            let data;
+            try {
+                data = msgpack.decode(message);
+            } catch (error) {
+                queue.fail(error);
+                return;
+            }
+
+            if (data.event === 'audio') {
+                queue.push(Buffer.from(data.audio));
+                return;
+            }
+
+            if (data.event === 'finish') {
+                sawFinish = true;
+                if (data.reason === 'error') {
+                    queue.fail(new Error('Fish Audio live TTS finished with reason=error'));
+                } else {
+                    queue.finish();
+                }
+                return;
+            }
+
+            console.log(`[Fish Audio WS] Ignoring event: ${JSON.stringify(data)}`);
+        });
+
+        ws.on('error', (error) => {
+            queue.fail(error);
+        });
+
+        ws.on('close', (code, reason) => {
+            if (!sawFinish) {
+                queue.fail(new Error(`Fish Audio live WebSocket closed before finish (code=${code}, reason=${reason.toString() || 'none'})`));
+                return;
+            }
+
+            queue.finish();
+        });
+
+        await this.waitForWebSocketOpen(ws);
+
+        let sendError = null;
+        const sendTask = this.sendStreamingText(ws, request, textStream).catch((error) => {
+            sendError = error;
+            queue.fail(error);
+        });
+
+        try {
+            for await (const audioChunk of queue) {
+                yield audioChunk;
+            }
+
+            await sendTask;
+            if (sendError) {
+                throw sendError;
+            }
+        } finally {
+            ws.close();
+        }
+    }
+
+    async sendStreamingText(ws, request, textStream) {
+        this.sendWebSocketEvent(ws, {
+            event: 'start',
+            request: this.compactObject(request)
+        });
+
+        for await (const text of textStream) {
+            this.sendWebSocketEvent(ws, {
+                event: 'text',
+                text
+            });
+        }
+
+        this.sendWebSocketEvent(ws, { event: 'flush' });
+        this.sendWebSocketEvent(ws, { event: 'stop' });
+    }
+
+    sendWebSocketEvent(ws, event) {
+        if (ws.readyState !== WebSocket.OPEN) {
+            throw new Error('Fish Audio live WebSocket is not open');
+        }
+
+        ws.send(msgpack.encode(event));
+    }
+
+    waitForWebSocketOpen(ws) {
+        return new Promise((resolve, reject) => {
+            ws.once('open', resolve);
+            ws.once('error', reject);
+            ws.once('close', (code, reason) => {
+                reject(new Error(`Fish Audio live WebSocket closed before open (code=${code}, reason=${reason.toString() || 'none'})`));
+            });
+        });
+    }
+
+    createAudioQueue() {
+        const items = [];
+        const waiters = [];
+        let finished = false;
+        let failure = null;
+
+        const settle = () => {
+            while (waiters.length > 0) {
+                const waiter = waiters.shift();
+                if (failure) {
+                    waiter.reject(failure);
+                } else {
+                    waiter.resolve({ done: true });
+                }
+            }
+        };
+
+        return {
+            push(item) {
+                if (finished || failure) return;
+
+                if (waiters.length > 0) {
+                    waiters.shift().resolve({ value: item, done: false });
+                    return;
+                }
+
+                items.push(item);
+            },
+            finish() {
+                finished = true;
+                settle();
+            },
+            fail(error) {
+                failure = error;
+                settle();
+            },
+            async next() {
+                if (items.length > 0) {
+                    return { value: items.shift(), done: false };
+                }
+                if (failure) {
+                    throw failure;
+                }
+                if (finished) {
+                    return { done: true };
+                }
+
+                return new Promise((resolve, reject) => {
+                    waiters.push({ resolve, reject });
+                });
+            },
+            [Symbol.asyncIterator]() {
+                return this;
+            }
+        };
+    }
+
+    compactObject(value) {
+        if (Array.isArray(value)) {
+            return value
+                .map(item => this.compactObject(item))
+                .filter(item => item !== undefined);
+        }
+
+        if (value && typeof value === 'object' && !Buffer.isBuffer(value)) {
+            const compacted = {};
+            for (const [key, item] of Object.entries(value)) {
+                const compactedItem = this.compactObject(item);
+                if (compactedItem !== undefined) {
+                    compacted[key] = compactedItem;
+                }
+            }
+            return compacted;
+        }
+
+        return value === undefined ? undefined : value;
     }
 
     getTextIterator(textChunks) {
