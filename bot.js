@@ -96,6 +96,7 @@ class AlphaClawdVoiceBot {
         this.idleDecisionIntervalMs = Number(process.env.PODCAST_IDLE_DECISION_INTERVAL_MS || 5000);
         this.idleDecisionTimers = new Map(); // guildId -> interval
         this.idleDecisionInFlight = new Set(); // guildId
+        this.idleDecisionHandledSpeechAt = new Map(); // guildId -> ms timestamp of participant speech already handled by idle logic
         this.directResponseInFlight = new Set(); // guildId
         this.lastParticipantSpeechAt = new Map(); // guildId -> ms timestamp
 
@@ -280,6 +281,7 @@ class AlphaClawdVoiceBot {
 
         this.stopIdleDecisionLoop(guildId);
         this.lastParticipantSpeechAt.delete(guildId);
+        this.idleDecisionHandledSpeechAt.delete(guildId);
 
         const timer = setInterval(() => {
             this.handleIdleDecisionTick(guildId).catch((error) => {
@@ -306,6 +308,7 @@ class AlphaClawdVoiceBot {
         this.idleDecisionInFlight.delete(guildId);
         this.directResponseInFlight.delete(guildId);
         this.lastParticipantSpeechAt.delete(guildId);
+        this.idleDecisionHandledSpeechAt.delete(guildId);
     }
 
     canRunIdleDecision(guildId) {
@@ -313,6 +316,12 @@ class AlphaClawdVoiceBot {
         if (this.recordingState.get(guildId) !== this.RecordingState.RECORDING) return false;
         if (!this.lastParticipantSpeechAt.has(guildId)) return false;
         if (this.directResponseInFlight.has(guildId)) return false;
+
+        const lastSpeechAt = this.lastParticipantSpeechAt.get(guildId);
+        const handledSpeechAt = this.idleDecisionHandledSpeechAt.get(guildId) || 0;
+        if (Number.isFinite(lastSpeechAt) && handledSpeechAt >= lastSpeechAt) {
+            return false;
+        }
 
         const bufferState = this.conversationBuffer.getState();
         if (
@@ -326,6 +335,12 @@ class AlphaClawdVoiceBot {
 
         const playback = this.voiceManager.getPlaybackStatus(guildId);
         return !playback.isPlaying && playback.queueLength === 0;
+    }
+
+    markIdleDecisionHandled(guildId, speechAt = this.lastParticipantSpeechAt.get(guildId)) {
+        if (Number.isFinite(speechAt)) {
+            this.idleDecisionHandledSpeechAt.set(guildId, speechAt);
+        }
     }
 
     async handleIdleDecisionTick(guildId) {
@@ -342,6 +357,7 @@ class AlphaClawdVoiceBot {
         try {
             const lastSpeechAt = this.lastParticipantSpeechAt.get(guildId) || Date.now();
             const idleSeconds = (Date.now() - lastSpeechAt) / 1000;
+            this.markIdleDecisionHandled(guildId, lastSpeechAt);
 
             console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s without participant speech`);
             const response = await this.podcastGenerator.generate({
@@ -1393,6 +1409,7 @@ class AlphaClawdVoiceBot {
         try {
             const generatedAt = response.generatedAt || new Date().toISOString();
             console.log(`[Bot] Direct generator response (${source}): "${response.speech.substring(0, 50)}..."`);
+            this.markIdleDecisionHandled(guildId);
 
             // Play a cached filler only after the generator decides to answer.
             if (options.playFiller !== false) {
@@ -1458,6 +1475,8 @@ class AlphaClawdVoiceBot {
         const text = fallbacks[Math.floor(Math.random() * fallbacks.length)];
         
         try {
+            this.markIdleDecisionHandled(guildId);
+
             const audioBuffer = await this.voiceProvider.synthesize(text, {
                 voiceId: this.voiceId
             });

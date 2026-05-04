@@ -307,10 +307,12 @@ async function runTests() {
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-a';
+        const firstSpeechAt = Date.now() - 1000;
         bot.generatorMode = 'direct';
         bot.RecordingState = { RECORDING: 'RECORDING' };
         bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
-        bot.lastParticipantSpeechAt = new Map([[guildId, Date.now()]]);
+        bot.lastParticipantSpeechAt = new Map([[guildId, firstSpeechAt]]);
+        bot.idleDecisionHandledSpeechAt = new Map();
         bot.directResponseInFlight = new Set();
         bot.conversationBuffer = {
             getState: () => ({
@@ -337,7 +339,20 @@ async function runTests() {
             throw new Error('Idle decision was allowed during an in-flight direct response');
         }
 
-        console.log('  Idle checks wait while direct response generation/synthesis is in progress');
+        bot.directResponseInFlight.delete(guildId);
+        bot.markIdleDecisionHandled(guildId);
+
+        if (bot.canRunIdleDecision(guildId)) {
+            throw new Error('Idle decision was allowed after this silence period was already handled');
+        }
+
+        bot.lastParticipantSpeechAt.set(guildId, firstSpeechAt + 2000);
+
+        if (!bot.canRunIdleDecision(guildId)) {
+            throw new Error('Idle decision did not re-arm after fresh participant speech');
+        }
+
+        console.log('  Idle checks wait while direct response generation/synthesis is in progress and do not repeat for handled silence');
         passed++;
     } catch (error) {
         console.log(`  Idle decision guard failed: ${error.message}`);
