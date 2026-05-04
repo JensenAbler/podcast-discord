@@ -118,7 +118,8 @@ class VoiceManager {
             onUtterance: (utterance) => this.handleUtterance(guildId, utterance),
             onSpeakingStart: (userId) => this.handleSpeakingStart(guildId, userId),
             onSpeakingStop: (userId) => this.handleSpeakingStop(guildId, userId),
-            onAsrPending: (userId, metadata) => this.handleAsrPending(guildId, userId, metadata),
+            onEndpointing: (userId, metadata) => this.handleEndpointing(guildId, userId, metadata),
+            onAsrDispatched: (userId, metadata) => this.handleAsrDispatched(guildId, userId, metadata),
             onError: (error) => console.error('[VoiceManager] Receiver error:', error)
         });
         this.receivers.set(guildId, receiver);
@@ -324,14 +325,26 @@ class VoiceManager {
     }
 
     /**
-     * Handle a receiver-announced pending ASR candidate.
+     * Handle a receiver-announced endpoint debounce window.
      * @param {string} guildId - Discord guild ID
      * @param {string} userId - Discord user ID
-     * @param {Object} metadata - Candidate metadata
+     * @param {Object} metadata - { active, reason, debounceMs, ... }
      */
-    handleAsrPending(guildId, userId, metadata = {}) {
-        if (this.onAsrPending) {
-            this.onAsrPending(guildId, userId, metadata);
+    handleEndpointing(guildId, userId, metadata = {}) {
+        if (this.onEndpointing) {
+            this.onEndpointing(guildId, userId, metadata);
+        }
+    }
+
+    /**
+     * Handle a receiver-announced ASR dispatch (Fish call genuinely in flight).
+     * @param {string} guildId - Discord guild ID
+     * @param {string} userId - Discord user ID
+     * @param {Object} metadata - { reason, audioBytes, speechDuration }
+     */
+    handleAsrDispatched(guildId, userId, metadata = {}) {
+        if (this.onAsrDispatched) {
+            this.onAsrDispatched(guildId, userId, metadata);
         }
     }
 
@@ -735,11 +748,19 @@ class VoiceManager {
     }
 
     /**
-     * Set the ASR pending handler callback
-     * @param {Function} handler - (guildId, userId, metadata) => void
+     * Set the endpoint-debounce handler callback.
+     * @param {Function} handler - (guildId, userId, { active, reason, debounceMs, ... }) => void
      */
-    setAsrPendingHandler(handler) {
-        this.onAsrPending = handler;
+    setEndpointingHandler(handler) {
+        this.onEndpointing = handler;
+    }
+
+    /**
+     * Set the ASR-dispatched handler callback (Fish call in flight).
+     * @param {Function} handler - (guildId, userId, { reason, audioBytes, speechDuration }) => void
+     */
+    setAsrDispatchedHandler(handler) {
+        this.onAsrDispatched = handler;
     }
 
     /**

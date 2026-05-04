@@ -347,12 +347,14 @@ async function runTests() {
     console.log('\nTest 8: Audio Receiver keeps subscription across silence');
     try {
         const utterances = [];
-        const pendingAsr = [];
+        const dispatched = [];
+        const endpointing = [];
         const fakeStream = new PassThrough();
         let subscribeOptions = null;
 
         const receiver = new AudioReceiver({
             botUserId: 'bot-user',
+            endpointingDebounce: 50,
             stt: {
                 transcribe: async () => ({
                     text: 'hello from the buffer',
@@ -361,7 +363,8 @@ async function runTests() {
                 })
             },
             onUtterance: (utterance) => utterances.push(utterance),
-            onAsrPending: (userId, metadata) => pendingAsr.push({ userId, metadata })
+            onEndpointing: (userId, metadata) => endpointing.push({ userId, metadata }),
+            onAsrDispatched: (userId, metadata) => dispatched.push({ userId, metadata })
         });
 
         receiver.start({
@@ -392,6 +395,9 @@ async function runTests() {
         if (!buffer || buffer.chunks.length !== 0 || buffer.startTime !== null) {
             throw new Error('Utterance buffer did not roll over cleanly');
         }
+        if (buffer.endpointTimer !== null) {
+            throw new Error('Endpoint timer was not cleared on snapshot');
+        }
         if (buffer.detector.hasSilenceBeenDetected()) {
             throw new Error('Silence detector was not reset');
         }
@@ -401,13 +407,18 @@ async function runTests() {
         if (!utterances[0].speechStartedAt || !utterances[0].speechEndedAt || !utterances[0].asrCompletedAt) {
             throw new Error(`Snapshot timing metadata missing: ${JSON.stringify(utterances[0])}`);
         }
-        if (pendingAsr.length !== 1 || pendingAsr[0].metadata.reason !== 'speaking stop with buffered audio') {
-            throw new Error(`Receiver did not emit exactly one ASR pending candidate: ${JSON.stringify(pendingAsr)}`);
+        if (dispatched.length !== 1 || dispatched[0].metadata.reason !== 'test silence') {
+            throw new Error(`Receiver did not emit exactly one ASR dispatch: ${JSON.stringify(dispatched)}`);
+        }
+        const armEvents = endpointing.filter(e => e.metadata.active === true);
+        const cancelEvents = endpointing.filter(e => e.metadata.active === false);
+        if (armEvents.length !== 1 || cancelEvents.length !== 1) {
+            throw new Error(`Expected 1 endpoint arm + 1 cancel, got: ${JSON.stringify(endpointing)}`);
         }
 
         receiver.destroy();
 
-        console.log('  Audio receiver rolls over chunks without closing the subscription');
+        console.log('  Audio receiver rolls over chunks; dispatch and endpointing events fire correctly');
         passed++;
     } catch (error) {
         console.log(`  Audio receiver lifecycle failed: ${error.message}`);
@@ -523,6 +534,167 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Transcript timing failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 11a: Endpoint debounce flushes after Discord stop without further chunks');
+    try {
+        const utterances = [];
+        const dispatched = [];
+        const endpointing = [];
+
+        const receiver = new AudioReceiver({
+            botUserId: 'bot-user',
+            endpointingDebounce: 60,
+            stt: {
+                transcribe: async () => ({
+                    text: 'twenty nine palms',
+                    confidence: 0.9,
+                    words: []
+                })
+            },
+            onUtterance: (u) => utterances.push(u),
+            onEndpointing: (userId, metadata) => endpointing.push({ userId, metadata }),
+            onAsrDispatched: (userId, metadata) => dispatched.push({ userId, metadata })
+        });
+
+        receiver.start({
+            receiver: {
+                speaking: { on: () => {} },
+                subscribe: () => new PassThrough()
+            }
+        });
+
+        receiver.handleUserStartSpeaking('user-29palms');
+        receiver.handleAudioChunk('user-29palms', createSpeechPcm(250));
+        receiver.handleUserStopSpeaking('user-29palms');
+
+        if (dispatched.length !== 0) {
+            throw new Error('ASR dispatched before debounce expiry');
+        }
+        const armed = endpointing.find(e => e.metadata.active === true);
+        if (!armed) {
+            throw new Error('Endpoint timer was not armed on Discord stop');
+        }
+
+        await sleep(150);
+        await receiver.waitForPendingUtterances();
+
+        if (dispatched.length !== 1) {
+            throw new Error(`Expected 1 ASR dispatch after debounce, got ${dispatched.length}`);
+        }
+        if (dispatched[0].metadata.reason !== 'endpoint debounce expired') {
+            throw new Error(`Dispatch reason should be 'endpoint debounce expired', got ${dispatched[0].metadata.reason}`);
+        }
+        if (utterances.length !== 1 || utterances[0].transcription !== 'twenty nine palms') {
+            throw new Error(`Utterance not emitted after debounce: ${JSON.stringify(utterances)}`);
+        }
+
+        receiver.destroy();
+
+        console.log('  Discord stop + no resume -> endpoint debounce flushes for ASR');
+        passed++;
+    } catch (error) {
+        console.log(`  Endpoint debounce flush failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 11b: Endpoint debounce canceled when speaker resumes');
+    try {
+        const utterances = [];
+        const dispatched = [];
+        const endpointing = [];
+
+        const receiver = new AudioReceiver({
+            botUserId: 'bot-user',
+            endpointingDebounce: 80,
+            stt: {
+                transcribe: async () => ({ text: 'merged speech', confidence: 0.9, words: [] })
+            },
+            onUtterance: (u) => utterances.push(u),
+            onEndpointing: (userId, metadata) => endpointing.push({ userId, metadata }),
+            onAsrDispatched: (userId, metadata) => dispatched.push({ userId, metadata })
+        });
+
+        receiver.start({
+            receiver: {
+                speaking: { on: () => {} },
+                subscribe: () => new PassThrough()
+            }
+        });
+
+        receiver.handleUserStartSpeaking('user-resume');
+        receiver.handleAudioChunk('user-resume', createSpeechPcm(200));
+        receiver.handleUserStopSpeaking('user-resume');
+        // Resume well within the 80ms debounce window
+        await sleep(20);
+        receiver.handleUserStartSpeaking('user-resume');
+        receiver.handleAudioChunk('user-resume', createSpeechPcm(200));
+        // Wait past where the original debounce would have fired
+        await sleep(120);
+
+        if (dispatched.length !== 0) {
+            throw new Error(`Resumed speaker triggered premature dispatch: ${JSON.stringify(dispatched)}`);
+        }
+        if (utterances.length !== 0) {
+            throw new Error(`Resumed speaker triggered premature utterance: ${JSON.stringify(utterances)}`);
+        }
+        const cancelEvent = endpointing.find(e => e.metadata.active === false && e.metadata.reason === 'speaker resumed');
+        if (!cancelEvent) {
+            throw new Error(`Endpoint timer not canceled on resume: ${JSON.stringify(endpointing)}`);
+        }
+
+        // Now actually finish — second stop, debounce, dispatch
+        receiver.handleUserStopSpeaking('user-resume');
+        await sleep(120);
+        await receiver.waitForPendingUtterances();
+
+        if (dispatched.length !== 1) {
+            throw new Error(`Expected 1 dispatch after final stop+debounce, got ${dispatched.length}`);
+        }
+
+        receiver.destroy();
+
+        console.log('  Speaker resume cancels debounce; final stop dispatches once');
+        passed++;
+    } catch (error) {
+        console.log(`  Endpoint debounce cancel failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 11c: ConversationBuffer endpointing blocks flush like an active speaker');
+    try {
+        const flushed = [];
+        const buffer = new ConversationBuffer({ gracePeriod: 30, cooldownPeriod: 10, pendingAsrTimeout: 1000 });
+        buffer.onFlush((utterances) => flushed.push(utterances));
+
+        buffer.markEndpointing('user-x', true);
+        buffer.addUtterance({
+            userId: 'user-x',
+            speaker: 'X',
+            transcription: 'should not flush yet',
+            speechStartedAt: '2026-05-03T00:00:00.000Z'
+        });
+
+        await sleep(80);
+        if (flushed.length !== 0) {
+            throw new Error('Flush fired while user was endpointing');
+        }
+        if (buffer.getState().state !== BufferState.USER_SPEAKING) {
+            throw new Error(`Expected USER_SPEAKING during endpointing, got ${buffer.getState().state}`);
+        }
+
+        buffer.markEndpointing('user-x', false);
+        await sleep(80);
+
+        if (flushed.length !== 1 || flushed[0][0].transcription !== 'should not flush yet') {
+            throw new Error(`Expected single flush after endpointing cleared: ${JSON.stringify(flushed)}`);
+        }
+
+        console.log('  Endpointing blocks flush; clearing it lets grace timer proceed');
+        passed++;
+    } catch (error) {
+        console.log(`  ConversationBuffer endpointing gate failed: ${error.message}`);
         failed++;
     }
 

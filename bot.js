@@ -241,9 +241,17 @@ class AlphaClawdVoiceBot {
             this.conversationBuffer.setUserSpeaking(userId, false);
         });
 
-        this.voiceManager.setAsrPendingHandler((guildId, userId, metadata = {}) => {
-            const reason = metadata.reason || 'receiver candidate';
-            console.log(`[Bot] Receiver marked ASR pending for ${userId}: ${reason}`);
+        this.voiceManager.setEndpointingHandler((guildId, userId, metadata = {}) => {
+            if (metadata.active) {
+                console.log(`[Bot] Endpoint debounce armed for ${userId} (${metadata.reason}, ${metadata.debounceMs}ms)`);
+                this.conversationBuffer.markEndpointing(userId, true);
+            } else {
+                this.conversationBuffer.markEndpointing(userId, false);
+            }
+        });
+
+        this.voiceManager.setAsrDispatchedHandler((guildId, userId, metadata = {}) => {
+            console.log(`[Bot] ASR dispatched to Fish for ${userId} (${metadata.audioBytes} bytes, ${metadata.reason})`);
             this.conversationBuffer.markAsrPending(userId, metadata);
         });
     }

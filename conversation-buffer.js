@@ -38,6 +38,10 @@ class ConversationBuffer {
         // Explicit state machine state and per-user tracking.
         this.state = BufferState.IDLE;
         this.activeSpeakers = new Set();
+        // endpointingSpeakers: receiver has signaled the user stopped but is
+        // still inside the debounce window. Treated like an active speaker for
+        // gating purposes (idle + flush) but distinct in the receiver's eyes.
+        this.endpointingSpeakers = new Set();
         this.pendingASR = new Set();
         this.pendingAsrCounts = new Map();
         this.pendingAsrReasons = new Map();
@@ -138,7 +142,7 @@ class ConversationBuffer {
             return;
         }
 
-        if (this.activeSpeakers.size > 0 || this.pendingASR.size > 0 || this.buffer.length === 0) {
+        if (this.activeSpeakers.size > 0 || this.endpointingSpeakers.size > 0 || this.pendingASR.size > 0 || this.buffer.length === 0) {
             this.clearGraceTimer();
             return;
         }
@@ -182,9 +186,9 @@ class ConversationBuffer {
             return false;
         }
 
-        if (this.activeSpeakers.size > 0) {
-            console.log('[ConversationBuffer] User still speaking, delaying flush');
-            this.evaluateState('flush blocked by active speaker');
+        if (this.activeSpeakers.size > 0 || this.endpointingSpeakers.size > 0) {
+            console.log('[ConversationBuffer] User still speaking or endpointing, delaying flush');
+            this.evaluateState('flush blocked by active/endpointing speaker');
             return false;
         }
 
@@ -278,8 +282,10 @@ class ConversationBuffer {
             gracePending: this.graceTimer !== null,
             cooldownPending: this.cooldownTimer !== null,
             activeSpeakerCount: this.activeSpeakers.size,
+            endpointingSpeakerCount: this.endpointingSpeakers.size,
             pendingAsrCount: this.pendingASR.size,
             activeSpeakers: Array.from(this.activeSpeakers),
+            endpointingSpeakers: Array.from(this.endpointingSpeakers),
             pendingAsrSpeakers: Array.from(this.pendingASR)
         };
     }
@@ -291,6 +297,7 @@ class ConversationBuffer {
         this.buffer = [];
         this.nextInsertionOrder = 0;
         this.activeSpeakers.clear();
+        this.endpointingSpeakers.clear();
         this.pendingASR.clear();
         this.pendingAsrCounts.clear();
         this.pendingAsrReasons.clear();
@@ -363,13 +370,42 @@ class ConversationBuffer {
         return userId || 'unknown user';
     }
 
+    /**
+     * Mark a user as endpointing (Discord-stop debounce window in the receiver).
+     * Treated like an active speaker for gating: blocks idle decisions and
+     * delays flush. No safety timeout — the receiver guarantees the window
+     * expires (~700ms) and will then either dispatch ASR or, if the user
+     * resumed, clear endpointing via this same setter.
+     */
+    markEndpointing(userId, isEndpointing) {
+        const normalizedUserId = this.normalizeUserId(userId);
+        if (!normalizedUserId) return;
+
+        if (isEndpointing) {
+            this.endpointingSpeakers.add(normalizedUserId);
+            console.log(`[ConversationBuffer] Endpointing for ${normalizedUserId}; active=${this.activeSpeakers.size}, endpointing=${this.endpointingSpeakers.size}, pendingASR=${this.pendingASR.size}`);
+            this.clearGraceTimer();
+            this.evaluateState('endpointing started');
+            return;
+        }
+
+        if (this.endpointingSpeakers.delete(normalizedUserId)) {
+            console.log(`[ConversationBuffer] Endpointing complete for ${normalizedUserId}; active=${this.activeSpeakers.size}, endpointing=${this.endpointingSpeakers.size}, pendingASR=${this.pendingASR.size}`);
+            this.evaluateState('endpointing ended');
+        }
+    }
+
+    /**
+     * Mark a user's audio as actually dispatched to the ASR backend.
+     * The 8s pendingAsrTimeout is a real network safety net for hung Fish calls.
+     */
     markAsrPending(userId, metadata = {}) {
         const normalizedUserId = this.normalizeUserId(userId);
         if (!normalizedUserId) return;
 
         const reason = typeof metadata === 'string'
             ? metadata
-            : metadata.reason || 'receiver candidate';
+            : metadata.reason || 'asr dispatched';
         const nextCount = (this.pendingAsrCounts.get(normalizedUserId) || 0) + 1;
 
         this.pendingAsrCounts.set(normalizedUserId, nextCount);
@@ -472,7 +508,7 @@ class ConversationBuffer {
 
         this.isReady = true;
 
-        if (this.activeSpeakers.size > 0) {
+        if (this.activeSpeakers.size > 0 || this.endpointingSpeakers.size > 0) {
             this.clearGraceTimer();
             this.transitionTo(BufferState.USER_SPEAKING, reason);
             return;

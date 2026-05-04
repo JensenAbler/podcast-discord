@@ -26,12 +26,14 @@ class AudioReceiver {
     constructor(options = {}) {
         this.options = {
             silenceDuration: options.silenceDuration || 2000, // 2 seconds
+            endpointingDebounce: options.endpointingDebounce || 700, // ms to wait after Discord stop before flushing for ASR
             speakerMap: options.speakerMap || {},
             maxUtteranceDuration: options.maxUtteranceDuration || 60000, // 60 seconds
             onUtterance: options.onUtterance || (() => {}),
             onSpeakingStart: options.onSpeakingStart || (() => {}),
             onSpeakingStop: options.onSpeakingStop || (() => {}),
-            onAsrPending: options.onAsrPending || (() => {}),
+            onEndpointing: options.onEndpointing || (() => {}), // (userId, { active, reason, debounceMs }) — Discord-stop debounce window
+            onAsrDispatched: options.onAsrDispatched || (() => {}), // (userId, { reason, audioBytes, speechDuration }) — fires immediately before stt.transcribe
             onError: options.onError || console.error,
             enableTranscription: options.enableTranscription !== false, // Default true
             botUserId: options.botUserId, // Bot's own user ID to filter self-audio
@@ -98,6 +100,9 @@ class AudioReceiver {
         if (userId === this.options.botUserId) {
             return;
         }
+
+        // User resumed within the debounce window — same utterance, keep accumulating.
+        this.cancelEndpointTimer(userId, 'speaker resumed');
 
         if (!this.activeSpeakers.has(userId)) {
             this.activeSpeakers.add(userId);
@@ -218,7 +223,7 @@ class AudioReceiver {
             startTime: null,
             speakerInfo: speakerInfo,
             detector: silenceDetector,
-            asrPendingNotified: false
+            endpointTimer: null
         };
 
         this.speakerBuffers.set(userId, buffer);
@@ -237,9 +242,15 @@ class AudioReceiver {
 
         const buffer = this.speakerBuffers.get(userId);
         if (buffer && buffer.detector) {
-            // Notify detector that speaking stopped
             buffer.detector.speakingStopped();
-            this.notifyAsrPendingForCandidate(userId, buffer, 'speaking stop with buffered audio');
+            // Discord-stop is ambiguous (mid-sentence breath vs end-of-thought).
+            // Arm a debounce; if the user resumes, the timer is canceled. If it
+            // expires, flushUser snapshots and ASR is dispatched. The in-stream
+            // SilenceDetector may also beat us to flushUser; either way the
+            // endpoint timer is canceled by snapshotUserBuffer.
+            if (this.hasAsrCandidate(buffer)) {
+                this.armEndpointTimer(userId, 'speaking stop with buffered audio');
+            }
         }
     }
 
@@ -298,27 +309,51 @@ class AudioReceiver {
     }
 
     /**
-     * Announce one pending ASR candidate for the current buffer.
+     * Arm the endpoint debounce timer. On expiry, flushUser snapshots and
+     * dispatches ASR. If the user resumes within the window, the timer is
+     * canceled (same utterance continues). Idempotent — re-arm is a no-op.
      * @param {string} userId - Discord user ID
-     * @param {Object} buffer - Speaker buffer
-     * @param {string} reason - Reason for the pending ASR candidate
+     * @param {string} reason - What triggered the arm (for logs/metadata)
      */
-    notifyAsrPendingForCandidate(userId, buffer, reason) {
-        if (!this.hasAsrCandidate(buffer) || buffer.asrPendingNotified) {
-            return;
-        }
+    armEndpointTimer(userId, reason) {
+        const buffer = this.speakerBuffers.get(userId);
+        if (!buffer || buffer.endpointTimer) return;
 
-        buffer.asrPendingNotified = true;
-        const duration = buffer.startTime ? Date.now() - buffer.startTime : 0;
+        const debounceMs = this.options.endpointingDebounce;
+        console.log(`[AudioReceiver] Endpoint debounce armed for ${userId} (${reason}, ${debounceMs}ms)`);
+
         const stats = buffer.detector?.getStats?.() || {};
-
-        this.options.onAsrPending(userId, {
+        this.options.onEndpointing(userId, {
+            active: true,
             reason,
+            debounceMs,
             chunkCount: buffer.chunks.length,
-            duration,
             speakingFrames: stats.speakingFrames || 0,
             silentFrames: stats.silentFrames || 0
         });
+
+        buffer.endpointTimer = setTimeout(() => {
+            buffer.endpointTimer = null;
+            console.log(`[AudioReceiver] Endpoint debounce expired for ${userId} -> flushing for ASR`);
+            this.options.onEndpointing(userId, { active: false, reason: 'debounce expired' });
+            this.flushUser(userId, 'endpoint debounce expired')
+                .catch((err) => this.options.onError && this.options.onError(err));
+        }, debounceMs);
+    }
+
+    /**
+     * Cancel an armed endpoint debounce. Safe to call when no timer is armed.
+     * @param {string} userId - Discord user ID
+     * @param {string} reason - Why we are canceling (for logs/metadata)
+     */
+    cancelEndpointTimer(userId, reason) {
+        const buffer = this.speakerBuffers.get(userId);
+        if (!buffer || !buffer.endpointTimer) return;
+
+        clearTimeout(buffer.endpointTimer);
+        buffer.endpointTimer = null;
+        console.log(`[AudioReceiver] Endpoint debounce canceled for ${userId} (${reason})`);
+        this.options.onEndpointing(userId, { active: false, reason });
     }
 
     /**
@@ -344,26 +379,20 @@ class AudioReceiver {
         buffer.chunks = [];
         buffer.startTime = null;
 
+        // Whatever caused this snapshot supersedes the endpoint debounce.
+        if (buffer.endpointTimer) {
+            clearTimeout(buffer.endpointTimer);
+            buffer.endpointTimer = null;
+            this.options.onEndpointing(userId, { active: false, reason: `snapshot: ${reason}` });
+        }
+
         if (audioBuffer.length === 0) {
             console.log(`[AudioReceiver] No buffered audio for ${userId} on ${reason}`);
-            buffer.asrPendingNotified = false;
             if (buffer.detector) {
                 buffer.detector.reset();
             }
             return null;
         }
-
-        if (!buffer.asrPendingNotified) {
-            this.options.onAsrPending(userId, {
-                reason: `snapshot: ${reason}`,
-                chunkCount: chunks.length,
-                duration,
-                speakingFrames: detectorStats.speakingFrames || 0,
-                silentFrames: detectorStats.silentFrames || 0
-            });
-        }
-
-        buffer.asrPendingNotified = false;
 
         if (buffer.detector) {
             buffer.detector.reset();
@@ -462,7 +491,8 @@ class AudioReceiver {
             timestamp,
             speechStartedAt,
             speechEndedAt,
-            speechDuration
+            speechDuration,
+            reason: snapshotReason
         } = snapshot;
 
         console.log(`[AudioReceiver] Processing ${duration}ms utterance from ${speakerInfo.name}`);
@@ -479,6 +509,13 @@ class AudioReceiver {
 
             if (this.enableTranscription && this.stt) {
                 try {
+                    // Real "ASR in flight" signal — Fish call is being made right now.
+                    // Downstream (conversation-buffer) keys its 8s safety net off this.
+                    this.options.onAsrDispatched(userId, {
+                        reason: snapshotReason || 'snapshot',
+                        audioBytes: audioBuffer.length,
+                        speechDuration
+                    });
                     const sttResult = await this.stt.transcribe(audioBuffer);
                     rawTranscription = sttResult.text || '';
                     const normalized = this.normalizeTranscription(rawTranscription);
@@ -652,6 +689,11 @@ class AudioReceiver {
         const subscription = this.subscriptions.get(userId);
         const buffer = this.speakerBuffers.get(userId);
         const detector = buffer?.detector || subscription?.detector;
+
+        if (buffer && buffer.endpointTimer) {
+            clearTimeout(buffer.endpointTimer);
+            buffer.endpointTimer = null;
+        }
 
         if (this.activeSpeakers.delete(userId)) {
             this.options.onSpeakingStop(userId);
