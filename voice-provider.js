@@ -164,6 +164,32 @@ class VoiceProvider {
     }
 
     /**
+     * Streaming Text-to-Speech synthesis where supported by the TTS provider.
+     *
+     * @param {AsyncIterable<string>|Iterable<string>|string} textChunks - Text chunks to synthesize
+     * @param {Object} options - TTS options
+     * @returns {Readable} - Audio stream
+     */
+    synthesizeStream(textChunks, options = {}) {
+        if (typeof this.tts.synthesizeStream !== 'function') {
+            throw new Error(`Streaming TTS is not available in voice mode: ${this.mode}`);
+        }
+
+        return this.tts.synthesizeStream(textChunks, options);
+    }
+
+    /**
+     * Check whether streaming TTS should be used for the current mode.
+     * @returns {boolean}
+     */
+    isStreamingEnabled(options = {}) {
+        return Boolean(
+            typeof this.tts.isStreamingEnabled === 'function' &&
+            this.tts.isStreamingEnabled(options)
+        );
+    }
+
+    /**
      * Speech-to-Text transcription
      * 
      * @param {Buffer} audioBuffer - Audio file buffer

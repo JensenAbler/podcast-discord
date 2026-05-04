@@ -113,13 +113,14 @@ class AudioTransmitter {
     playNow(audio, options, resolve, reject) {
         try {
             let resource;
+            const inputType = options.inputType || StreamType.Arbitrary;
 
             if (Buffer.isBuffer(audio)) {
                 // Buffer - create readable stream
                 console.log(`[AudioTransmitter] Playing buffer (${audio.length} bytes)`);
                 const stream = Readable.from([audio]);
                 resource = createAudioResource(stream, {
-                    inputType: StreamType.Arbitrary,
+                    inputType,
                     inlineVolume: true
                 });
             } else if (typeof audio === 'string') {
@@ -129,14 +130,14 @@ class AudioTransmitter {
                     throw new Error(`Audio file not found: ${audio}`);
                 }
                 resource = createAudioResource(audio, {
-                    inputType: StreamType.Arbitrary,
+                    inputType,
                     inlineVolume: true
                 });
             } else if (audio && typeof audio.pipe === 'function') {
                 // Stream
                 console.log('[AudioTransmitter] Playing stream');
                 resource = createAudioResource(audio, {
-                    inputType: StreamType.Arbitrary,
+                    inputType,
                     inlineVolume: true
                 });
             } else {
@@ -179,9 +180,10 @@ class AudioTransmitter {
      * @param {Object} options - Playback options
      * @returns {Promise<void>}
      */
-    async playTTS(audioBuffer, options = {}) {
-        console.log(`[AudioTransmitter] Playing TTS (${audioBuffer.length} bytes)`);
-        return this.play(audioBuffer, options);
+    async playTTS(audio, options = {}) {
+        const size = Buffer.isBuffer(audio) ? ` (${audio.length} bytes)` : '';
+        console.log(`[AudioTransmitter] Playing TTS${size}`);
+        return this.play(audio, options);
     }
 
     /**

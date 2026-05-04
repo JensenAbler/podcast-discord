@@ -10,6 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { PassThrough } = require('stream');
 
 // Setup robust file logging
 const LOG_FILE = '/tmp/alpha-clawd-bot.log';
@@ -474,6 +475,129 @@ class AlphaClawdVoiceBot {
         } catch (error) {
             console.error('[Bot] Error playing filler clip:', error);
         }
+    }
+
+    async *singleTextChunk(text) {
+        yield text;
+    }
+
+    async synthesizeLiveTTS(text, options = {}) {
+        const textLength = String(text || '').length;
+
+        if (this.voiceProvider.isStreamingEnabled(options)) {
+            console.log(`[Bot] TTS function called (Fish WS streaming, ${textLength} chars)`);
+            return this.voiceProvider.synthesizeStream(this.singleTextChunk(text), {
+                ...options,
+                latency: options.latency || 'balanced'
+            });
+        }
+
+        console.log(`[Bot] TTS function called (HTTP fallback, ${textLength} chars)`);
+        return this.voiceProvider.synthesize(text, options);
+    }
+
+    isReadableAudio(audio) {
+        return audio && typeof audio.pipe === 'function' && !Buffer.isBuffer(audio);
+    }
+
+    teeAudioForRecording(audio) {
+        const capture = {
+            playbackAudio: audio,
+            isStream: false,
+            chunks: [],
+            byteLength: 0,
+            completedAt: null
+        };
+
+        if (!this.isReadableAudio(audio)) {
+            return capture;
+        }
+
+        const playbackAudio = new PassThrough();
+        const recordingAudio = new PassThrough();
+
+        capture.playbackAudio = playbackAudio;
+        capture.isStream = true;
+
+        audio.once('error', (error) => {
+            playbackAudio.destroy(error);
+            recordingAudio.destroy(error);
+        });
+
+        recordingAudio.on('data', (chunk) => {
+            const buffer = Buffer.from(chunk);
+            capture.chunks.push(buffer);
+            capture.byteLength += buffer.length;
+        });
+
+        recordingAudio.once('end', () => {
+            capture.completedAt = new Date().toISOString();
+        });
+
+        recordingAudio.once('error', (error) => {
+            console.error('[Bot] Error capturing streamed TTS for recording:', error);
+        });
+
+        audio.pipe(playbackAudio);
+        audio.pipe(recordingAudio);
+
+        return capture;
+    }
+
+    getCapturedAudioBuffer(capture) {
+        if (!capture || capture.byteLength <= 0) {
+            return null;
+        }
+
+        return Buffer.concat(capture.chunks, capture.byteLength);
+    }
+
+    async playTtsAndRecord(guildId, audio, options = {}) {
+        const capture = this.teeAudioForRecording(audio);
+        let botAudioRecorded = false;
+        let playbackStartMs;
+
+        const playback = await this.voiceManager.speakWithTiming(guildId, capture.playbackAudio, {
+            ...options,
+            onStart: (timing) => {
+                const parsedStartMs = Date.parse(timing.playbackStartedAt);
+                playbackStartMs = Number.isNaN(parsedStartMs) ? undefined : parsedStartMs;
+
+                if (!capture.isStream && Buffer.isBuffer(audio)) {
+                    this.voiceManager.addBotAudioToRecording(guildId, audio, {
+                        startTime: playbackStartMs
+                    });
+                    botAudioRecorded = true;
+                }
+
+                if (typeof options.onStart === 'function') {
+                    options.onStart(timing);
+                }
+            }
+        });
+        const playbackTiming = await playback.finished;
+
+        if (capture.isStream) {
+            const recordedAudio = this.getCapturedAudioBuffer(capture);
+            if (recordedAudio) {
+                this.voiceManager.addBotAudioToRecording(guildId, recordedAudio, {
+                    startTime: playbackStartMs
+                });
+                botAudioRecorded = true;
+            } else {
+                console.warn('[Bot] Streamed TTS produced no captured audio for recording');
+            }
+        } else if (!botAudioRecorded && Buffer.isBuffer(audio)) {
+            this.voiceManager.addBotAudioToRecording(guildId, audio);
+            botAudioRecorded = true;
+        }
+
+        return {
+            playback,
+            playbackTiming,
+            botAudioRecorded,
+            ttsCompletedAt: capture.completedAt
+        };
     }
 
     /**
@@ -1276,26 +1400,14 @@ class AlphaClawdVoiceBot {
             }
 
             const ttsStartedAt = new Date().toISOString();
-            const audioBuffer = await this.voiceProvider.synthesize(response.speech, {
+            const audio = await this.synthesizeLiveTTS(response.speech, {
                 voiceId: this.voiceId
             });
-            const ttsCompletedAt = new Date().toISOString();
+            const ttsSetupCompletedAt = this.isReadableAudio(audio) ? null : new Date().toISOString();
 
-            let botAudioRecorded = false;
-            const playback = await this.voiceManager.speakWithTiming(guildId, audioBuffer, {
-                onStart: (timing) => {
-                    const playbackStartMs = Date.parse(timing.playbackStartedAt);
-                    this.voiceManager.addBotAudioToRecording(guildId, audioBuffer, {
-                        startTime: Number.isNaN(playbackStartMs) ? undefined : playbackStartMs
-                    });
-                    botAudioRecorded = true;
-                }
-            });
-            const playbackTiming = await playback.finished;
-
-            if (!botAudioRecorded) {
-                this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
-            }
+            const playbackResult = await this.playTtsAndRecord(guildId, audio);
+            const playback = playbackResult.playback;
+            const playbackTiming = playbackResult.playbackTiming;
 
             const playbackStartedAt = playbackTiming.playbackStartedAt || playback.timing.playbackStartedAt;
             const playbackEndedAt = playbackTiming.playbackEndedAt || playback.timing.playbackEndedAt;
@@ -1312,7 +1424,7 @@ class AlphaClawdVoiceBot {
                 timestamp: generatedAt,
                 generatedAt,
                 ttsStartedAt,
-                ttsCompletedAt,
+                ttsCompletedAt: playbackResult.ttsCompletedAt || ttsSetupCompletedAt || playbackEndedAt,
                 playbackRequestedAt: playbackTiming.playbackRequestedAt || playback.timing.playbackRequestedAt,
                 playbackStartedAt,
                 playbackEndedAt,
@@ -1507,15 +1619,12 @@ class AlphaClawdVoiceBot {
 
         try {
             // Synthesize response
-            const audioBuffer = await this.voiceProvider.synthesize(text, {
+            const audio = await this.synthesizeLiveTTS(text, {
                 voiceId: this.voiceId
             });
 
-            // Add to recording
-            this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
-
-            // Speak
-            await this.voiceManager.speak(guildId, audioBuffer);
+            // Speak and add the completed audio to the mixed recording.
+            await this.playTtsAndRecord(guildId, audio);
 
             // Start cooldown after playback completes
             console.log('[Bot] Audio playback complete, starting cooldown');

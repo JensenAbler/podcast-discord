@@ -2,13 +2,37 @@
  * Fish Audio Provider - TTS and STT using Fish Audio.
  *
  * TTS uses /v1/tts with a saved voice model reference_id.
+ * Live TTS can use /v1/tts/live through fish-audio-sdk's WebSocketSession.
  * STT uses the beta /v1/asr endpoint and returns segment-level timing.
  */
+
+const { Readable } = require('stream');
+const { WebSocketSession, TTSRequest } = require('fish-audio-sdk');
+
+function envFlagEnabled(value, defaultValue = true) {
+    if (value === undefined || value === null || value === '') {
+        return defaultValue;
+    }
+
+    return !['false', '0', 'no', 'off'].includes(String(value).toLowerCase());
+}
+
+function toWebSocketBaseUrl(baseUrl) {
+    if (!baseUrl) return 'wss://api.fish.audio';
+    if (/^wss?:\/\//i.test(baseUrl)) return baseUrl.replace(/\/+$/, '');
+    if (/^https:\/\//i.test(baseUrl)) return baseUrl.replace(/^https:/i, 'wss:').replace(/\/+$/, '');
+    if (/^http:\/\//i.test(baseUrl)) return baseUrl.replace(/^http:/i, 'ws:').replace(/\/+$/, '');
+    return baseUrl.replace(/\/+$/, '');
+}
 
 class FishAudioProvider {
     constructor(options = {}) {
         this.apiKey = options.apiKey || process.env.FISH_AUDIO_API_KEY || process.env.FISH_API_KEY;
         this.baseUrl = options.baseUrl || process.env.FISH_AUDIO_BASE_URL || 'https://api.fish.audio';
+        this.wsBaseUrl = options.wsBaseUrl ||
+            process.env.FISH_AUDIO_WS_BASE_URL ||
+            process.env.FISH_AUDIO_WEBSOCKET_BASE_URL ||
+            toWebSocketBaseUrl(this.baseUrl);
         this.voiceId = options.defaultVoice ||
             options.referenceId ||
             process.env.FISH_AUDIO_VOICE_ID ||
@@ -26,6 +50,9 @@ class FishAudioProvider {
         }
         this.language = options.language || process.env.FISH_AUDIO_LANGUAGE || 'en';
         this.timeout = Number(options.timeout || process.env.FISH_AUDIO_TIMEOUT_MS || 30000);
+        this.streamingEnabled = options.streaming !== undefined
+            ? envFlagEnabled(options.streaming)
+            : envFlagEnabled(process.env.FISH_STREAMING, true);
 
         if (!this.apiKey) {
             throw new Error('Fish Audio API key not provided. Set FISH_AUDIO_API_KEY or FISH_API_KEY.');
@@ -74,6 +101,137 @@ class FishAudioProvider {
         console.log(`[Fish Audio] Synthesis complete in ${duration}ms (${audioBuffer.length} bytes)`);
 
         return audioBuffer;
+    }
+
+    /**
+     * Stream Text-to-Speech synthesis over Fish Audio's WebSocket endpoint.
+     *
+     * @param {AsyncIterable<string>|Iterable<string>|string} textChunks - Text chunks to synthesize.
+     * @param {Object} options - TTS options. Matches synthesize() where possible.
+     * @returns {Readable} - Readable stream of encoded audio chunks as Fish emits them.
+     */
+    synthesizeStream(textChunks, options = {}) {
+        if (!this.isStreamingEnabled(options)) {
+            throw new Error('Fish Audio streaming TTS is disabled. Set FISH_STREAMING=true to enable it.');
+        }
+
+        return Readable.from(this.createStreamingAudio(textChunks, options), {
+            objectMode: false
+        });
+    }
+
+    async *createStreamingAudio(textChunks, options = {}) {
+        const startedAt = Date.now();
+        const iterator = this.getTextIterator(textChunks);
+        const firstChunk = await this.readFirstProcessedTextChunk(iterator);
+
+        if (!firstChunk) {
+            throw new Error('Fish Audio streaming TTS requires at least one non-empty text chunk.');
+        }
+
+        const voiceId = options.voiceId || options.referenceId || this.voiceId;
+        const format = options.format || this.format;
+        const request = new TTSRequest('', {
+            format,
+            latency: options.latency || this.latency || 'balanced',
+            chunkLength: Number(options.chunkLength || this.chunkLength),
+            referenceId: voiceId,
+            normalize: options.normalize ?? this.normalize ?? !this.hasFishInlineControls(firstChunk),
+            mp3Bitrate: Number(options.mp3Bitrate || this.mp3Bitrate),
+            prosody: {
+                speed: Number(options.speed || process.env.FISH_AUDIO_SPEED || 1),
+                volume: Number(options.volume || process.env.FISH_AUDIO_VOLUME || 0),
+                normalize_loudness: options.normalizeLoudness ?? process.env.FISH_AUDIO_NORMALIZE_LOUDNESS !== 'false'
+            }
+        });
+
+        const ws = new WebSocketSession(this.apiKey, this.wsBaseUrl);
+        let totalBytes = 0;
+        let chunkCount = 0;
+
+        console.log(`[Fish Audio WS] Streaming synthesis: "${firstChunk.substring(0, 50)}..."`);
+
+        try {
+            const processedTextStream = this.createProcessedTextStream(firstChunk, iterator);
+
+            for await (const audioChunk of ws.tts(request, processedTextStream)) {
+                const buffer = Buffer.from(audioChunk);
+                totalBytes += buffer.length;
+                chunkCount++;
+
+                if (chunkCount === 1) {
+                    console.log(`[Fish Audio WS] First audio chunk in ${Date.now() - startedAt}ms (${buffer.length} bytes)`);
+                }
+
+                yield buffer;
+            }
+
+            console.log(`[Fish Audio WS] Streaming synthesis complete in ${Date.now() - startedAt}ms (${totalBytes} bytes, ${chunkCount} chunks)`);
+        } catch (error) {
+            console.error('[Fish Audio WS] Streaming synthesis failed:', error);
+            throw error;
+        } finally {
+            try {
+                await ws.close();
+            } catch (error) {
+                console.error('[Fish Audio WS] Error closing WebSocket session:', error);
+            }
+        }
+    }
+
+    getTextIterator(textChunks) {
+        if (typeof textChunks === 'string') {
+            return (async function* singleTextChunk() {
+                yield textChunks;
+            })();
+        }
+
+        if (textChunks && typeof textChunks[Symbol.asyncIterator] === 'function') {
+            return textChunks[Symbol.asyncIterator]();
+        }
+
+        if (textChunks && typeof textChunks[Symbol.iterator] === 'function') {
+            const iterable = textChunks;
+            return (async function* syncTextChunks() {
+                for (const chunk of iterable) {
+                    yield chunk;
+                }
+            })();
+        }
+
+        throw new Error('Fish Audio streaming TTS requires text chunks as an async iterable, iterable, or string.');
+    }
+
+    async readFirstProcessedTextChunk(iterator) {
+        while (true) {
+            const next = await iterator.next();
+            if (next.done) return '';
+
+            const processed = this.preprocessText(next.value);
+            if (processed) return processed;
+        }
+    }
+
+    async *createProcessedTextStream(firstChunk, iterator) {
+        yield firstChunk;
+
+        while (true) {
+            const next = await iterator.next();
+            if (next.done) return;
+
+            const processed = this.preprocessText(next.value);
+            if (processed) {
+                yield processed;
+            }
+        }
+    }
+
+    isStreamingEnabled(options = {}) {
+        if (options.streaming !== undefined) {
+            return envFlagEnabled(options.streaming);
+        }
+
+        return this.streamingEnabled;
     }
 
     async transcribe(audioBuffer, options = {}) {

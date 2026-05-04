@@ -27,6 +27,7 @@
     "@snazzah/davey": "^0.1.11",
     "discord.js": "^14.18.0",
     "ffmpeg-static": "^5.2.0",
+    "fish-audio-sdk": "^2025.11.29",
     "form-data": "^4.0.2",
     "node-edge-tts": "^1.2.10",
     "opusscript": "^0.0.8",

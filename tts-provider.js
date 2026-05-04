@@ -109,6 +109,40 @@ class TTSProvider {
     }
 
     /**
+     * Streaming Text-to-Speech synthesis where supported.
+     *
+     * @param {AsyncIterable<string>|Iterable<string>|string} textChunks - Text chunks to synthesize
+     * @param {Object} options - TTS options (provider-specific)
+     * @returns {Readable} - Audio stream
+     */
+    synthesizeStream(textChunks, options = {}) {
+        if (options.provider && options.provider !== this.provider) {
+            const tempProvider = new TTSProvider({
+                provider: options.provider,
+                ...options
+            });
+            return tempProvider.synthesizeStream(textChunks, options);
+        }
+
+        if (typeof this.engine.synthesizeStream !== 'function') {
+            throw new Error(`Streaming TTS is not available for provider: ${this.provider}`);
+        }
+
+        return this.engine.synthesizeStream(textChunks, options);
+    }
+
+    /**
+     * Check whether the current provider should use streaming TTS.
+     * @returns {boolean}
+     */
+    isStreamingEnabled(options = {}) {
+        return Boolean(
+            typeof this.engine.isStreamingEnabled === 'function' &&
+            this.engine.isStreamingEnabled(options)
+        );
+    }
+
+    /**
      * Speech-to-Text transcription (available with Fish Audio or ElevenLabs)
      * 
      * @param {Buffer} audioBuffer - PCM or audio file buffer
