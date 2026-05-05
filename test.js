@@ -271,6 +271,54 @@ async function runTests() {
         }
 
         console.log('  Generator retries with JSON mode when a model rejects json_schema');
+
+        const bigBrainGenerator = new PodcastGenerator({ apiKey: 'bb-test-key' });
+
+        const bigBrainSchema = bigBrainGenerator.getResponseSchema();
+        if (
+            !bigBrainSchema.required.includes('bigBrain') ||
+            !bigBrainSchema.properties.bigBrain ||
+            bigBrainSchema.properties.bigBrain.required.join(',') !== 'requested,reason'
+        ) {
+            throw new Error(`bigBrain schema is missing or malformed: ${JSON.stringify(bigBrainSchema.properties.bigBrain)}`);
+        }
+
+        const defaultOut = bigBrainGenerator.normalizeOutput({
+            shouldRespond: true,
+            speech: 'No big brain needed.',
+            mode: 'unchanged',
+            confidence: 0.9
+        });
+        if (defaultOut.bigBrain.requested !== false || defaultOut.bigBrain.reason !== '') {
+            throw new Error(`Missing bigBrain should default to {requested:false, reason:""}: ${JSON.stringify(defaultOut.bigBrain)}`);
+        }
+
+        const requestedOut = bigBrainGenerator.normalizeOutput({
+            shouldRespond: true,
+            speech: 'Let me think about this for a moment.',
+            mode: 'unchanged',
+            confidence: 0.7,
+            bigBrain: { requested: true, reason: 'Need to verify a date I am unsure about.' }
+        });
+        if (
+            requestedOut.bigBrain.requested !== true ||
+            requestedOut.bigBrain.reason !== 'Need to verify a date I am unsure about.'
+        ) {
+            throw new Error(`bigBrain pass-through failed: ${JSON.stringify(requestedOut.bigBrain)}`);
+        }
+
+        const garbageOut = bigBrainGenerator.normalizeOutput({
+            shouldRespond: false,
+            speech: '',
+            mode: 'unchanged',
+            confidence: 0,
+            bigBrain: { requested: 'yes please', reason: 42 }
+        });
+        if (garbageOut.bigBrain.requested !== false || garbageOut.bigBrain.reason !== '') {
+            throw new Error(`Malformed bigBrain payload was not normalized: ${JSON.stringify(garbageOut.bigBrain)}`);
+        }
+
+        console.log('  bigBrain field defaults safely and passes valid payloads through');
     } catch (error) {
         console.log(`  Podcast generator failed: ${error.message}`);
         failed++;

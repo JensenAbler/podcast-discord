@@ -91,7 +91,10 @@ class PodcastGenerator {
         if (input.remember !== false) {
             this.rememberTurn(transcript, output);
         }
-        console.log(`[PodcastGenerator] Completed in ${duration}ms: respond=${output.shouldRespond}, mode=${output.mode}, chars=${output.speech.length}`);
+        console.log(`[PodcastGenerator] Completed in ${duration}ms: respond=${output.shouldRespond}, mode=${output.mode}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}`);
+        if (output.bigBrain.requested) {
+            console.log(`[PodcastGenerator] bigBrain requested (DRY RUN — not yet dispatched). reason="${output.bigBrain.reason}"`);
+        }
         return output;
     }
 
@@ -124,7 +127,14 @@ class PodcastGenerator {
             '- Use no markdown, bullets, code, URLs, file paths, tables, or stage directions.',
             '- Do not include action directives in speech. Use the mode field instead.',
             '- Use mode=chatty for quick banter and mode=buffered for story/monologue pacing. Otherwise use mode=unchanged.',
-            '- Silence is valid. A good live host does not answer every utterance.'
+            '- Silence is valid. A good live host does not answer every utterance.',
+            '',
+            'bigBrain (escape hatch to the deeper Open Claw agent):',
+            '- Default to { requested: false, reason: "" }.',
+            '- Set requested=true when you feel stuck for any reason: factual uncertainty you would otherwise bluff, multi-step planning, callbacks to long-ago context you cannot reach, or an explicit "really think about this" cue from a guest.',
+            '- When requested=true, your speech should be a brief stall (e.g. "Let me actually think about this for a moment, give me a sec"). Open Claw will handle the substantive move and you will speak its result on the next turn.',
+            '- Use sparingly. Most turns are conversational and do not need it.',
+            '- reason is one or two short sentences explaining what tripped you up. It is not spoken.'
         ].join('\n');
     }
 
@@ -281,7 +291,7 @@ class PodcastGenerator {
         return {
             type: 'object',
             additionalProperties: false,
-            required: ['shouldRespond', 'speech', 'mode', 'confidence'],
+            required: ['shouldRespond', 'speech', 'mode', 'confidence', 'bigBrain'],
             properties: {
                 shouldRespond: {
                     type: 'boolean',
@@ -299,6 +309,22 @@ class PodcastGenerator {
                 confidence: {
                     type: 'number',
                     description: 'Confidence that this is the right turn-taking decision.'
+                },
+                bigBrain: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['requested', 'reason'],
+                    description: 'Escape hatch to hand the next move to the deeper Open Claw agent. Default { requested: false, reason: "" }.',
+                    properties: {
+                        requested: {
+                            type: 'boolean',
+                            description: 'Set to true when this turn should be handed to Open Claw because the small model feels stuck, uncertain, or out of depth.'
+                        },
+                        reason: {
+                            type: 'string',
+                            description: 'Short (1-2 sentences) explanation of why bigBrain is needed. Empty string when requested is false.'
+                        }
+                    }
                 }
             }
         };
@@ -319,8 +345,15 @@ class PodcastGenerator {
             speech,
             text: speech,
             mode,
-            confidence
+            confidence,
+            bigBrain: this.normalizeBigBrain(output?.bigBrain)
         };
+    }
+
+    normalizeBigBrain(value) {
+        const requested = Boolean(value && value.requested === true);
+        const reason = requested ? String(value?.reason || '').trim() : '';
+        return { requested, reason };
     }
 
     sanitizeSpeech(text) {
