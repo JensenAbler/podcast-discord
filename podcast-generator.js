@@ -11,7 +11,10 @@
 
 class PodcastGenerator {
     constructor(options = {}) {
-        this.apiKey = options.apiKey || process.env.OPENAI_API_KEY;
+        const apiKeyConfig = this.resolveApiKey(options);
+        this.apiKey = apiKeyConfig.apiKey;
+        this.apiKeySource = apiKeyConfig.source;
+        this.apiKeyError = apiKeyConfig.error;
         this.baseUrl = options.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
         this.model = options.model || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini';
         this.timeout = Number(options.timeout || process.env.PODCAST_GENERATOR_TIMEOUT_MS || 15000);
@@ -45,7 +48,7 @@ class PodcastGenerator {
 
     async generate(input = {}) {
         if (!this.apiKey) {
-            throw new Error('OpenAI API key not provided. Set OPENAI_API_KEY or use PODCAST_GENERATOR=gateway.');
+            throw new Error(this.apiKeyError || 'OpenAI API key not provided. Set OPENAI_API_KEY or use PODCAST_GENERATOR=gateway.');
         }
 
         const transcript = input.transcript || this.formatUtterances(input.utterances || []);
@@ -159,6 +162,69 @@ class PodcastGenerator {
 
     buildDecisionPrompt() {
         return 'Decide whether Alpha-Clawd should speak now.';
+    }
+
+    resolveApiKey(options = {}, env = process.env) {
+        if (options.apiKey) {
+            return {
+                apiKey: options.apiKey,
+                source: 'options.apiKey'
+            };
+        }
+
+        const activeName = String(env.PODCAST_GENERATOR_API_KEY_ACTIVE || '').trim();
+        if (activeName) {
+            const normalizedName = this.normalizeApiKeyName(activeName);
+            const candidates = [
+                `PODCAST_GENERATOR_API_KEY_${normalizedName}`,
+                `OPENAI_API_KEY_${normalizedName}`
+            ];
+
+            for (const source of candidates) {
+                if (env[source]) {
+                    return {
+                        apiKey: env[source],
+                        source,
+                        activeName
+                    };
+                }
+            }
+
+            return {
+                apiKey: null,
+                source: null,
+                activeName,
+                error: `Podcast generator API key "${activeName}" was selected, but none of ${candidates.join(', ')} is set.`
+            };
+        }
+
+        if (env.PODCAST_GENERATOR_API_KEY) {
+            return {
+                apiKey: env.PODCAST_GENERATOR_API_KEY,
+                source: 'PODCAST_GENERATOR_API_KEY'
+            };
+        }
+
+        if (env.OPENAI_API_KEY) {
+            return {
+                apiKey: env.OPENAI_API_KEY,
+                source: 'OPENAI_API_KEY'
+            };
+        }
+
+        return {
+            apiKey: null,
+            source: null,
+            error: 'OpenAI API key not provided. Set PODCAST_GENERATOR_API_KEY, PODCAST_GENERATOR_API_KEY_ACTIVE, OPENAI_API_KEY, or use PODCAST_GENERATOR=gateway.'
+        };
+    }
+
+    normalizeApiKeyName(name) {
+        return String(name || '')
+            .trim()
+            .replace(/[^A-Za-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .toUpperCase();
     }
 
     getResponseSchema() {
@@ -314,7 +380,7 @@ class PodcastGenerator {
     validate() {
         const errors = [];
         if (!this.apiKey) {
-            errors.push('OPENAI_API_KEY is not set');
+            errors.push(this.apiKeyError || 'OPENAI_API_KEY is not set');
         }
         if (!this.model) {
             errors.push('PODCAST_GENERATOR_MODEL is empty');
@@ -331,6 +397,7 @@ class PodcastGenerator {
         return {
             provider: 'openai-direct',
             model: this.model,
+            apiKeySource: this.apiKeySource,
             maxHistoryTurns: this.maxHistoryTurns,
             timeout: this.timeout
         };

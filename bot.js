@@ -143,13 +143,18 @@ class AlphaClawdVoiceBot {
         this.voiceId = this.voiceProvider.voiceId;
 
         // Direct structured generator for live podcast responses.
-        this.podcastGenerator = new PodcastGenerator({
-            apiKey: this.openaiKey,
+        const podcastGeneratorOptions = {
             model: process.env.PODCAST_GENERATOR_MODEL,
             timeout: process.env.PODCAST_GENERATOR_TIMEOUT_MS,
             maxCompletionTokens: process.env.PODCAST_GENERATOR_MAX_TOKENS,
             maxHistoryTurns: process.env.PODCAST_GENERATOR_HISTORY_TURNS
-        });
+        };
+
+        if (options.generatorApiKey) {
+            podcastGeneratorOptions.apiKey = options.generatorApiKey;
+        }
+
+        this.podcastGenerator = new PodcastGenerator(podcastGeneratorOptions);
 
         // Initialize voice manager with unified voice provider
         this.voiceManager = new VoiceManager(this.client, {

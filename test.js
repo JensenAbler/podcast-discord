@@ -164,6 +164,63 @@ async function runTests() {
         } else {
             throw new Error(`Unexpected message layout: ${JSON.stringify(messages)}`);
         }
+
+        const savedEnv = {
+            PODCAST_GENERATOR_API_KEY_ACTIVE: process.env.PODCAST_GENERATOR_API_KEY_ACTIVE,
+            PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY: process.env.PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY,
+            PODCAST_GENERATOR_API_KEY_GROQ_STANDBY: process.env.PODCAST_GENERATOR_API_KEY_GROQ_STANDBY,
+            OPENAI_API_KEY: process.env.OPENAI_API_KEY
+        };
+
+        try {
+            process.env.PODCAST_GENERATOR_API_KEY_ACTIVE = 'groq-primary';
+            process.env.PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY = 'primary-key';
+            process.env.PODCAST_GENERATOR_API_KEY_GROQ_STANDBY = 'standby-key';
+            process.env.OPENAI_API_KEY = 'legacy-key';
+
+            const activeGenerator = new PodcastGenerator();
+            if (
+                activeGenerator.apiKey !== 'primary-key' ||
+                activeGenerator.apiKeySource !== 'PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY'
+            ) {
+                throw new Error('Active generator API key alias was not selected');
+            }
+
+            process.env.PODCAST_GENERATOR_API_KEY_ACTIVE = 'groq-standby';
+            const standbyGenerator = new PodcastGenerator();
+            if (
+                standbyGenerator.apiKey !== 'standby-key' ||
+                standbyGenerator.apiKeySource !== 'PODCAST_GENERATOR_API_KEY_GROQ_STANDBY'
+            ) {
+                throw new Error('Standby generator API key alias was not selected');
+            }
+
+            delete process.env.PODCAST_GENERATOR_API_KEY_ACTIVE;
+            delete process.env.PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY;
+            delete process.env.PODCAST_GENERATOR_API_KEY_GROQ_STANDBY;
+            const fallbackGenerator = new PodcastGenerator();
+            if (fallbackGenerator.apiKey !== 'legacy-key' || fallbackGenerator.apiKeySource !== 'OPENAI_API_KEY') {
+                throw new Error('Legacy OPENAI_API_KEY fallback was not selected');
+            }
+
+            process.env.PODCAST_GENERATOR_API_KEY_ACTIVE = 'missing';
+            delete process.env.OPENAI_API_KEY;
+            const missingGenerator = new PodcastGenerator();
+            const missingValidation = missingGenerator.validate();
+            if (missingValidation.valid || !missingValidation.errors[0]?.includes('PODCAST_GENERATOR_API_KEY_MISSING')) {
+                throw new Error(`Missing active key alias did not validate clearly: ${JSON.stringify(missingValidation)}`);
+            }
+        } finally {
+            for (const [key, value] of Object.entries(savedEnv)) {
+                if (typeof value === 'undefined') {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
+            }
+        }
+
+        console.log('  Generator API key aliases select active and standby keys');
     } catch (error) {
         console.log(`  Podcast generator failed: ${error.message}`);
         failed++;
