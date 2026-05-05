@@ -21,4 +21,6 @@ Set `PODCAST_GENERATOR=gateway` to use the legacy Gateway/OpenClaw agent path. D
 
 To keep multiple direct-generator keys ready, set `PODCAST_GENERATOR_API_KEY_ACTIVE` to an alias and define `PODCAST_GENERATOR_API_KEY_<ALIAS>`. For example, `PODCAST_GENERATOR_API_KEY_ACTIVE=GROQ_PRIMARY` makes the generator use `PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY`; switching to another key is just changing the active alias and restarting the bot. `OPENAI_API_KEY` remains the legacy fallback.
 
+The generator asks for strict `json_schema` output by default. If a model rejects that response format but supports JSON mode, the bot automatically retries with `json_object` and `reasoning_format=hidden`.
+
 Contract files live in `../clawcast-network/contracts`.

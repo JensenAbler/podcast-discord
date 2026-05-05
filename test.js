@@ -221,6 +221,56 @@ async function runTests() {
         }
 
         console.log('  Generator API key aliases select active and standby keys');
+
+        const fallbackCalls = [];
+        const fallbackFormatGenerator = new PodcastGenerator({
+            apiKey: 'format-test-key',
+            model: 'qwen/qwen3-32b'
+        });
+        fallbackFormatGenerator.fetchJson = async (requestPath, body) => {
+            fallbackCalls.push({ requestPath, body });
+            if (fallbackCalls.length === 1) {
+                const unsupported = new Error('OpenAI API error: 400 - unsupported json_schema');
+                unsupported.status = 400;
+                unsupported.body = {
+                    error: {
+                        message: 'This model does not support response format `json_schema`.',
+                        param: 'response_format'
+                    }
+                };
+                throw unsupported;
+            }
+
+            return {
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            shouldRespond: true,
+                            speech: 'Qwen JSON fallback works.',
+                            mode: 'unchanged',
+                            confidence: 0.92
+                        })
+                    }
+                }]
+            };
+        };
+
+        const fallbackOutput = await fallbackFormatGenerator.generate({
+            transcript: 'Jensen: Confirm the fallback works.',
+            currentMode: 'chatty'
+        });
+
+        if (
+            fallbackCalls.length !== 2 ||
+            fallbackCalls[0].body.response_format?.type !== 'json_schema' ||
+            fallbackCalls[1].body.response_format?.type !== 'json_object' ||
+            fallbackCalls[1].body.reasoning_format !== 'hidden' ||
+            fallbackOutput.speech !== 'Qwen JSON fallback works.'
+        ) {
+            throw new Error(`JSON object fallback did not run as expected: ${JSON.stringify({ fallbackCalls, fallbackOutput })}`);
+        }
+
+        console.log('  Generator retries with JSON mode when a model rejects json_schema');
     } catch (error) {
         console.log(`  Podcast generator failed: ${error.message}`);
         failed++;

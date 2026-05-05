@@ -21,6 +21,11 @@ class PodcastGenerator {
         this.maxCompletionTokens = Number(options.maxCompletionTokens || process.env.PODCAST_GENERATOR_MAX_TOKENS || 1500);
         this.maxHistoryTurns = Number(options.maxHistoryTurns || process.env.PODCAST_GENERATOR_HISTORY_TURNS || 8);
         this.maxSpeechChars = Number(options.maxSpeechChars || process.env.PODCAST_GENERATOR_MAX_SPEECH_CHARS || 520);
+        this.responseFormat = options.responseFormat || process.env.PODCAST_GENERATOR_RESPONSE_FORMAT || 'json_schema';
+        this.reasoningFormat = options.reasoningFormat || process.env.PODCAST_GENERATOR_REASONING_FORMAT;
+        this.allowJsonObjectFallback = options.allowJsonObjectFallback !== undefined
+            ? Boolean(options.allowJsonObjectFallback)
+            : process.env.PODCAST_GENERATOR_JSON_OBJECT_FALLBACK !== 'false';
         this.temperature = process.env.PODCAST_GENERATOR_TEMPERATURE;
         this.history = [];
         this.session = {
@@ -54,26 +59,8 @@ class PodcastGenerator {
         const transcript = input.transcript || this.formatUtterances(input.utterances || []);
         const messages = this.buildMessages(input);
 
-        const body = {
-            model: this.model,
-            messages,
-            max_completion_tokens: this.maxCompletionTokens,
-            response_format: {
-                type: 'json_schema',
-                json_schema: {
-                    name: 'podcast_voice_turn',
-                    strict: true,
-                    schema: this.getResponseSchema()
-                }
-            }
-        };
-
-        if (this.temperature !== undefined && this.temperature !== '') {
-            body.temperature = Number(this.temperature);
-        }
-
         const startTime = Date.now();
-        const result = await this.fetchJson('/chat/completions', body);
+        const result = await this.fetchCompletion(messages);
         const duration = Date.now() - startTime;
         const choice = result.choices?.[0];
         const content = choice?.message?.content;
@@ -162,6 +149,69 @@ class PodcastGenerator {
 
     buildDecisionPrompt() {
         return 'Decide whether Alpha-Clawd should speak now.';
+    }
+
+    buildRequestBody(messages, options = {}) {
+        const responseFormat = options.responseFormat || this.responseFormat;
+        const body = {
+            model: this.model,
+            messages,
+            max_completion_tokens: this.maxCompletionTokens
+        };
+
+        if (responseFormat === 'json_schema') {
+            body.response_format = {
+                type: 'json_schema',
+                json_schema: {
+                    name: 'podcast_voice_turn',
+                    strict: true,
+                    schema: this.getResponseSchema()
+                }
+            };
+        } else if (responseFormat === 'json_object') {
+            body.response_format = { type: 'json_object' };
+        }
+
+        const reasoningFormat = options.reasoningFormat || this.reasoningFormat;
+        if (reasoningFormat) {
+            body.reasoning_format = reasoningFormat;
+        }
+
+        if (this.temperature !== undefined && this.temperature !== '') {
+            body.temperature = Number(this.temperature);
+        }
+
+        return body;
+    }
+
+    async fetchCompletion(messages) {
+        const body = this.buildRequestBody(messages);
+
+        try {
+            return await this.fetchJson('/chat/completions', body);
+        } catch (error) {
+            if (!this.shouldRetryWithJsonObject(error, body)) {
+                throw error;
+            }
+
+            console.warn('[PodcastGenerator] Model rejected json_schema response_format; retrying with json_object');
+            return this.fetchJson('/chat/completions', this.buildRequestBody(messages, {
+                responseFormat: 'json_object',
+                reasoningFormat: this.reasoningFormat || 'hidden'
+            }));
+        }
+    }
+
+    shouldRetryWithJsonObject(error, body) {
+        if (!this.allowJsonObjectFallback) return false;
+        if (body.response_format?.type !== 'json_schema') return false;
+        if (error.status !== 400) return false;
+
+        const errorBody = error.body?.error || error.body || {};
+        const message = String(errorBody.message || error.message || '');
+        const param = String(errorBody.param || '');
+
+        return param === 'response_format' || /does not support response format `?json_schema`?/i.test(message);
     }
 
     resolveApiKey(options = {}, env = process.env) {
@@ -368,7 +418,15 @@ class PodcastGenerator {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+                const error = new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+                error.status = response.status;
+                error.bodyText = errorText;
+                try {
+                    error.body = JSON.parse(errorText);
+                } catch {
+                    error.body = null;
+                }
+                throw error;
             }
 
             return response.json();
@@ -398,6 +456,7 @@ class PodcastGenerator {
             provider: 'openai-direct',
             model: this.model,
             apiKeySource: this.apiKeySource,
+            responseFormat: this.responseFormat,
             maxHistoryTurns: this.maxHistoryTurns,
             timeout: this.timeout
         };
