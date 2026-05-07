@@ -24,10 +24,14 @@ const BufferState = Object.freeze({
 
 const DEFAULT_USER_ID = '__default_user__';
 const DEFAULT_PENDING_ASR_TIMEOUT = 8000;
+const DEFAULT_GRACE_PERIOD = 700;       // wait briefly after ASR lands in case speech resumes
+const DEFAULT_COOLDOWN_PERIOD = 2000;   // hold after a host turn before another response
 
 class ConversationBuffer {
     constructor(config = {}) {
         this.config = {
+            gracePeriod: DEFAULT_GRACE_PERIOD,
+            cooldownPeriod: DEFAULT_COOLDOWN_PERIOD,
             pendingAsrTimeout: DEFAULT_PENDING_ASR_TIMEOUT,
             ...config
         };
@@ -253,20 +257,6 @@ class ConversationBuffer {
         if (this.cooldownTimer) {
             clearTimeout(this.cooldownTimer);
             this.cooldownTimer = null;
-        }
-    }
-
-    /**
-     * Switch buffering mode.
-     * @param {Object} config - { gracePeriod, cooldownPeriod, pendingAsrTimeout }
-     */
-    setMode(config) {
-        const nextConfig = { ...this.config, ...config };
-        console.log(`[ConversationBuffer] Mode change: grace=${nextConfig.gracePeriod}ms, cooldown=${nextConfig.cooldownPeriod}ms`);
-        this.config = nextConfig;
-
-        if (this.state === BufferState.GRACE) {
-            this.startGraceTimer({ restart: true });
         }
     }
 
@@ -541,22 +531,4 @@ class ConversationBuffer {
     }
 }
 
-/**
- * Chatty mode: Fast responses, short grace period.
- * Good for banter, quick exchanges.
- */
-const CHATTY_MODE = {
-    gracePeriod: 700,       // wait briefly after ASR lands in case speech resumes
-    cooldownPeriod: 2000    // 2s cooldown after AI response
-};
-
-/**
- * Buffered mode: Slower, more deliberate.
- * Good for storytelling, monologues.
- */
-const BUFFERED_MODE = {
-    gracePeriod: 10000,     // 10s grace after ASR lands
-    cooldownPeriod: 15000   // 15s cooldown after AI response
-};
-
-module.exports = { ConversationBuffer, CHATTY_MODE, BUFFERED_MODE, BufferState };
+module.exports = { ConversationBuffer, BufferState };

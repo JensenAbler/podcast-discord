@@ -5,8 +5,8 @@
  * itself. It asks a small model for one strict JSON object:
  * - shouldRespond: whether Alpha-Clawd should speak at all
  * - speech: exact TTS text
- * - mode: optional buffer mode change
  * - confidence: model confidence in speaking now
+ * - bigBrain: escape-hatch handoff to the deeper agent (see schema)
  */
 
 class PodcastGenerator {
@@ -71,7 +71,6 @@ class PodcastGenerator {
             return this.normalizeOutput({
                 shouldRespond: false,
                 speech: '',
-                mode: 'unchanged',
                 confidence: 0
             });
         }
@@ -91,7 +90,7 @@ class PodcastGenerator {
         if (input.remember !== false) {
             this.rememberTurn(transcript, output);
         }
-        console.log(`[PodcastGenerator] Completed in ${duration}ms: respond=${output.shouldRespond}, mode=${output.mode}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}`);
+        console.log(`[PodcastGenerator] Completed in ${duration}ms: respond=${output.shouldRespond}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}`);
         if (output.bigBrain.requested) {
             console.log(`[PodcastGenerator] bigBrain requested (DRY RUN — not yet dispatched). reason="${output.bigBrain.reason}"`);
         }
@@ -100,12 +99,11 @@ class PodcastGenerator {
 
     buildMessages(input = {}) {
         const transcript = input.transcript || this.formatUtterances(input.utterances || []);
-        const currentMode = input.currentMode || 'chatty';
 
         return [
             { role: 'system', content: this.buildSystemPrompt() },
             ...this.getRecentHistory(),
-            { role: 'user', content: this.buildUserPrompt(transcript, currentMode, input.wordData, input) },
+            { role: 'user', content: this.buildUserPrompt(transcript, input.wordData, input) },
             { role: 'system', content: this.buildDecisionPrompt() }
         ];
     }
@@ -160,10 +158,9 @@ class PodcastGenerator {
         ].join('\n');
     }
 
-    buildUserPrompt(transcript, currentMode, wordData, options = {}) {
+    buildUserPrompt(transcript, wordData, options = {}) {
         const lines = [
-            `Recording: ${this.session.recording ? 'on' : 'off'}`,
-            `Current buffer mode: ${currentMode}`
+            `Recording: ${this.session.recording ? 'on' : 'off'}`
         ];
 
         if (options.idleCheck && Number.isFinite(Number(options.idleSeconds))) {
@@ -313,7 +310,7 @@ class PodcastGenerator {
         return {
             type: 'object',
             additionalProperties: false,
-            required: ['shouldRespond', 'speech', 'mode', 'confidence', 'bigBrain'],
+            required: ['shouldRespond', 'speech', 'confidence', 'bigBrain'],
             properties: {
                 shouldRespond: {
                     type: 'boolean',
@@ -322,11 +319,6 @@ class PodcastGenerator {
                 speech: {
                     type: 'string',
                     description: 'Exact text to send to TTS. Empty string when shouldRespond is false.'
-                },
-                mode: {
-                    type: 'string',
-                    enum: ['unchanged', 'chatty', 'buffered'],
-                    description: 'Requested conversation buffer mode after this turn.'
                 },
                 confidence: {
                     type: 'number',
@@ -354,9 +346,6 @@ class PodcastGenerator {
 
     normalizeOutput(output) {
         const shouldRespond = Boolean(output?.shouldRespond);
-        const mode = ['chatty', 'buffered', 'unchanged'].includes(output?.mode)
-            ? output.mode
-            : 'unchanged';
         const confidence = Number.isFinite(Number(output?.confidence))
             ? Math.min(1, Math.max(0, Number(output.confidence)))
             : 0;
@@ -366,7 +355,6 @@ class PodcastGenerator {
             shouldRespond: shouldRespond && speech.length > 0,
             speech,
             text: speech,
-            mode,
             confidence,
             bigBrain: this.normalizeBigBrain(output?.bigBrain)
         };

@@ -71,7 +71,7 @@ const { VoiceManager } = require('./voice-manager');
 const { VoiceProvider } = require('./voice-provider');
 const { GatewayBridge } = require('./gateway-bridge');
 const { GatewayWsClient } = require('./gateway-ws-client');
-const { ConversationBuffer, CHATTY_MODE, BUFFERED_MODE, BufferState } = require('./conversation-buffer');
+const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { getRecordingDir } = require('./paths');
 const { PodcastGenerator } = require('./podcast-generator');
 
@@ -184,7 +184,7 @@ class AlphaClawdVoiceBot {
         this.wsClient.on('disconnected', () => console.log('[Bot] WebSocket disconnected'));
 
         // Initialize ConversationBuffer for utterance batching
-        this.conversationBuffer = new ConversationBuffer(CHATTY_MODE);
+        this.conversationBuffer = new ConversationBuffer();
         this.conversationBuffer.onFlush((utterances) => {
             this.handleBufferFlush(utterances);
         });
@@ -367,13 +367,10 @@ class AlphaClawdVoiceBot {
             console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s without participant speech`);
             const response = await this.podcastGenerator.generate({
                 transcript: '',
-                currentMode: this.getBufferModeName(),
                 idleCheck: true,
                 idleSeconds,
                 remember: false
             });
-
-            this.applyGeneratorMode(response.mode);
 
             if (!response.shouldRespond) {
                 console.log(`[Bot] Idle generator chose silence (confidence=${response.confidence})`);
@@ -676,19 +673,6 @@ class AlphaClawdVoiceBot {
                 .setName('podcast-reset')
                 .setDescription('Reset bot state (emergency cleanup)'),
             new SlashCommandBuilder()
-                .setName('podcast-mode')
-                .setDescription('Switch conversation buffering mode')
-                .addStringOption(option =>
-                    option
-                        .setName('mode')
-                        .setDescription('Buffering mode')
-                        .setRequired(true)
-                        .addChoices(
-                            { name: 'Chatty (~700ms grace)', value: 'chatty' },
-                            { name: 'Buffered (10s grace)', value: 'buffered' }
-                        )
-                ),
-            new SlashCommandBuilder()
                 .setName('podcast-debug')
                 .setDescription('Toggle debug modes')
                 .addBooleanOption(option =>
@@ -767,17 +751,6 @@ class AlphaClawdVoiceBot {
                 case 'podcast-reset':
                     await this.handleResetCommand(interaction);
                     break;
-                case 'podcast-mode': {
-                    const mode = interaction.options.getString('mode');
-                    const newMode = mode === 'buffered' ? BUFFERED_MODE : CHATTY_MODE;
-                    this.conversationBuffer.setMode(newMode);
-                    this.conversationBuffer.forceFlush();
-                    await interaction.reply({ 
-                        content: `Switched to **${mode}** mode.`, 
-                        ephemeral: true 
-                    });
-                    break;
-                }
                 case 'podcast-debug': {
                     const inject = interaction.options.getBoolean('inject');
                     const flush = interaction.options.getBoolean('flush');
@@ -1023,27 +996,7 @@ class AlphaClawdVoiceBot {
                         'No code blocks, file paths, or technical formatting',
                         'Keep responses concise and natural for spoken delivery',
                         'No markdown, bullet points, or structured formatting',
-                        'Listeners hear your FULL response as voice — there is no "silent" text channel',
-                        '',
-                        '--- MODE SWITCHING DIRECTIVE ---',
-                        'You can dynamically adjust the podcast\'s responsiveness by emitting action directives in your response text.',
-                        'These are parsed and removed before reaching users.',
-                        '',
-                        'Syntax: [ACTION:mode:MODE_NAME]',
-                        '',
-                        'Available modes:',
-                        '- chatty: Fast responses (2 second silence detection, 2 second cooldown), good for banter, quick exchanges, high-energy moments',
-                        '- buffered: Slower, more deliberate (10 second silence detection, batches 3+ utterances, 15 second cooldown), good for storytelling, monologues, structured segments',
-                        '',
-                        'When to use:',
-                        '- Emit [ACTION:mode:chatty] when: engaging in rapid back-and-forth, reacting to quick user inputs, keeping energy high, conversational ping-pong',
-                        '- Emit [ACTION:mode:buffered] when: beginning a story, delivering a monologue, wanting to gather thoughts before speaking, transitioning to narrative content',
-                        '',
-                        'Examples:',
-                        '- User: "Tell me a joke!" → You: [ACTION:mode:chatty] "Why did the lobster blush? Because the sea weed!"',
-                        '- User: "What happened next in the story?" → You: [ACTION:mode:buffered] "Let me gather my thoughts... [then continue with story after brief pause]"',
-                        '',
-                        'Important: The directive is invisible to users. It only affects how your responses are timed and batched. You remain in control of when to switch modes.'
+                        'Listeners hear your FULL response as voice — there is no "silent" text channel'
                     ];
                     
                     await this.wsClient.injectPodcastEvent({
@@ -1186,7 +1139,6 @@ class AlphaClawdVoiceBot {
         const recordingInfo = this.voiceManager.getRecordingInfo(guildId);
         const state = this.recordingState.get(guildId) || 'IDLE';
         const bufferState = this.conversationBuffer?.getState();
-        const bufferMode = this.getBufferModeName();
         const bufferCount = bufferState?.utteranceCount || 0;
         const bufferReady = bufferState?.isReady ?? true;
 
@@ -1195,13 +1147,13 @@ class AlphaClawdVoiceBot {
         const generatorInfo = this.useGatewayGenerator()
             ? { provider: 'gateway-openclaw', model: this.wsClient.sessionKey }
             : this.podcastGenerator.getInfo();
-        
+
         let message = `📊 **Status**\n\n`;
         message += `Connected: ${status.connected ? '✅' : '❌'}\n`;
         message += `State: ${state}\n`;
         message += `Voice Mode: **${voiceMode}** (${info?.tts.provider}/${info?.stt.provider})\n`;
         message += `Generator: **${this.generatorMode}** (${generatorInfo.provider}/${generatorInfo.model})\n`;
-        message += `Buffer Mode: **${bufferMode}** | ${bufferCount} utterance(s) | Ready: ${bufferReady ? '✅' : '⏳'}\n`;
+        message += `Buffer: ${bufferCount} utterance(s) | Ready: ${bufferReady ? '✅' : '⏳'}\n`;
         
         if (recordingInfo) {
             message += `Duration: ${recordingInfo.durationFormatted || 'N/A'}\n`;
@@ -1342,22 +1294,6 @@ class AlphaClawdVoiceBot {
         }
     }
 
-    getBufferModeName() {
-        return this.conversationBuffer?.config.gracePeriod === BUFFERED_MODE.gracePeriod
-            ? 'buffered'
-            : 'chatty';
-    }
-
-    applyGeneratorMode(mode) {
-        if (!mode || mode === 'unchanged') {
-            return;
-        }
-
-        const newMode = mode === 'buffered' ? BUFFERED_MODE : CHATTY_MODE;
-        this.conversationBuffer.setMode(newMode);
-        console.log(`[Bot] Generator requested mode switch: ${mode}`);
-    }
-
     async handleDirectGeneratorFlush(guildId, utterances, transcript, wordData) {
         this.directResponseInFlight.add(guildId);
 
@@ -1365,11 +1301,8 @@ class AlphaClawdVoiceBot {
             const response = await this.podcastGenerator.generate({
                 utterances,
                 transcript,
-                wordData,
-                currentMode: this.getBufferModeName()
+                wordData
             });
-
-            this.applyGeneratorMode(response.mode);
 
             if (!response.shouldRespond) {
                 console.log(`[Bot] Direct generator chose silence (confidence=${response.confidence})`);
@@ -1604,24 +1537,6 @@ class AlphaClawdVoiceBot {
             }
         }
 
-        // Check for action blocks (mode switching directives from AI)
-        if (message?.content && Array.isArray(message.content)) {
-            const actionBlocks = message.content.filter(block => 
-                block.type === 'action' && block.actionType === 'mode'
-            );
-            
-            for (const block of actionBlocks) {
-                const modeValue = block.value;
-                console.log(`[Bot] AI requested mode switch: ${modeValue}`);
-                
-                const newMode = modeValue === 'buffered' ? BUFFERED_MODE : CHATTY_MODE;
-                this.conversationBuffer.setMode(newMode);
-                
-                // Force flush pending buffer on mode switch
-                this.conversationBuffer.forceFlush();
-            }
-        }
-        
         console.log(`[Bot] Active guildId: ${guildId}, synthesizing TTS...`);
 
         try {

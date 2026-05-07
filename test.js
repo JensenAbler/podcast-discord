@@ -131,13 +131,11 @@ async function runTests() {
         const output = generator.normalizeOutput({
             shouldRespond: true,
             speech: '**Absolutely.** [ACTION:mode:chatty] I am with you on that.',
-            mode: 'chatty',
             confidence: 0.8
         });
 
         if (
             output.shouldRespond === true &&
-            output.mode === 'chatty' &&
             output.speech === 'Absolutely. I am with you on that.'
         ) {
             console.log('  Structured output normalization works');
@@ -147,8 +145,7 @@ async function runTests() {
         }
 
         const messages = generator.buildMessages({
-            transcript: 'Jensen: Testing the turn decision prompt',
-            currentMode: 'chatty'
+            transcript: 'Jensen: Testing the turn decision prompt'
         });
         const userMessage = messages[messages.length - 2];
         const decisionMessage = messages[messages.length - 1];
@@ -247,7 +244,6 @@ async function runTests() {
                         content: JSON.stringify({
                             shouldRespond: true,
                             speech: 'Qwen JSON fallback works.',
-                            mode: 'unchanged',
                             confidence: 0.92
                         })
                     }
@@ -256,8 +252,7 @@ async function runTests() {
         };
 
         const fallbackOutput = await fallbackFormatGenerator.generate({
-            transcript: 'Jensen: Confirm the fallback works.',
-            currentMode: 'chatty'
+            transcript: 'Jensen: Confirm the fallback works.'
         });
 
         if (
@@ -286,7 +281,6 @@ async function runTests() {
         const defaultOut = bigBrainGenerator.normalizeOutput({
             shouldRespond: true,
             speech: 'No big brain needed.',
-            mode: 'unchanged',
             confidence: 0.9
         });
         if (defaultOut.bigBrain.requested !== false || defaultOut.bigBrain.reason !== '') {
@@ -296,7 +290,6 @@ async function runTests() {
         const requestedOut = bigBrainGenerator.normalizeOutput({
             shouldRespond: true,
             speech: 'Let me think about this for a moment.',
-            mode: 'unchanged',
             confidence: 0.7,
             bigBrain: { requested: true, reason: 'Need to verify a date I am unsure about.' }
         });
@@ -310,7 +303,6 @@ async function runTests() {
         const garbageOut = bigBrainGenerator.normalizeOutput({
             shouldRespond: false,
             speech: '',
-            mode: 'unchanged',
             confidence: 0,
             bigBrain: { requested: 'yes please', reason: 42 }
         });
