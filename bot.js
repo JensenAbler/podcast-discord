@@ -665,14 +665,6 @@ class AlphaClawdVoiceBot {
                 .addStringOption(option =>
                     option.setName('topic')
                         .setDescription('Topic for the podcast')
-                        .setRequired(false))
-                .addStringOption(option =>
-                    option.setName('jensen_id')
-                        .setDescription('Discord ID for Jensen')
-                        .setRequired(false))
-                .addStringOption(option =>
-                    option.setName('jade_id')
-                        .setDescription('Discord ID for Jade')
                         .setRequired(false)),
             new SlashCommandBuilder()
                 .setName('podcast-leave')
@@ -896,20 +888,11 @@ class AlphaClawdVoiceBot {
         await interaction.deferReply();
 
         try {
-            // Get options FIRST (before joining)
+            // Get topic FIRST (before joining)
             const topic = interaction.options.getString('topic') || 'the topic at hand';
-            const jensenId = interaction.options.getString('jensen_id');
-            const jadeId = interaction.options.getString('jade_id');
 
-            // Update speaker map BEFORE joining (so it's passed to AudioReceiver)
-            if (jensenId) {
-                this.speakerMap[jensenId] = { name: 'Jensen', role: 'guest' };
-            }
-            if (jadeId) {
-                this.speakerMap[jadeId] = { name: 'Jade', role: 'guest' };
-            }
-
-            // Join the voice channel (speakerMap now populated)
+            // Speaker names auto-resolve from Discord member info inside the
+            // receiver (see AudioReceiver.getSpeakerInfo).
             await this.voiceManager.joinChannel(voiceChannel, this.speakerMap);
 
             // Set recording state to awaiting consent
