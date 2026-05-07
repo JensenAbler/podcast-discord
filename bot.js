@@ -373,7 +373,7 @@ class AlphaClawdVoiceBot {
             });
 
             if (!response.shouldRespond) {
-                console.log(`[Bot] Idle generator chose silence (confidence=${response.confidence})`);
+                console.log(`[Bot] Idle generator chose silence`);
                 return;
             }
 
@@ -1305,7 +1305,7 @@ class AlphaClawdVoiceBot {
             });
 
             if (!response.shouldRespond) {
-                console.log(`[Bot] Direct generator chose silence (confidence=${response.confidence})`);
+                console.log(`[Bot] Direct generator chose silence`);
                 return;
             }
 

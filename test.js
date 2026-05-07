@@ -130,8 +130,7 @@ async function runTests() {
 
         const output = generator.normalizeOutput({
             shouldRespond: true,
-            speech: '**Absolutely.** [ACTION:mode:chatty] I am with you on that.',
-            confidence: 0.8
+            speech: '**Absolutely.** [ACTION:mode:chatty] I am with you on that.'
         });
 
         if (
@@ -243,8 +242,7 @@ async function runTests() {
                     message: {
                         content: JSON.stringify({
                             shouldRespond: true,
-                            speech: 'Qwen JSON fallback works.',
-                            confidence: 0.92
+                            speech: 'Qwen JSON fallback works.'
                         })
                     }
                 }]
@@ -280,8 +278,7 @@ async function runTests() {
 
         const defaultOut = bigBrainGenerator.normalizeOutput({
             shouldRespond: true,
-            speech: 'No big brain needed.',
-            confidence: 0.9
+            speech: 'No big brain needed.'
         });
         if (defaultOut.bigBrain.requested !== false || defaultOut.bigBrain.reason !== '') {
             throw new Error(`Missing bigBrain should default to {requested:false, reason:""}: ${JSON.stringify(defaultOut.bigBrain)}`);
@@ -290,7 +287,6 @@ async function runTests() {
         const requestedOut = bigBrainGenerator.normalizeOutput({
             shouldRespond: true,
             speech: 'Let me think about this for a moment.',
-            confidence: 0.7,
             bigBrain: { requested: true, reason: 'Need to verify a date I am unsure about.' }
         });
         if (
@@ -303,7 +299,6 @@ async function runTests() {
         const garbageOut = bigBrainGenerator.normalizeOutput({
             shouldRespond: false,
             speech: '',
-            confidence: 0,
             bigBrain: { requested: 'yes please', reason: 42 }
         });
         if (garbageOut.bigBrain.requested !== false || garbageOut.bigBrain.reason !== '') {

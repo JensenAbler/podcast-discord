@@ -5,7 +5,6 @@
  * itself. It asks a small model for one strict JSON object:
  * - shouldRespond: whether Alpha-Clawd should speak at all
  * - speech: exact TTS text
- * - confidence: model confidence in speaking now
  * - bigBrain: escape-hatch handoff to the deeper agent (see schema)
  */
 
@@ -70,8 +69,7 @@ class PodcastGenerator {
             console.warn(`[PodcastGenerator] Model refusal: ${refusal}`);
             return this.normalizeOutput({
                 shouldRespond: false,
-                speech: '',
-                confidence: 0
+                speech: ''
             });
         }
 
@@ -310,7 +308,7 @@ class PodcastGenerator {
         return {
             type: 'object',
             additionalProperties: false,
-            required: ['shouldRespond', 'speech', 'confidence', 'bigBrain'],
+            required: ['shouldRespond', 'speech', 'bigBrain'],
             properties: {
                 shouldRespond: {
                     type: 'boolean',
@@ -319,10 +317,6 @@ class PodcastGenerator {
                 speech: {
                     type: 'string',
                     description: 'Exact text to send to TTS. Empty string when shouldRespond is false.'
-                },
-                confidence: {
-                    type: 'number',
-                    description: 'Confidence that this is the right turn-taking decision.'
                 },
                 bigBrain: {
                     type: 'object',
@@ -346,16 +340,12 @@ class PodcastGenerator {
 
     normalizeOutput(output) {
         const shouldRespond = Boolean(output?.shouldRespond);
-        const confidence = Number.isFinite(Number(output?.confidence))
-            ? Math.min(1, Math.max(0, Number(output.confidence)))
-            : 0;
         const speech = shouldRespond ? this.sanitizeSpeech(output?.speech || '') : '';
 
         return {
             shouldRespond: shouldRespond && speech.length > 0,
             speech,
             text: speech,
-            confidence,
             bigBrain: this.normalizeBigBrain(output?.bigBrain)
         };
     }
