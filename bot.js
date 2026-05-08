@@ -1394,7 +1394,10 @@ class AlphaClawdVoiceBot {
                 return;
             }
             const lastSpeaker = utterances[utterances.length - 1]?.speaker || 'there';
-            await this.fallbackResponse(guildId, lastSpeaker);
+            await this.fallbackResponse(guildId, lastSpeaker, {
+                error,
+                rememberTranscript: transcript
+            });
         } finally {
             this.directResponseInFlight.delete(guildId);
             this.conversationBuffer?.setFlushHold?.('direct-response', false);
@@ -1519,25 +1522,108 @@ class AlphaClawdVoiceBot {
     /**
      * Fallback response when Gateway unavailable
      */
-    async fallbackResponse(guildId, speakerName) {
-        const fallbacks = [
-            `That's fascinating, ${speakerName}. Tell me more.`,
-            `Interesting point, ${speakerName}. What led you to that?`,
-            `I love that perspective, ${speakerName}.`,
-            `Go on, ${speakerName}. I'm listening.`
-        ];
-        
-        const text = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-        
+    summarizeGeneratorError(error) {
+        const providerError = error?.providerError || {};
+        const errorBody = error?.body?.error || error?.body || {};
+        const message = String(errorBody.message || error?.message || '');
+        const retryMatch = message.match(/try again in ([0-9.]+)s/i);
+        const orgMatch = message.match(/organization `([^`]+)`/i);
+
+        return {
+            status: providerError.status || error?.status || null,
+            code: providerError.code || errorBody.code || null,
+            type: providerError.type || errorBody.type || null,
+            organization: providerError.organization || (orgMatch ? orgMatch[1] : null),
+            retryAfterSeconds: Number.isFinite(providerError.retryAfterSeconds)
+                ? providerError.retryAfterSeconds
+                : (retryMatch ? Number(retryMatch[1]) : null),
+            failedApiKeySources: Array.isArray(error?.failoverSources)
+                ? error.failoverSources
+                : [error?.apiKeySource].filter(Boolean)
+        };
+    }
+
+    buildFallbackResponseText(error) {
+        const summary = this.summarizeGeneratorError(error);
+        const isRateLimit = summary.status === 429 || summary.code === 'rate_limit_exceeded';
+        const retryAfter = Number.isFinite(summary.retryAfterSeconds)
+            ? Math.max(1, Math.ceil(summary.retryAfterSeconds))
+            : null;
+        const retryText = retryAfter
+            ? ` Groq says to wait about ${retryAfter} second${retryAfter === 1 ? '' : 's'} before retrying.`
+            : '';
+
+        if (isRateLimit) {
+            const sourceText = summary.failedApiKeySources.length > 1
+                ? ' on both configured Groq keys'
+                : '';
+            return `I'm hitting a Groq 429 rate limit${sourceText} right now.${retryText} I may need you to ask that again in a moment.`;
+        }
+
+        if (summary.status || summary.code) {
+            const codeText = [summary.status, summary.code].filter(Boolean).join(' ');
+            return `I hit a generator error (${codeText}) before I could answer. I may need you to ask that again in a moment.`;
+        }
+
+        return `I hit a generator error before I could answer. I may need you to ask that again in a moment.`;
+    }
+
+    async fallbackResponse(guildId, speakerName, options = {}) {
+        const generatedAt = new Date().toISOString();
+        const providerError = this.summarizeGeneratorError(options.error);
+        const text = this.buildFallbackResponseText(options.error);
+
         try {
             this.markIdleDecisionHandled(guildId);
 
+            const ttsStartedAt = new Date().toISOString();
             const audioBuffer = await this.voiceProvider.synthesize(text, {
                 voiceId: this.voiceId
             });
-            
-            this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
-            await this.voiceManager.speak(guildId, audioBuffer);
+            const ttsCompletedAt = new Date().toISOString();
+            const playbackResult = await this.playTtsAndRecord(guildId, audioBuffer);
+            const playback = playbackResult.playback;
+            const playbackTiming = playbackResult.playbackTiming || playback?.timing || {};
+            const playbackStartedAt = playbackTiming.playbackStartedAt || playback?.timing?.playbackStartedAt || null;
+            const playbackEndedAt = playbackTiming.playbackEndedAt || playback?.timing?.playbackEndedAt || null;
+            const playbackStartedMs = Date.parse(playbackStartedAt);
+            const playbackEndedMs = Date.parse(playbackEndedAt);
+            const playbackDuration = !Number.isNaN(playbackStartedMs) && !Number.isNaN(playbackEndedMs)
+                ? Math.max(0, playbackEndedMs - playbackStartedMs)
+                : 0;
+
+            this.voiceManager.saveTranscriptEntry(guildId, {
+                speaker: 'Alpha-Clawd',
+                speakerRole: 'host',
+                transcription: text,
+                timestamp: generatedAt,
+                generatedAt,
+                ttsStartedAt,
+                ttsCompletedAt,
+                playbackRequestedAt: playbackTiming.playbackRequestedAt || playback?.timing?.playbackRequestedAt || null,
+                playbackStartedAt,
+                playbackEndedAt,
+                duration: playbackDuration,
+                source: 'fallback',
+                fallbackReason: 'generator_error',
+                providerError,
+                audioEvents: ['fallback_response']
+            });
+
+            if (typeof options.rememberTranscript === 'string') {
+                this.podcastGenerator?.rememberTurn?.(options.rememberTranscript, {
+                    shouldRespond: true,
+                    speech: text,
+                    bigBrain: { requested: false, reason: '' }
+                });
+            } else {
+                this.podcastGenerator?.rememberAssistantResponse?.({
+                    shouldRespond: true,
+                    speech: text,
+                    bigBrain: { requested: false, reason: '' }
+                });
+            }
+
             this.conversationBuffer.startCooldown();
         } catch (error) {
             console.error('[Bot] Fallback error:', error);

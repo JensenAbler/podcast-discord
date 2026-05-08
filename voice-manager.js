@@ -621,6 +621,9 @@ class VoiceManager {
             playbackRequestedAt: utterance.playbackRequestedAt || null,
             playbackStartedAt: utterance.playbackStartedAt || null,
             playbackEndedAt: utterance.playbackEndedAt || null,
+            source: utterance.source || null,
+            fallbackReason: utterance.fallbackReason || null,
+            providerError: utterance.providerError || null,
             words: (utterance.words || []).map(w => ({
                 text: w.text || w.word,
                 start: w.start,

@@ -302,7 +302,7 @@ async function runTests() {
                     rateLimited.status = 429;
                     rateLimited.body = {
                         error: {
-                            message: 'Rate limit reached on tokens per day',
+                            message: 'Rate limit reached in organization `org_test_primary`. Please try again in 2.5s.',
                             type: 'tokens',
                             code: 'rate_limit_exceeded'
                         }
@@ -323,9 +323,20 @@ async function runTests() {
                 };
             };
 
-            const failoverOutput = await failoverGenerator.generate({
-                transcript: 'Jensen: Keep going after the primary key runs out.'
-            });
+            const originalWarn = console.warn;
+            const warnLines = [];
+            console.warn = (...args) => {
+                warnLines.push(args.join(' '));
+            };
+
+            let failoverOutput;
+            try {
+                failoverOutput = await failoverGenerator.generate({
+                    transcript: 'Jensen: Keep going after the primary key runs out.'
+                });
+            } finally {
+                console.warn = originalWarn;
+            }
 
             if (
                 failoverOutput.speech !== 'Standby key handled the turn.' ||
@@ -333,6 +344,17 @@ async function runTests() {
                 failoverGenerator.apiKeySource !== 'PODCAST_GENERATOR_API_KEY_GROQ_STANDBY'
             ) {
                 throw new Error(`Generator did not fail over from primary to standby on rate limit: ${JSON.stringify({ failoverCalls, output: failoverOutput, source: failoverGenerator.apiKeySource })}`);
+            }
+            if (
+                !warnLines.some(line =>
+                    line.includes('PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY failed: status=429') &&
+                    line.includes('code=rate_limit_exceeded') &&
+                    line.includes('org=org_test_primary') &&
+                    line.includes('retryAfter=2.5s') &&
+                    line.includes('retrying with PODCAST_GENERATOR_API_KEY_GROQ_STANDBY')
+                )
+            ) {
+                throw new Error(`Failover log did not include safe source-tagged rate-limit metadata: ${JSON.stringify(warnLines)}`);
             }
 
             delete process.env.PODCAST_GENERATOR_API_KEY_ACTIVE;
@@ -823,6 +845,111 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Idle decision guard failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 7b: Generator fallback is honest and transcripted');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-fallback';
+        let idleMarked = false;
+        let cooldownStarted = false;
+        let synthesizedText = null;
+        let savedEntry = null;
+        let rememberedTurn = null;
+
+        bot.voiceId = 'voice-test';
+        bot.markIdleDecisionHandled = (handledGuildId) => {
+            if (handledGuildId === guildId) idleMarked = true;
+        };
+        bot.voiceProvider = {
+            synthesize: async (text) => {
+                synthesizedText = text;
+                return Buffer.from('fallback audio');
+            }
+        };
+        bot.playTtsAndRecord = async () => ({
+            playback: {
+                timing: {
+                    playbackRequestedAt: '2026-05-08T00:00:00.100Z',
+                    playbackStartedAt: '2026-05-08T00:00:01.000Z',
+                    playbackEndedAt: '2026-05-08T00:00:03.000Z'
+                }
+            },
+            playbackTiming: {
+                playbackRequestedAt: '2026-05-08T00:00:00.100Z',
+                playbackStartedAt: '2026-05-08T00:00:01.000Z',
+                playbackEndedAt: '2026-05-08T00:00:03.000Z'
+            }
+        });
+        bot.voiceManager = {
+            saveTranscriptEntry: (_guildId, entry) => {
+                savedEntry = entry;
+            }
+        };
+        bot.conversationBuffer = {
+            startCooldown: () => {
+                cooldownStarted = true;
+            }
+        };
+        bot.podcastGenerator = {
+            rememberTurn: (transcript, output) => {
+                rememberedTurn = { transcript, output };
+            }
+        };
+
+        const rateLimit = new Error('OpenAI API error: 429 - rate limit');
+        rateLimit.status = 429;
+        rateLimit.providerError = {
+            status: 429,
+            code: 'rate_limit_exceeded',
+            type: 'tokens',
+            organization: 'org_test_retry',
+            retryAfterSeconds: 11.07
+        };
+        rateLimit.failoverSources = [
+            'PODCAST_GENERATOR_API_KEY_GROQ_STANDBY',
+            'PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY'
+        ];
+
+        await bot.fallbackResponse(guildId, 'Jensen', {
+            error: rateLimit,
+            rememberTranscript: 'Jensen: Hello.'
+        });
+
+        if (!idleMarked || !cooldownStarted) {
+            throw new Error(`Fallback did not mark idle/cooldown: ${JSON.stringify({ idleMarked, cooldownStarted })}`);
+        }
+        if (
+            !synthesizedText.includes('Groq 429 rate limit') ||
+            !synthesizedText.includes('both configured Groq keys') ||
+            !synthesizedText.includes('12 seconds')
+        ) {
+            throw new Error(`Fallback text was not operationally informative: ${synthesizedText}`);
+        }
+        if (
+            savedEntry?.speaker !== 'Alpha-Clawd' ||
+            savedEntry?.source !== 'fallback' ||
+            savedEntry?.fallbackReason !== 'generator_error' ||
+            savedEntry?.providerError?.status !== 429 ||
+            savedEntry?.providerError?.organization !== 'org_test_retry' ||
+            savedEntry?.playbackStartedAt !== '2026-05-08T00:00:01.000Z' ||
+            savedEntry?.duration !== 2000 ||
+            !savedEntry?.audioEvents?.includes('fallback_response')
+        ) {
+            throw new Error(`Fallback transcript entry missing forensic metadata: ${JSON.stringify(savedEntry)}`);
+        }
+        if (
+            rememberedTurn?.transcript !== 'Jensen: Hello.' ||
+            rememberedTurn?.output?.speech !== synthesizedText
+        ) {
+            throw new Error(`Fallback speech was not remembered with the triggering transcript: ${JSON.stringify(rememberedTurn)}`);
+        }
+
+        console.log('  Fallback responses explain provider failures and save playback-timed transcript entries');
+        passed++;
+    } catch (error) {
+        console.log(`  Generator fallback transcript failed: ${error.message}`);
         failed++;
     }
 

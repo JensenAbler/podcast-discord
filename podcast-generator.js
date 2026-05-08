@@ -293,7 +293,8 @@ class PodcastGenerator {
                 apiKeyActiveName: this.apiKeyActiveName
             };
 
-            console.warn(`[PodcastGenerator] API key source ${original.apiKeySource} hit a rate limit; retrying with ${alternate.source}`);
+            this.annotateApiError(error, original.apiKeySource, original.apiKeyActiveName);
+            console.warn(`[PodcastGenerator] API key source ${original.apiKeySource} failed: ${this.formatApiErrorSummary(error)}; retrying with ${alternate.source}`);
             this.apiKey = alternate.apiKey;
             this.apiKeySource = alternate.source;
             this.apiKeyActiveName = alternate.activeName;
@@ -303,13 +304,60 @@ class PodcastGenerator {
                 console.warn(`[PodcastGenerator] API key failover succeeded; active source is now ${this.apiKeySource}`);
                 return result;
             } catch (retryError) {
+                this.annotateApiError(retryError, alternate.source, alternate.activeName);
+                console.warn(`[PodcastGenerator] API key source ${alternate.source} failed after failover: ${this.formatApiErrorSummary(retryError)}`);
                 this.apiKey = original.apiKey;
                 this.apiKeySource = original.apiKeySource;
                 this.apiKeyActiveName = original.apiKeyActiveName;
                 retryError.originalRateLimitError = error;
+                retryError.failoverSources = [original.apiKeySource, alternate.source];
                 throw retryError;
             }
         }
+    }
+
+    annotateApiError(error, apiKeySource, apiKeyActiveName = null) {
+        if (!error || typeof error !== 'object') return error;
+        error.apiKeySource = apiKeySource;
+        error.apiKeyActiveName = apiKeyActiveName;
+        error.providerError = this.getApiErrorSummary(error);
+        return error;
+    }
+
+    getApiErrorSummary(error) {
+        const errorBody = error?.body?.error || error?.body || {};
+        const message = String(errorBody.message || error?.message || '');
+        const status = error?.status || null;
+        const code = String(errorBody.code || '');
+        const type = String(errorBody.type || '');
+        const orgMatch = message.match(/organization `([^`]+)`/i);
+        const retryMatch = message.match(/try again in ([0-9.]+)s/i);
+
+        return {
+            status,
+            code: code || null,
+            type: type || null,
+            organization: orgMatch ? orgMatch[1] : null,
+            retryAfterSeconds: retryMatch ? Number(retryMatch[1]) : null
+        };
+    }
+
+    formatApiErrorSummary(error) {
+        const summary = error?.providerError || this.getApiErrorSummary(error);
+        const parts = [
+            `status=${summary.status || 'unknown'}`,
+            `code=${summary.code || 'unknown'}`,
+            `type=${summary.type || 'unknown'}`
+        ];
+
+        if (summary.organization) {
+            parts.push(`org=${summary.organization}`);
+        }
+        if (Number.isFinite(summary.retryAfterSeconds)) {
+            parts.push(`retryAfter=${summary.retryAfterSeconds}s`);
+        }
+
+        return parts.join(', ');
     }
 
     shouldRetryWithAlternateApiKey(error, alternate) {
