@@ -1083,6 +1083,88 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 9b: Audio Receiver strips phantom Chinese single-character ASR');
+    try {
+        const phantomText = '嗯。'; // 嗯。
+        const utterances = [];
+        const receiver = new AudioReceiver({
+            stt: {
+                transcribe: async () => ({
+                    text: phantomText,
+                    confidence: 0.8,
+                    words: [{ text: phantomText, type: 'segment' }],
+                    language: 'en'
+                })
+            },
+            onUtterance: (utterance) => utterances.push(utterance)
+        });
+
+        await receiver.processUtteranceSnapshot({
+            userId: 'user-phantom',
+            speakerInfo: {
+                name: 'Jensen',
+                role: 'guest'
+            },
+            audioBuffer: Buffer.alloc(48000),
+            startTime: Date.now(),
+            duration: 500,
+            timestamp: '2026-05-08T00:00:00.000Z',
+            speechStartedAt: '2026-05-08T00:00:00.000Z',
+            speechEndedAt: '2026-05-08T00:00:00.500Z',
+            speechDuration: 500
+        });
+
+        if (
+            utterances.length !== 1 ||
+            utterances[0].transcription !== '' ||
+            utterances[0].rawTranscription !== phantomText ||
+            utterances[0].audioEvents[0] !== 'phantom'
+        ) {
+            throw new Error(`Phantom ASR was not stripped/preserved: ${JSON.stringify(utterances[0])}`);
+        }
+
+        console.log('  Phantom Chinese single-char ASR is stripped (transcription empty), raw + audioEvents preserved');
+        passed++;
+    } catch (error) {
+        console.log(`  Phantom normalization failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 9c: Phantom detector edge cases');
+    try {
+        const receiver = new AudioReceiver({
+            stt: { transcribe: async () => ({ text: '', confidence: 0, words: [] }) },
+            onUtterance: () => {}
+        });
+
+        // Single CJK particles observed as phantoms in real episodes
+        const truthyCases = ['嗯。', '啊', '哎', '哥', '会', '对。'];
+        for (const raw of truthyCases) {
+            if (!receiver.isLikelyPhantomTranscription(raw)) {
+                throw new Error(`Expected ${JSON.stringify(raw)} to be classified as phantom`);
+            }
+        }
+
+        const falsyCases = [
+            '哈',          // 哈 alone — laughter character set, must NOT be phantom
+            '你好',    // 你好 — multi-char real Chinese
+            'mhm',             // English backchannel passes through
+            '呵呵',    // 呵呵 — laughter pattern handled elsewhere
+            '',                // empty
+        ];
+        for (const raw of falsyCases) {
+            if (receiver.isLikelyPhantomTranscription(raw)) {
+                throw new Error(`Expected ${JSON.stringify(raw)} to NOT be classified as phantom`);
+            }
+        }
+
+        console.log('  Phantom detector identifies single CJK particles, excludes laughter chars and real speech');
+        passed++;
+    } catch (error) {
+        console.log(`  Phantom detector edge case failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\nTest 10: Transcript timing uses bot playback metadata');
     try {
         const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'podcast-discord-transcript-'));

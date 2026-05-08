@@ -612,6 +612,13 @@ class AudioReceiver {
             };
         }
 
+        if (this.isLikelyPhantomTranscription(raw)) {
+            return {
+                transcription: '',
+                audioEvents: ['phantom']
+            };
+        }
+
         return {
             transcription: raw,
             audioEvents: []
@@ -630,6 +637,28 @@ class AudioReceiver {
         if (/^(haha|hehe|hihi|hoho|huhu)+$/.test(compact)) return true;
         if (/^(lol|lmao|rofl)+$/.test(compact)) return true;
         if (/^[\u5475\u54c8\u563f\u563b\u55ec]{2,}$/u.test(compact)) return true;
+
+        return false;
+    }
+
+    isLikelyPhantomTranscription(text) {
+        // Mic feedback during bot speech bleeds into participant channels and
+        // gets transcribed as one-character Chinese particles (\u55ef, \u554a, \u54ce, \u54e6,
+        // \u54e5, \u4f1a, \u5bf9, etc.). These are noise, not the guest's intent. Strip
+        // them so the generator doesn't read them as hold-space cues.
+        // The laughter detector handles \u54c8/\u5475/\u563f/\u563b/\u566c patterns separately
+        // (and requires 2+ chars), so we exclude that set to avoid eating
+        // single-character chuckles that the laughter check intentionally
+        // lets through.
+        const compact = String(text || '')
+            .normalize('NFKC')
+            .replace(/[\s.,!?;:'"\u201c\u201d\u2018\u2019\u3002\uff01\uff1f\u3001\uff0c\u2026~\-\u2014_()[\]{}]+/gu, '');
+
+        if (!compact) return false;
+
+        if (/^[\u4e00-\u9fff]$/u.test(compact) && !/[\u5475\u54c8\u563f\u563b\u55ec]/u.test(compact)) {
+            return true;
+        }
 
         return false;
     }

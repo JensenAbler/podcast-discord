@@ -594,7 +594,11 @@ class VoiceManager {
     saveTranscriptEntry(guildId, utterance) {
         const recordingPath = this.recordingPaths.get(guildId);
         if (!recordingPath) return;
-        if (!(utterance.transcription || '').trim()) return;
+        const transcriptionText = (utterance.transcription || '').trim();
+        const audioEvents = utterance.audioEvents || [];
+        // Preserve forensic record of audio events (phantom mic-feedback
+        // transcripts, etc.) even when normalized transcription is empty.
+        if (!transcriptionText && audioEvents.length === 0) return;
 
         const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
         
