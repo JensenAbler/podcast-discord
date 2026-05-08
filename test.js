@@ -163,7 +163,20 @@ async function runTests() {
 
         const systemPrompt = generator.buildSystemPrompt();
         if (
-            systemPrompt.includes('Read the guest\'s momentum:') &&
+            systemPrompt.includes('Live speech is provisional:') &&
+            systemPrompt.includes('not a polished chat message') &&
+            systemPrompt.includes('Read the latest utterance first:') &&
+            systemPrompt.includes('Hold-space cues:') &&
+            systemPrompt.includes('"actually", "wait", "hold on"') &&
+            systemPrompt.includes('Completed beat cues:') &&
+            systemPrompt.includes('latest settled frame') &&
+            systemPrompt.includes('treat the request as suspended') &&
+            systemPrompt.includes('Felt-sense invitation') &&
+            systemPrompt.includes('"What comes up for you when you hear ___ ?"') &&
+            systemPrompt.includes('Permission with decline built in') &&
+            systemPrompt.includes('Motion of the speaker') &&
+            systemPrompt.includes('Tension named, not resolved') &&
+            systemPrompt.includes('patterns, not scripts') &&
             systemPrompt.includes('Response modes:') &&
             systemPrompt.includes('Minimal backchannel') &&
             systemPrompt.includes('Reflection') &&
@@ -175,17 +188,41 @@ async function runTests() {
             systemPrompt.includes('Question') &&
             systemPrompt.includes('model and TTS latency') &&
             systemPrompt.includes('offers two or more options') &&
-            systemPrompt.includes('Vary your surface form') &&
+            systemPrompt.includes('Vary your choice of words') &&
             systemPrompt.includes('Do not let any stock phrase become a groove') &&
             systemPrompt.includes('"What does that bring up..."') &&
             systemPrompt.includes('Permission framing is for sensitive, personal, or easy-to-decline invitations') &&
             systemPrompt.includes('Do not ask a question every turn') &&
-            systemPrompt.includes('Minimal backchannel is allowed but should be rare')
+            systemPrompt.includes('Minimal backchannel is allowed but should be rare') &&
+            !systemPrompt.includes('Vary your surface form') &&
+            !systemPrompt.includes('one integrated sentence or two short sentences') &&
+            !systemPrompt.includes('Signals they are still mid-thought:') &&
+            !systemPrompt.includes('Signals they have completed a beat:')
         ) {
             console.log('  System prompt includes nuanced turn-taking response modes');
             passed++;
         } else {
             throw new Error('System prompt is missing nuanced turn-taking instructions');
+        }
+
+        const silentGenerator = new PodcastGenerator({
+            apiKey: 'sk-test-placeholder',
+            maxHistoryTurns: 2
+        });
+        silentGenerator.rememberTurn('Jensen: Actually.', { shouldRespond: false, speech: '' });
+        const silentHistory = silentGenerator.getRecentHistory();
+
+        if (
+            silentHistory.length === 2 &&
+            silentHistory[0].role === 'user' &&
+            silentHistory[0].content === 'Jensen: Actually.' &&
+            silentHistory[1].role === 'assistant' &&
+            silentHistory[1].content === '[Alpha-Clawd chose silence]'
+        ) {
+            console.log('  Generator remembers explicit silence decisions');
+            passed++;
+        } else {
+            throw new Error(`Silence decision was not remembered correctly: ${JSON.stringify(silentHistory)}`);
         }
 
         const cadenceMessages = generator.buildMessages({
