@@ -466,7 +466,12 @@ class AudioRecorder {
                 return;
             }
 
-            const mixFilter = `${mixes.join('')}[0:a]amix=inputs=${totalInputs}:duration=longest:dropout_transition=0.5[out]`;
+            // normalize=0 prevents amix from dividing by the count of currently-active
+            // inputs. The silent base track [0:a] is always active, so the default
+            // normalize=1 was halving every chunk and dividing by more whenever chunks
+            // overlapped. dynaudnorm levels perceived loudness and tames any summation
+            // peaks. Matches the dynaudnorm=p=0.95 used during base-track recording.
+            const mixFilter = `${mixes.join('')}[0:a]amix=inputs=${totalInputs}:duration=longest:dropout_transition=0.5:normalize=0[mixed];[mixed]dynaudnorm=p=0.95[out]`;
 
             const filterComplex = [...delays, mixFilter].join('');
 
