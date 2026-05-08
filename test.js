@@ -169,6 +169,8 @@ async function runTests() {
             systemPrompt.includes('Hold-space cues:') &&
             systemPrompt.includes('"actually", "wait", "hold on"') &&
             systemPrompt.includes('Completed beat cues:') &&
+            systemPrompt.includes('Closure cues:') &&
+            systemPrompt.includes('"we\'ll dig into it later"') &&
             systemPrompt.includes('latest settled frame') &&
             systemPrompt.includes('treat the request as suspended') &&
             systemPrompt.includes('Felt-sense invitation') &&
