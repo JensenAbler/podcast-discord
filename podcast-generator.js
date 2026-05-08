@@ -188,27 +188,17 @@ class PodcastGenerator {
     }
 
     buildUserPrompt(transcript, wordData, options = {}) {
-        const lines = [
-            `Recording: ${this.session.recording ? 'on' : 'off'}`
-        ];
+        const lines = [];
 
         if (options.idleCheck && Number.isFinite(Number(options.idleSeconds))) {
             lines.push(`No new participant speech for about ${Math.max(0, Math.round(Number(options.idleSeconds)))} seconds.`);
         }
 
-        const cadenceQueue = this.formatCadenceQueue(options.utterances || []);
-        if (cadenceQueue) {
-            lines.push(
-                '',
-                'Utterance timing queue (detected speech timing; use for cadence only, never read aloud):',
-                cadenceQueue,
-                '',
-                'Transcript text:',
-                transcript || '(empty)'
-            );
-        } else {
-            lines.push('', transcript || '(empty)');
+        const inlineTranscript = this.formatTranscriptWithPauses(options.utterances || []);
+        if (lines.length > 0) {
+            lines.push('');
         }
+        lines.push(inlineTranscript || transcript || '(empty)');
 
         if (wordData) {
             lines.push('', 'STT confidence hints:', wordData);
@@ -510,6 +500,53 @@ class PodcastGenerator {
             .map(u => `${u.speaker || 'Speaker'}: ${u.transcription || u.text || ''}`.trim())
             .filter(Boolean)
             .join('\n');
+    }
+
+    formatTranscriptWithPauses(utterances = []) {
+        const items = utterances
+            .map((utterance) => {
+                const text = String(utterance.transcription || utterance.text || '').trim();
+                if (!text) return null;
+
+                const startMs = this.getUtteranceStartMs(utterance);
+                const endMs = this.getUtteranceEndMs(utterance, startMs);
+
+                return {
+                    speaker: utterance.speaker || 'Speaker',
+                    text,
+                    startMs,
+                    endMs
+                };
+            })
+            .filter(Boolean);
+
+        if (items.length === 0) {
+            return '';
+        }
+
+        const lines = [];
+        let previousEndMs = null;
+
+        for (const item of items) {
+            if (Number.isFinite(item.startMs) && Number.isFinite(previousEndMs)) {
+                const gapMs = item.startMs - previousEndMs;
+                if (gapMs >= 100) {
+                    lines.push(`[pause ${this.formatDurationSeconds(gapMs)}]`);
+                } else if (gapMs <= -100) {
+                    lines.push(`[overlap ${this.formatDurationSeconds(Math.abs(gapMs))}]`);
+                }
+            }
+
+            lines.push(`${item.speaker}: ${item.text}`);
+
+            if (Number.isFinite(item.endMs)) {
+                previousEndMs = item.endMs;
+            } else if (Number.isFinite(item.startMs)) {
+                previousEndMs = item.startMs;
+            }
+        }
+
+        return lines.join('\n');
     }
 
     formatCadenceQueue(utterances = []) {

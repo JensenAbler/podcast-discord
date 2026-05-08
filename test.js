@@ -208,17 +208,21 @@ async function runTests() {
         const cadencePrompt = cadenceMessages[cadenceMessages.length - 2].content;
 
         if (
-            cadencePrompt.includes('Utterance timing queue') &&
-            cadencePrompt.includes('+0.0s Jensen: First thought.') &&
+            cadencePrompt === [
+                'Jensen: First thought.',
+                '[pause 1.8s]',
+                'Jensen: After a real pause.'
+            ].join('\n') &&
             cadencePrompt.includes('[pause 1.8s]') &&
-            cadencePrompt.includes('+3.0s Jensen: After a real pause.') &&
-            !cadencePrompt.includes('[speech') &&
-            cadencePrompt.includes('Transcript text:\nJensen: First thought.\nJensen: After a real pause.')
+            !cadencePrompt.includes('Recording:') &&
+            !cadencePrompt.includes('Utterance timing queue') &&
+            !cadencePrompt.includes('Transcript text:') &&
+            !cadencePrompt.includes('+0.0s')
         ) {
-            console.log('  User prompt includes cadence queue with detected pauses');
+            console.log('  User prompt includes inline pauses without timing wrapper');
             passed++;
         } else {
-            throw new Error(`Cadence queue missing expected timing hints: ${cadencePrompt}`);
+            throw new Error(`Inline pause prompt missing expected timing hints: ${cadencePrompt}`);
         }
 
         const savedEnv = {
