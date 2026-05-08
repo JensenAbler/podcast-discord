@@ -161,6 +161,22 @@ async function runTests() {
             throw new Error(`Unexpected message layout: ${JSON.stringify(messages)}`);
         }
 
+        const systemPrompt = generator.buildSystemPrompt();
+        if (
+            systemPrompt.includes('Read the guest\'s momentum:') &&
+            systemPrompt.includes('Response modes:') &&
+            systemPrompt.includes('Minimal backchannel') &&
+            systemPrompt.includes('Reflection') &&
+            systemPrompt.includes('Question') &&
+            systemPrompt.includes('Do not ask a question every turn') &&
+            systemPrompt.includes('use Minimal backchannel; do not ask a question')
+        ) {
+            console.log('  System prompt includes nuanced turn-taking response modes');
+            passed++;
+        } else {
+            throw new Error('System prompt is missing nuanced turn-taking instructions');
+        }
+
         const cadenceMessages = generator.buildMessages({
             transcript: 'Jensen: First thought.\nJensen: After a real pause.',
             utterances: [
