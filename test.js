@@ -745,6 +745,39 @@ async function runTests() {
             throw new Error('Stale direct response did not clear the in-flight marker');
         }
 
+        staleRequeues.length = 0;
+        playCalled = false;
+        transcriptSaved = false;
+        cooldownStarted = false;
+        rememberedTurn = false;
+        bot.participantActivityVersion.set(guildId, 0);
+        let playbackStartGuardChecked = false;
+
+        bot.synthesizeLiveTTS = async () => Buffer.from('audio waiting for playback start');
+        bot.playTtsAndRecord = async (_guildId, _audio, playbackOptions) => {
+            playbackStartGuardChecked = true;
+            bot.markParticipantActivity(guildId);
+            const aborted = playbackOptions.shouldAbortPlaybackStart();
+            if (!aborted) {
+                playCalled = true;
+            }
+            return { abortedBeforePlayback: aborted };
+        };
+
+        await bot.handleDirectGeneratorFlush(guildId, [
+            { speaker: 'Jensen', transcription: 'continuing right as playback starts' }
+        ], 'Jensen: continuing right as playback starts');
+
+        if (!playbackStartGuardChecked) {
+            throw new Error('Playback-start stale guard was not checked');
+        }
+        if (staleRequeues.length !== 1 || staleRequeues[0].utterances[0]?.transcription !== 'continuing right as playback starts') {
+            throw new Error(`Stale response at playback start did not requeue the flushed utterance: ${JSON.stringify(staleRequeues)}`);
+        }
+        if (playCalled || transcriptSaved || cooldownStarted || rememberedTurn) {
+            throw new Error(`Playback-start stale response should not play, save transcript, remember history, or start cooldown: ${JSON.stringify({ playCalled, transcriptSaved, cooldownStarted, rememberedTurn })}`);
+        }
+
         console.log('  Idle checks, buffer flushes, and stale direct replies respect participant floor-taking');
         passed++;
     } catch (error) {

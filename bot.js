@@ -602,10 +602,23 @@ class AlphaClawdVoiceBot {
         const capture = this.teeAudioForRecording(audio);
         let botAudioRecorded = false;
         let playbackStartMs;
+        let playbackStartAborted = false;
 
         const playback = await this.voiceManager.speakWithTiming(guildId, capture.playbackAudio, {
             ...options,
             onStart: (timing) => {
+                if (
+                    typeof options.shouldAbortPlaybackStart === 'function' &&
+                    options.shouldAbortPlaybackStart(timing)
+                ) {
+                    playbackStartAborted = true;
+                    console.log('[Bot] TTS playback stopped at start because a participant resumed before playback');
+                    this.voiceManager.stopPlayback(guildId);
+                    this.disposeUnusedAudio(audio);
+                    this.disposeUnusedAudio(capture.playbackAudio);
+                    return;
+                }
+
                 const parsedStartMs = Date.parse(timing.playbackStartedAt);
                 playbackStartMs = Number.isNaN(parsedStartMs) ? undefined : parsedStartMs;
 
@@ -622,6 +635,16 @@ class AlphaClawdVoiceBot {
             }
         });
         const playbackTiming = await playback.finished;
+
+        if (playbackStartAborted) {
+            return {
+                playback,
+                playbackTiming,
+                botAudioRecorded: false,
+                ttsCompletedAt: capture.completedAt,
+                abortedBeforePlayback: true
+            };
+        }
 
         if (capture.isStream) {
             const recordedAudio = this.getCapturedAudioBuffer(capture);
@@ -1439,7 +1462,18 @@ class AlphaClawdVoiceBot {
             }
 
             this.markIdleDecisionHandled(guildId);
-            const playbackResult = await this.playTtsAndRecord(guildId, audio);
+            const playbackResult = await this.playTtsAndRecord(guildId, audio, {
+                shouldAbortPlaybackStart: () => this.discardStaleDirectResponse(
+                    guildId,
+                    options,
+                    'at playback start'
+                )
+            });
+
+            if (playbackResult.abortedBeforePlayback) {
+                return { played: false, stale: true };
+            }
+
             const playback = playbackResult.playback;
             const playbackTiming = playbackResult.playbackTiming;
 

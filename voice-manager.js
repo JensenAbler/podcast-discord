@@ -378,6 +378,16 @@ class VoiceManager {
         await transmitter.play(audio, options);
     }
 
+    stopPlayback(guildId) {
+        const transmitter = this.transmitters.get(guildId);
+        if (!transmitter) {
+            return false;
+        }
+
+        transmitter.stop();
+        return true;
+    }
+
     /**
      * Speak audio and expose playback timing callbacks.
      * @param {string} guildId - Discord guild ID
