@@ -168,12 +168,16 @@ async function runTests() {
             systemPrompt.includes('Minimal backchannel') &&
             systemPrompt.includes('Reflection') &&
             systemPrompt.includes('Reflection + follow-up') &&
+            systemPrompt.includes('Audience awareness:') &&
+            systemPrompt.includes('Future listeners are also trying to enter the world of the conversation') &&
+            systemPrompt.includes('Scene-setting uptake') &&
             systemPrompt.includes('Direct uptake') &&
             systemPrompt.includes('Question') &&
             systemPrompt.includes('model and TTS latency') &&
             systemPrompt.includes('offers two or more options') &&
             systemPrompt.includes('Vary your surface form') &&
-            systemPrompt.includes('Do not use "It sounds like..." or "Would you be open..." as default scaffolding') &&
+            systemPrompt.includes('Do not let any stock phrase become a groove') &&
+            systemPrompt.includes('"What does that bring up..."') &&
             systemPrompt.includes('Permission framing is for sensitive, personal, or easy-to-decline invitations') &&
             systemPrompt.includes('Do not ask a question every turn') &&
             systemPrompt.includes('Minimal backchannel is allowed but should be rare')
@@ -247,6 +251,49 @@ async function runTests() {
                 throw new Error('Standby generator API key alias was not selected');
             }
 
+            process.env.PODCAST_GENERATOR_API_KEY_ACTIVE = 'groq-primary';
+            const failoverCalls = [];
+            const failoverGenerator = new PodcastGenerator();
+            failoverGenerator.fetchJson = async () => {
+                failoverCalls.push(failoverGenerator.apiKeySource);
+                if (failoverCalls.length === 1) {
+                    const rateLimited = new Error('OpenAI API error: 429 - rate limit reached');
+                    rateLimited.status = 429;
+                    rateLimited.body = {
+                        error: {
+                            message: 'Rate limit reached on tokens per day',
+                            type: 'tokens',
+                            code: 'rate_limit_exceeded'
+                        }
+                    };
+                    throw rateLimited;
+                }
+
+                return {
+                    choices: [{
+                        message: {
+                            content: JSON.stringify({
+                                shouldRespond: true,
+                                speech: 'Standby key handled the turn.',
+                                bigBrain: { requested: false, reason: '' }
+                            })
+                        }
+                    }]
+                };
+            };
+
+            const failoverOutput = await failoverGenerator.generate({
+                transcript: 'Jensen: Keep going after the primary key runs out.'
+            });
+
+            if (
+                failoverOutput.speech !== 'Standby key handled the turn.' ||
+                failoverCalls.join(',') !== 'PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY,PODCAST_GENERATOR_API_KEY_GROQ_STANDBY' ||
+                failoverGenerator.apiKeySource !== 'PODCAST_GENERATOR_API_KEY_GROQ_STANDBY'
+            ) {
+                throw new Error(`Generator did not fail over from primary to standby on rate limit: ${JSON.stringify({ failoverCalls, output: failoverOutput, source: failoverGenerator.apiKeySource })}`);
+            }
+
             delete process.env.PODCAST_GENERATOR_API_KEY_ACTIVE;
             delete process.env.PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY;
             delete process.env.PODCAST_GENERATOR_API_KEY_GROQ_STANDBY;
@@ -272,7 +319,7 @@ async function runTests() {
             }
         }
 
-        console.log('  Generator API key aliases select active and standby keys');
+        console.log('  Generator API key aliases select active and standby keys, with rate-limit failover');
 
         const fallbackCalls = [];
         const fallbackFormatGenerator = new PodcastGenerator({

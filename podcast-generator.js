@@ -13,6 +13,7 @@ class PodcastGenerator {
         const apiKeyConfig = this.resolveApiKey(options);
         this.apiKey = apiKeyConfig.apiKey;
         this.apiKeySource = apiKeyConfig.source;
+        this.apiKeyActiveName = apiKeyConfig.activeName || null;
         this.apiKeyError = apiKeyConfig.error;
         this.baseUrl = options.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
         this.model = options.model || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini';
@@ -142,13 +143,18 @@ class PodcastGenerator {
             '- A settled pause.',
             '- A small "yeah" or laugh that punctuates.',
             '',
+            'Audience awareness:',
+            'The guest is not the only person in the room. Future listeners are also trying to enter the world of the conversation. When the guest offers atmosphere, a physical setting, a transition, or a storytelling image, you can help the audience arrive there instead of immediately asking the guest to explain their inner state.',
+            'Scene-setting uptake is a valid host move: briefly receive or extend the image, orient the listener, and bridge toward the stated topic. For example, if the guest says they are moving from desert into jungle, stay with that cinematic setup before asking another question. Do not turn every atmospheric detail into "what does that bring up for you?"',
+            '',
             'Response modes:',
             '- Minimal backchannel: "mhm", "yeah", or "hmm" and nothing else. Use this rarely. Your response arrives after model and TTS latency, so a bare acknowledgement can feel awkward if the guest waited several seconds for it. Use it only when the guest seems clearly mid-thought and the acknowledgement would help them continue. If silence would make more space, set shouldRespond=false instead.',
             '- Reflection: a sentence or two that names what landed, echoes their share, or sits with it. Use this when the guest has completed a beat and what they said deserves to be received before anything else happens.',
             '- Reflection + follow-up: a brief reflection followed by one small, connected question. Use this when the guest has completed a substantial answer, story, feeling, correction, or disclosure, and the conversation would naturally continue with a gentle invitation.',
+            '- Scene-setting uptake: a brief audience-aware move that receives the image, setting, or transition the guest offered and helps the listener enter it. Use this when the guest is staging the topic or creating atmosphere; it can bridge to the topic without asking a question.',
             '- Direct uptake: if the guest asks a direct question, gives an instruction, or offers two or more options, respond to that frame first. Choose one option, answer the direct question, or acknowledge the instruction. Do not silently bypass their frame to ask a generic curious question.',
             '- Question: a curious question that opens the next direction. Use this when the guest has landed and a reflection alone would leave the conversation idling.',
-            'Vary your surface form. Do not use "It sounds like..." or "Would you be open..." as default scaffolding. Permission framing is for sensitive, personal, or easy-to-decline invitations; otherwise ask plainly and naturally. A reflection + follow-up can be one integrated sentence or two short sentences.',
+            'Vary your surface form. Do not let any stock phrase become a groove, including "It sounds like...", "Sounds like...", "I hear...", "What does that bring up...", or "Would you be open...". Permission framing is for sensitive, personal, or easy-to-decline invitations; otherwise ask plainly and naturally. A reflection + follow-up can be one integrated sentence or two short sentences.',
             '',
             'The mistake to avoid: asking a question while the guest is still finding their first answer. That cuts the share short and trains them to give shorter answers. When in doubt, choose silence or the smaller move. You will get another turn.',
             'Do not ask a question every turn. After a guest shares a substantial story, correction, boundary, or emotion, prefer reflection over question unless they explicitly ask you for a question or next step.',
@@ -252,14 +258,14 @@ class PodcastGenerator {
         const body = this.buildRequestBody(messages);
 
         try {
-            return await this.fetchJson('/chat/completions', body);
+            return await this.fetchJsonWithKeyFailover('/chat/completions', body);
         } catch (error) {
             if (!this.shouldRetryWithJsonObject(error, body)) {
                 throw error;
             }
 
             console.warn('[PodcastGenerator] Model rejected json_schema response_format; retrying with json_object');
-            return this.fetchJson('/chat/completions', this.buildRequestBody(messages, {
+            return this.fetchJsonWithKeyFailover('/chat/completions', this.buildRequestBody(messages, {
                 responseFormat: 'json_object',
                 reasoningFormat: this.reasoningFormat || 'hidden'
             }));
@@ -276,6 +282,81 @@ class PodcastGenerator {
         const param = String(errorBody.param || '');
 
         return param === 'response_format' || /does not support response format `?json_schema`?/i.test(message);
+    }
+
+    async fetchJsonWithKeyFailover(path, body) {
+        try {
+            return await this.fetchJson(path, body);
+        } catch (error) {
+            const alternate = this.resolveAlternateApiKey();
+            if (!this.shouldRetryWithAlternateApiKey(error, alternate)) {
+                throw error;
+            }
+
+            const original = {
+                apiKey: this.apiKey,
+                apiKeySource: this.apiKeySource,
+                apiKeyActiveName: this.apiKeyActiveName
+            };
+
+            console.warn(`[PodcastGenerator] API key source ${original.apiKeySource} hit a rate limit; retrying with ${alternate.source}`);
+            this.apiKey = alternate.apiKey;
+            this.apiKeySource = alternate.source;
+            this.apiKeyActiveName = alternate.activeName;
+
+            try {
+                const result = await this.fetchJson(path, body);
+                console.warn(`[PodcastGenerator] API key failover succeeded; active source is now ${this.apiKeySource}`);
+                return result;
+            } catch (retryError) {
+                this.apiKey = original.apiKey;
+                this.apiKeySource = original.apiKeySource;
+                this.apiKeyActiveName = original.apiKeyActiveName;
+                retryError.originalRateLimitError = error;
+                throw retryError;
+            }
+        }
+    }
+
+    shouldRetryWithAlternateApiKey(error, alternate) {
+        if (!alternate?.apiKey) return false;
+        if (error.status !== 429) return false;
+
+        const errorBody = error.body?.error || error.body || {};
+        const message = String(errorBody.message || error.message || '');
+        const type = String(errorBody.type || '');
+        const code = String(errorBody.code || '');
+
+        return (
+            type === 'tokens' ||
+            code === 'rate_limit_exceeded' ||
+            /rate limit|tokens per day|TPD/i.test(message)
+        );
+    }
+
+    resolveAlternateApiKey(env = process.env) {
+        const alternates = {
+            PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY: 'PODCAST_GENERATOR_API_KEY_GROQ_STANDBY',
+            PODCAST_GENERATOR_API_KEY_GROQ_STANDBY: 'PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY',
+            OPENAI_API_KEY_GROQ_PRIMARY: 'OPENAI_API_KEY_GROQ_STANDBY',
+            OPENAI_API_KEY_GROQ_STANDBY: 'OPENAI_API_KEY_GROQ_PRIMARY'
+        };
+
+        const alternateSource = alternates[this.apiKeySource];
+        const alternateApiKey = alternateSource ? env[alternateSource] : null;
+        if (!alternateSource || !alternateApiKey || alternateApiKey === this.apiKey) {
+            return null;
+        }
+
+        const activeName = alternateSource.endsWith('_GROQ_STANDBY')
+            ? 'GROQ_STANDBY'
+            : 'GROQ_PRIMARY';
+
+        return {
+            apiKey: alternateApiKey,
+            source: alternateSource,
+            activeName
+        };
     }
 
     resolveApiKey(options = {}, env = process.env) {
