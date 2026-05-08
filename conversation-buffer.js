@@ -246,6 +246,35 @@ class ConversationBuffer {
     }
 
     /**
+     * Put previously flushed utterances back in the buffer.
+     * Used when a host response becomes stale because a participant resumed
+     * before playback started. This does not touch ASR state or transcript files.
+     */
+    requeueUtterances(utterances = [], reason = 'requeue') {
+        const restored = [];
+
+        for (const utterance of utterances) {
+            const transcription = this.normalizeTranscription(utterance);
+            if (!transcription) continue;
+
+            restored.push({
+                ...utterance,
+                transcription,
+                insertionOrder: this.nextInsertionOrder++
+            });
+        }
+
+        if (restored.length === 0) {
+            return this.buffer.length;
+        }
+
+        this.buffer.push(...restored);
+        console.log(`[ConversationBuffer] Requeued ${restored.length} utterance(s) (${reason}). Buffer: ${this.buffer.length} utterance(s)`);
+        this.evaluateState(reason);
+        return this.buffer.length;
+    }
+
+    /**
      * Start cooldown period.
      * Called after AI response plays to prevent rapid back-to-back responses.
      */

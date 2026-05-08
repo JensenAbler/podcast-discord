@@ -99,6 +99,7 @@ class AlphaClawdVoiceBot {
         this.idleDecisionHandledSpeechAt = new Map(); // guildId -> ms timestamp of participant speech already handled by idle logic
         this.directResponseInFlight = new Set(); // guildId
         this.lastParticipantSpeechAt = new Map(); // guildId -> ms timestamp
+        this.participantActivityVersion = new Map(); // guildId -> monotonic counter for floor-taking changes
 
         // Recording states
         this.RecordingState = {
@@ -215,6 +216,7 @@ class AlphaClawdVoiceBot {
             // Include full word-level data from ElevenLabs STT for confidence analysis
             if (transcription) {
                 this.lastParticipantSpeechAt.set(guildId, Date.now());
+                this.markParticipantActivity(guildId);
             }
 
             this.conversationBuffer.addUtterance({
@@ -240,6 +242,7 @@ class AlphaClawdVoiceBot {
         // Set up speaking start/stop handlers to prevent buffer flush while user is speaking
         this.voiceManager.setSpeakingStartHandler((guildId, userId) => {
             console.log(`[Bot] User ${userId} started speaking, pausing buffer flush`);
+            this.markParticipantActivity(guildId);
             this.conversationBuffer.setUserSpeaking(userId, true);
         });
 
@@ -314,6 +317,7 @@ class AlphaClawdVoiceBot {
         this.directResponseInFlight.delete(guildId);
         this.lastParticipantSpeechAt.delete(guildId);
         this.idleDecisionHandledSpeechAt.delete(guildId);
+        this.participantActivityVersion.delete(guildId);
     }
 
     canRunIdleDecision(guildId) {
@@ -348,6 +352,28 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    getParticipantActivityVersion(guildId) {
+        return this.participantActivityVersion?.get?.(guildId) || 0;
+    }
+
+    markParticipantActivity(guildId) {
+        if (!guildId) return 0;
+        if (!this.participantActivityVersion) {
+            this.participantActivityVersion = new Map();
+        }
+        const current = this.getParticipantActivityVersion(guildId);
+        const next = current + 1;
+        this.participantActivityVersion.set(guildId, next);
+        return next;
+    }
+
+    didParticipantResumeSince(guildId, baseline) {
+        if (!Number.isFinite(baseline)) {
+            return false;
+        }
+        return this.getParticipantActivityVersion(guildId) > baseline;
+    }
+
     async handleIdleDecisionTick(guildId) {
         if (!this.canRunIdleDecision(guildId)) {
             return;
@@ -362,6 +388,7 @@ class AlphaClawdVoiceBot {
         try {
             const lastSpeechAt = this.lastParticipantSpeechAt.get(guildId) || Date.now();
             const idleSeconds = (Date.now() - lastSpeechAt) / 1000;
+            const participantActivityBaseline = this.getParticipantActivityVersion(guildId);
             this.markIdleDecisionHandled(guildId, lastSpeechAt);
 
             console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s without participant speech`);
@@ -385,7 +412,8 @@ class AlphaClawdVoiceBot {
             await this.speakDirectGeneratorResponse(guildId, response, {
                 source: 'idle',
                 playFiller: false,
-                rememberAssistant: true
+                rememberAssistant: true,
+                participantActivityBaseline
             });
         } catch (error) {
             console.error('[Bot] Idle generator failed:', error);
@@ -1297,35 +1325,80 @@ class AlphaClawdVoiceBot {
     async handleDirectGeneratorFlush(guildId, utterances, transcript, wordData) {
         if (this.directResponseInFlight.has(guildId)) {
             console.log('[Bot] Direct generator flush held because a response is already in flight');
+            this.conversationBuffer?.requeueUtterances?.(utterances, 'overlapping direct response');
             return;
         }
 
         this.directResponseInFlight.add(guildId);
         this.conversationBuffer?.setFlushHold?.('direct-response', true);
+        const participantActivityBaseline = this.getParticipantActivityVersion(guildId);
 
         try {
             const response = await this.podcastGenerator.generate({
                 utterances,
                 transcript,
-                wordData
+                wordData,
+                remember: false
             });
 
             if (!response.shouldRespond) {
+                if (this.discardStaleDirectResponse(guildId, {
+                    source: 'buffer',
+                    participantActivityBaseline,
+                    flushedUtterances: utterances
+                }, 'after silent generation')) {
+                    return;
+                }
+                this.podcastGenerator.rememberTurn?.(transcript, response);
                 console.log(`[Bot] Direct generator chose silence`);
                 return;
             }
 
             await this.speakDirectGeneratorResponse(guildId, response, {
                 source: 'buffer',
-                playFiller: true
+                playFiller: true,
+                participantActivityBaseline,
+                flushedUtterances: utterances,
+                rememberTranscript: transcript
             });
         } catch (error) {
             console.error('[Bot] Direct generator failed:', error);
+            if (this.discardStaleDirectResponse(guildId, {
+                source: 'buffer',
+                participantActivityBaseline,
+                flushedUtterances: utterances
+            }, 'after generator failure')) {
+                return;
+            }
             const lastSpeaker = utterances[utterances.length - 1]?.speaker || 'there';
             await this.fallbackResponse(guildId, lastSpeaker);
         } finally {
             this.directResponseInFlight.delete(guildId);
             this.conversationBuffer?.setFlushHold?.('direct-response', false);
+        }
+    }
+
+    discardStaleDirectResponse(guildId, options = {}, stage = 'before playback') {
+        if (!this.didParticipantResumeSince(guildId, options.participantActivityBaseline)) {
+            return false;
+        }
+
+        const source = options.source || 'buffer';
+        console.log(`[Bot] Direct generator response (${source}) discarded ${stage} because a participant resumed before playback`);
+
+        if (Array.isArray(options.flushedUtterances) && options.flushedUtterances.length > 0) {
+            this.conversationBuffer?.requeueUtterances?.(
+                options.flushedUtterances,
+                'participant resumed before host playback'
+            );
+        }
+
+        return true;
+    }
+
+    disposeUnusedAudio(audio) {
+        if (this.isReadableAudio(audio) && typeof audio.destroy === 'function') {
+            audio.destroy();
         }
     }
 
@@ -1340,11 +1413,18 @@ class AlphaClawdVoiceBot {
         try {
             const generatedAt = response.generatedAt || new Date().toISOString();
             console.log(`[Bot] Direct generator response (${source}): "${response.speech.substring(0, 50)}..."`);
-            this.markIdleDecisionHandled(guildId);
+
+            if (this.discardStaleDirectResponse(guildId, options, 'after generation')) {
+                return { played: false, stale: true };
+            }
 
             // Play a cached filler only after the generator decides to answer.
             if (options.playFiller !== false) {
                 await this.playFillerClip(guildId);
+            }
+
+            if (this.discardStaleDirectResponse(guildId, options, 'after filler')) {
+                return { played: false, stale: true };
             }
 
             const ttsStartedAt = new Date().toISOString();
@@ -1353,6 +1433,12 @@ class AlphaClawdVoiceBot {
             });
             const ttsSetupCompletedAt = this.isReadableAudio(audio) ? null : new Date().toISOString();
 
+            if (this.discardStaleDirectResponse(guildId, options, 'after TTS')) {
+                this.disposeUnusedAudio(audio);
+                return { played: false, stale: true };
+            }
+
+            this.markIdleDecisionHandled(guildId);
             const playbackResult = await this.playTtsAndRecord(guildId, audio);
             const playback = playbackResult.playback;
             const playbackTiming = playbackResult.playbackTiming;
@@ -1379,12 +1465,15 @@ class AlphaClawdVoiceBot {
                 duration: playbackDuration
             });
 
-            if (options.rememberAssistant) {
-                this.podcastGenerator.rememberAssistantResponse(response);
+            if (typeof options.rememberTranscript === 'string') {
+                this.podcastGenerator.rememberTurn?.(options.rememberTranscript, response);
+            } else if (options.rememberAssistant) {
+                this.podcastGenerator.rememberAssistantResponse?.(response);
             }
 
             console.log(`[Bot] Direct generator playback complete (${source}), starting cooldown`);
             this.conversationBuffer.startCooldown();
+            return { played: true, stale: false };
         } finally {
             if (!alreadyInFlight) {
                 this.directResponseInFlight.delete(guildId);

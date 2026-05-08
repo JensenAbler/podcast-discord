@@ -172,6 +172,9 @@ async function runTests() {
             systemPrompt.includes('Question') &&
             systemPrompt.includes('model and TTS latency') &&
             systemPrompt.includes('offers two or more options') &&
+            systemPrompt.includes('Vary your surface form') &&
+            systemPrompt.includes('Do not use "It sounds like..." or "Would you be open..." as default scaffolding') &&
+            systemPrompt.includes('Permission framing is for sensitive, personal, or easy-to-decline invitations') &&
             systemPrompt.includes('Do not ask a question every turn') &&
             systemPrompt.includes('Minimal backchannel is allowed but should be rare')
         ) {
@@ -491,7 +494,41 @@ async function runTests() {
             throw new Error(`Buffer did not flush by spoken timeline: ${orderedSpeakers}`);
         }
 
-        console.log('  Conversation buffer waits only for receiver ASR candidates and clears completion/timeout paths');
+        const requeueFlushed = [];
+        const requeueBuffer = new ConversationBuffer({
+            gracePeriod: 25,
+            cooldownPeriod: 25,
+            pendingAsrTimeout: 100
+        });
+        requeueBuffer.onFlush((utterances) => requeueFlushed.push(utterances));
+        requeueBuffer.setFlushHold('host-response', true);
+        requeueBuffer.requeueUtterances([
+            {
+                speaker: 'Later Speaker',
+                transcription: 'second in time',
+                speechStartedAt: '2026-05-03T00:00:03.000Z'
+            },
+            {
+                speaker: 'Earlier Speaker',
+                transcription: 'first in time',
+                speechStartedAt: '2026-05-03T00:00:01.000Z'
+            }
+        ], 'restore stale host turn');
+        await sleep(40);
+
+        if (requeueFlushed.length !== 0) {
+            throw new Error('Requeued utterances flushed while a host-response hold was active');
+        }
+
+        requeueBuffer.setFlushHold('host-response', false);
+        await sleep(40);
+
+        const requeuedSpeakers = requeueFlushed[0]?.map(utterance => utterance.speaker).join(', ');
+        if (requeuedSpeakers !== 'Earlier Speaker, Later Speaker') {
+            throw new Error(`Requeued utterances did not flush in spoken order: ${requeuedSpeakers}`);
+        }
+
+        console.log('  Conversation buffer waits only for receiver ASR candidates and preserves restored utterances');
         passed++;
     } catch (error) {
         console.log(`  Conversation buffer failed: ${error.message}`);
@@ -590,7 +627,78 @@ async function runTests() {
         }
         bot.directResponseInFlight.delete(guildId);
 
-        console.log('  Idle checks and buffer flushes wait while direct response generation/synthesis is in progress');
+        const staleRequeues = [];
+        let playCalled = false;
+        let transcriptSaved = false;
+        let cooldownStarted = false;
+        let rememberedTurn = false;
+        bot.participantActivityVersion = new Map([[guildId, 0]]);
+        bot.conversationBuffer = {
+            getState: () => ({
+                state: BufferState.IDLE,
+                utteranceCount: 0,
+                activeSpeakerCount: 0,
+                pendingAsrCount: 0
+            }),
+            setFlushHold: (reason, active) => {
+                holdEvents.push({ reason, active });
+            },
+            requeueUtterances: (utterances, reason) => {
+                staleRequeues.push({ utterances, reason });
+            },
+            startCooldown: () => {
+                cooldownStarted = true;
+            }
+        };
+        bot.voiceManager = {
+            getPlaybackStatus: () => ({
+                isPlaying: false,
+                queueLength: 0
+            }),
+            saveTranscriptEntry: () => {
+                transcriptSaved = true;
+            }
+        };
+        bot.podcastGenerator = {
+            generate: async (input) => {
+                if (input.remember !== false) {
+                    throw new Error('Direct buffer generation should defer memory until playback succeeds');
+                }
+                return {
+                    shouldRespond: true,
+                    speech: 'This response should go stale.',
+                    bigBrain: { requested: false, reason: '' }
+                };
+            },
+            rememberTurn: () => {
+                rememberedTurn = true;
+            }
+        };
+        bot.playFillerClip = async () => {};
+        bot.synthesizeLiveTTS = async () => {
+            bot.markParticipantActivity(guildId);
+            return Buffer.from('stale audio');
+        };
+        bot.playTtsAndRecord = async () => {
+            playCalled = true;
+            return {};
+        };
+
+        await bot.handleDirectGeneratorFlush(guildId, [
+            { speaker: 'Jensen', transcription: 'first part of the thought' }
+        ], 'Jensen: first part of the thought');
+
+        if (staleRequeues.length !== 1 || staleRequeues[0].utterances[0]?.transcription !== 'first part of the thought') {
+            throw new Error(`Stale direct response did not requeue the original flushed utterance: ${JSON.stringify(staleRequeues)}`);
+        }
+        if (playCalled || transcriptSaved || cooldownStarted || rememberedTurn) {
+            throw new Error(`Stale direct response should not play, save transcript, remember history, or start cooldown: ${JSON.stringify({ playCalled, transcriptSaved, cooldownStarted, rememberedTurn })}`);
+        }
+        if (bot.directResponseInFlight.has(guildId)) {
+            throw new Error('Stale direct response did not clear the in-flight marker');
+        }
+
+        console.log('  Idle checks, buffer flushes, and stale direct replies respect participant floor-taking');
         passed++;
     } catch (error) {
         console.log(`  Idle decision guard failed: ${error.message}`);
