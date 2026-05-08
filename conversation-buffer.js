@@ -50,6 +50,7 @@ class ConversationBuffer {
         this.pendingAsrCounts = new Map();
         this.pendingAsrReasons = new Map();
         this.pendingAsrTimers = new Map();
+        this.flushHolds = new Set();
         this.nextInsertionOrder = 0;
 
         this.graceTimer = null;
@@ -146,7 +147,13 @@ class ConversationBuffer {
             return;
         }
 
-        if (this.activeSpeakers.size > 0 || this.endpointingSpeakers.size > 0 || this.pendingASR.size > 0 || this.buffer.length === 0) {
+        if (
+            this.activeSpeakers.size > 0 ||
+            this.endpointingSpeakers.size > 0 ||
+            this.pendingASR.size > 0 ||
+            this.flushHolds.size > 0 ||
+            this.buffer.length === 0
+        ) {
             this.clearGraceTimer();
             return;
         }
@@ -187,6 +194,12 @@ class ConversationBuffer {
 
         if (this.state === BufferState.COOLDOWN) {
             console.log('[ConversationBuffer] In cooldown, delaying flush');
+            return false;
+        }
+
+        if (this.flushHolds.size > 0) {
+            console.log(`[ConversationBuffer] Flush held by: ${Array.from(this.flushHolds).join(', ')}`);
+            this.evaluateState('flush blocked by hold');
             return false;
         }
 
@@ -268,15 +281,17 @@ class ConversationBuffer {
             state: this.state,
             utteranceCount: this.buffer.length,
             isUserSpeaking: this.activeSpeakers.size > 0,
-            isReady: this.state !== BufferState.COOLDOWN,
+            isReady: this.state !== BufferState.COOLDOWN && this.flushHolds.size === 0,
             gracePending: this.graceTimer !== null,
             cooldownPending: this.cooldownTimer !== null,
             activeSpeakerCount: this.activeSpeakers.size,
             endpointingSpeakerCount: this.endpointingSpeakers.size,
             pendingAsrCount: this.pendingASR.size,
+            flushHoldCount: this.flushHolds.size,
             activeSpeakers: Array.from(this.activeSpeakers),
             endpointingSpeakers: Array.from(this.endpointingSpeakers),
-            pendingAsrSpeakers: Array.from(this.pendingASR)
+            pendingAsrSpeakers: Array.from(this.pendingASR),
+            flushHolds: Array.from(this.flushHolds)
         };
     }
 
@@ -291,6 +306,7 @@ class ConversationBuffer {
         this.pendingASR.clear();
         this.pendingAsrCounts.clear();
         this.pendingAsrReasons.clear();
+        this.flushHolds.clear();
         this.clearGraceTimer();
         this.clearCooldownTimer();
         this.clearPendingAsrTimers();
@@ -382,6 +398,26 @@ class ConversationBuffer {
         if (this.endpointingSpeakers.delete(normalizedUserId)) {
             console.log(`[ConversationBuffer] Endpointing complete for ${normalizedUserId}; active=${this.activeSpeakers.size}, endpointing=${this.endpointingSpeakers.size}, pendingASR=${this.pendingASR.size}`);
             this.evaluateState('endpointing ended');
+        }
+    }
+
+    /**
+     * Hold buffered utterances while an external host action is in progress.
+     * This preserves ASR text without launching overlapping generator turns.
+     */
+    setFlushHold(reason, isHeld) {
+        const key = String(reason || '').trim();
+        if (!key) return;
+
+        if (isHeld) {
+            this.flushHolds.add(key);
+            this.clearGraceTimer();
+            this.evaluateState(`${key} hold started`);
+            return;
+        }
+
+        if (this.flushHolds.delete(key)) {
+            this.evaluateState(`${key} hold cleared`);
         }
     }
 
@@ -496,7 +532,7 @@ class ConversationBuffer {
             return;
         }
 
-        this.isReady = true;
+        this.isReady = this.flushHolds.size === 0;
 
         if (this.activeSpeakers.size > 0 || this.endpointingSpeakers.size > 0) {
             this.clearGraceTimer();

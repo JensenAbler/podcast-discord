@@ -161,6 +161,39 @@ async function runTests() {
             throw new Error(`Unexpected message layout: ${JSON.stringify(messages)}`);
         }
 
+        const cadenceMessages = generator.buildMessages({
+            transcript: 'Jensen: First thought.\nJensen: After a real pause.',
+            utterances: [
+                {
+                    speaker: 'Jensen',
+                    transcription: 'First thought.',
+                    speechStartedAt: '2026-05-03T00:00:00.000Z',
+                    speechEndedAt: '2026-05-03T00:00:01.200Z'
+                },
+                {
+                    speaker: 'Jensen',
+                    transcription: 'After a real pause.',
+                    speechStartedAt: '2026-05-03T00:00:03.000Z',
+                    speechEndedAt: '2026-05-03T00:00:04.000Z'
+                }
+            ]
+        });
+        const cadencePrompt = cadenceMessages[cadenceMessages.length - 2].content;
+
+        if (
+            cadencePrompt.includes('Utterance timing queue') &&
+            cadencePrompt.includes('+0.0s Jensen: First thought.') &&
+            cadencePrompt.includes('[pause 1.8s]') &&
+            cadencePrompt.includes('+3.0s Jensen: After a real pause.') &&
+            !cadencePrompt.includes('[speech') &&
+            cadencePrompt.includes('Transcript text:\nJensen: First thought.\nJensen: After a real pause.')
+        ) {
+            console.log('  User prompt includes cadence queue with detected pauses');
+            passed++;
+        } else {
+            throw new Error(`Cadence queue missing expected timing hints: ${cadencePrompt}`);
+        }
+
         const savedEnv = {
             PODCAST_GENERATOR_API_KEY_ACTIVE: process.env.PODCAST_GENERATOR_API_KEY_ACTIVE,
             PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY: process.env.PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY,
@@ -494,7 +527,50 @@ async function runTests() {
             throw new Error('Idle decision did not re-arm after fresh participant speech');
         }
 
-        console.log('  Idle checks wait while direct response generation/synthesis is in progress and do not repeat for handled silence');
+        const holdEvents = [];
+        let directGenerateCalled = false;
+        bot.conversationBuffer.setFlushHold = (reason, active) => {
+            holdEvents.push({ reason, active });
+        };
+        bot.podcastGenerator = {
+            generate: async () => {
+                directGenerateCalled = true;
+                if (!bot.directResponseInFlight.has(guildId)) {
+                    throw new Error('Direct response was not marked in-flight during generation');
+                }
+                return { shouldRespond: false, speech: '', bigBrain: { requested: false, reason: '' } };
+            }
+        };
+
+        await bot.handleDirectGeneratorFlush(guildId, [
+            { speaker: 'Jensen', transcription: 'one more thing' }
+        ], 'Jensen: one more thing');
+
+        if (!directGenerateCalled) {
+            throw new Error('Direct generator flush did not call the generator when idle');
+        }
+        if (bot.directResponseInFlight.has(guildId)) {
+            throw new Error('Direct response in-flight marker was not cleared after flush');
+        }
+        if (holdEvents.map(event => event.active).join(',') !== 'true,false') {
+            throw new Error(`Direct response did not hold and release buffer flushing: ${JSON.stringify(holdEvents)}`);
+        }
+
+        directGenerateCalled = false;
+        bot.directResponseInFlight.add(guildId);
+        await bot.handleDirectGeneratorFlush(guildId, [
+            { speaker: 'Jensen', transcription: 'do not double answer this' }
+        ], 'Jensen: do not double answer this');
+
+        if (directGenerateCalled) {
+            throw new Error('Direct generator was called while a response was already in flight');
+        }
+        if (!bot.directResponseInFlight.has(guildId)) {
+            throw new Error('Overlapping flush cleared an in-flight marker it did not own');
+        }
+        bot.directResponseInFlight.delete(guildId);
+
+        console.log('  Idle checks and buffer flushes wait while direct response generation/synthesis is in progress');
         passed++;
     } catch (error) {
         console.log(`  Idle decision guard failed: ${error.message}`);
@@ -848,7 +924,32 @@ async function runTests() {
             throw new Error(`Expected single flush after endpointing cleared: ${JSON.stringify(flushed)}`);
         }
 
-        console.log('  Endpointing blocks flush; clearing it lets grace timer proceed');
+        const heldFlushed = [];
+        const heldBuffer = new ConversationBuffer({ gracePeriod: 30, cooldownPeriod: 10, pendingAsrTimeout: 1000 });
+        heldBuffer.onFlush((utterances) => heldFlushed.push(utterances));
+        heldBuffer.setFlushHold('direct-response', true);
+        heldBuffer.addUtterance({
+            userId: 'user-held',
+            speaker: 'Held',
+            transcription: 'wait until the host turn finishes',
+            speechStartedAt: '2026-05-03T00:00:01.000Z'
+        });
+
+        await sleep(80);
+        if (heldFlushed.length !== 0) {
+            throw new Error('Flush fired while direct response hold was active');
+        }
+        if (heldBuffer.getState().flushHoldCount !== 1 || heldBuffer.getState().isReady) {
+            throw new Error(`Expected held buffer state, got ${JSON.stringify(heldBuffer.getState())}`);
+        }
+
+        heldBuffer.setFlushHold('direct-response', false);
+        await sleep(80);
+        if (heldFlushed.length !== 1 || heldFlushed[0][0].transcription !== 'wait until the host turn finishes') {
+            throw new Error(`Expected flush after hold cleared: ${JSON.stringify(heldFlushed)}`);
+        }
+
+        console.log('  Endpointing and direct-response holds block flush; clearing them lets grace timer proceed');
         passed++;
     } catch (error) {
         console.log(`  ConversationBuffer endpointing gate failed: ${error.message}`);

@@ -1295,7 +1295,13 @@ class AlphaClawdVoiceBot {
     }
 
     async handleDirectGeneratorFlush(guildId, utterances, transcript, wordData) {
+        if (this.directResponseInFlight.has(guildId)) {
+            console.log('[Bot] Direct generator flush held because a response is already in flight');
+            return;
+        }
+
         this.directResponseInFlight.add(guildId);
+        this.conversationBuffer?.setFlushHold?.('direct-response', true);
 
         try {
             const response = await this.podcastGenerator.generate({
@@ -1319,12 +1325,16 @@ class AlphaClawdVoiceBot {
             await this.fallbackResponse(guildId, lastSpeaker);
         } finally {
             this.directResponseInFlight.delete(guildId);
+            this.conversationBuffer?.setFlushHold?.('direct-response', false);
         }
     }
 
     async speakDirectGeneratorResponse(guildId, response, options = {}) {
         const alreadyInFlight = this.directResponseInFlight.has(guildId);
         this.directResponseInFlight.add(guildId);
+        if (!alreadyInFlight) {
+            this.conversationBuffer?.setFlushHold?.('direct-response', true);
+        }
         const source = options.source || 'buffer';
 
         try {
@@ -1378,6 +1388,7 @@ class AlphaClawdVoiceBot {
         } finally {
             if (!alreadyInFlight) {
                 this.directResponseInFlight.delete(guildId);
+                this.conversationBuffer?.setFlushHold?.('direct-response', false);
             }
         }
     }

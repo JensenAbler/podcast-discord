@@ -165,7 +165,19 @@ class PodcastGenerator {
             lines.push(`No new participant speech for about ${Math.max(0, Math.round(Number(options.idleSeconds)))} seconds.`);
         }
 
-        lines.push('', transcript || '(empty)');
+        const cadenceQueue = this.formatCadenceQueue(options.utterances || []);
+        if (cadenceQueue) {
+            lines.push(
+                '',
+                'Utterance timing queue (detected speech timing; use for cadence only, never read aloud):',
+                cadenceQueue,
+                '',
+                'Transcript text:',
+                transcript || '(empty)'
+            );
+        } else {
+            lines.push('', transcript || '(empty)');
+        }
 
         if (wordData) {
             lines.push('', 'STT confidence hints:', wordData);
@@ -392,6 +404,103 @@ class PodcastGenerator {
             .map(u => `${u.speaker || 'Speaker'}: ${u.transcription || u.text || ''}`.trim())
             .filter(Boolean)
             .join('\n');
+    }
+
+    formatCadenceQueue(utterances = []) {
+        const items = utterances
+            .map((utterance) => {
+                const text = String(utterance.transcription || utterance.text || '').trim();
+                if (!text) return null;
+
+                const startMs = this.getUtteranceStartMs(utterance);
+                const endMs = this.getUtteranceEndMs(utterance, startMs);
+
+                return {
+                    speaker: utterance.speaker || 'Speaker',
+                    text,
+                    startMs,
+                    endMs
+                };
+            })
+            .filter(Boolean);
+
+        if (items.length === 0) {
+            return '';
+        }
+
+        const baseStart = items
+            .map((item) => item.startMs)
+            .find((time) => Number.isFinite(time));
+        const lines = [];
+        let previousEndMs = null;
+
+        for (const item of items) {
+            if (Number.isFinite(item.startMs) && Number.isFinite(previousEndMs)) {
+                const gapMs = item.startMs - previousEndMs;
+                if (gapMs >= 100) {
+                    lines.push(`[pause ${this.formatDurationSeconds(gapMs)}]`);
+                } else if (gapMs <= -100) {
+                    lines.push(`[overlap ${this.formatDurationSeconds(Math.abs(gapMs))}]`);
+                }
+            }
+
+            const offset = Number.isFinite(item.startMs) && Number.isFinite(baseStart)
+                ? `+${this.formatDurationSeconds(item.startMs - baseStart)}`
+                : '+?';
+
+            lines.push(`${offset} ${item.speaker}: ${item.text}`);
+
+            if (Number.isFinite(item.endMs)) {
+                previousEndMs = item.endMs;
+            } else if (Number.isFinite(item.startMs)) {
+                previousEndMs = item.startMs;
+            }
+        }
+
+        return lines.join('\n');
+    }
+
+    getUtteranceStartMs(utterance = {}) {
+        return this.parseTimestamp(utterance.speechStartedAt)
+            ?? this.parseTimestamp(utterance.timestamp)
+            ?? this.parseTimestamp(utterance.asrCompletedAt);
+    }
+
+    getUtteranceEndMs(utterance = {}, startMs = this.getUtteranceStartMs(utterance)) {
+        const explicitEnd = this.parseTimestamp(utterance.speechEndedAt);
+        if (Number.isFinite(explicitEnd)) {
+            return explicitEnd;
+        }
+
+        const speechDuration = Number(utterance.speechDuration);
+        if (Number.isFinite(startMs) && Number.isFinite(speechDuration) && speechDuration >= 0) {
+            return startMs + speechDuration;
+        }
+
+        const duration = Number(utterance.duration);
+        if (Number.isFinite(startMs) && Number.isFinite(duration) && duration >= 0) {
+            return startMs + duration;
+        }
+
+        return this.parseTimestamp(utterance.asrCompletedAt);
+    }
+
+    parseTimestamp(value) {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return value;
+        }
+
+        if (value === undefined || value === null || value === '') {
+            return null;
+        }
+
+        const parsed = Date.parse(value);
+        return Number.isNaN(parsed) ? null : parsed;
+    }
+
+    formatDurationSeconds(ms) {
+        const seconds = Math.max(0, Number(ms) || 0) / 1000;
+        return `${seconds.toFixed(1)}s`;
     }
 
     getRecentHistory() {
