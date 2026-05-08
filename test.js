@@ -167,9 +167,13 @@ async function runTests() {
             systemPrompt.includes('Response modes:') &&
             systemPrompt.includes('Minimal backchannel') &&
             systemPrompt.includes('Reflection') &&
+            systemPrompt.includes('Reflection + follow-up') &&
+            systemPrompt.includes('Direct uptake') &&
             systemPrompt.includes('Question') &&
+            systemPrompt.includes('model and TTS latency') &&
+            systemPrompt.includes('offers two or more options') &&
             systemPrompt.includes('Do not ask a question every turn') &&
-            systemPrompt.includes('use Minimal backchannel; do not ask a question')
+            systemPrompt.includes('Minimal backchannel is allowed but should be rare')
         ) {
             console.log('  System prompt includes nuanced turn-taking response modes');
             passed++;
