@@ -222,7 +222,7 @@ class AlphaClawdVoiceBot {
             const transcription = (utterance.transcription || '').trim();
 
             // Debug: inject individual utterance for Gateway UI visibility
-            if (this.debugInject && transcription && this.wsClient.isAuthenticated) {
+            if (this.debugInject && transcription && this.wsClient.isAuthenticated && this.wsClient.canInjectMessages?.()) {
                 try {
                     await this.wsClient.injectMessage(
                         `[Podcast Voice] ${utterance.speaker}: ${transcription}`,
@@ -1210,7 +1210,7 @@ class AlphaClawdVoiceBot {
 
             // Notify Gateway/OpenClaw when it is driving responses, mirroring is enabled,
             // or bigBrain handoff may need session context.
-            if (this.wsClient.isAuthenticated && this.shouldConnectGatewayWs()) {
+            if (this.wsClient.isAuthenticated && this.shouldConnectGatewayWs() && this.wsClient.canInjectMessages?.()) {
                 try {
                     const PODCAST_GUIDELINES = [
                         'Respond conversationally, as if speaking out loud',
@@ -1293,7 +1293,7 @@ class AlphaClawdVoiceBot {
 
             // Notify Gateway/OpenClaw when it is driving responses, mirroring is enabled,
             // or bigBrain handoff may need session context.
-            if (wasRecording && this.wsClient.isAuthenticated && this.shouldConnectGatewayWs()) {
+            if (wasRecording && this.wsClient.isAuthenticated && this.shouldConnectGatewayWs() && this.wsClient.canInjectMessages?.()) {
                 try {
                     await this.wsClient.injectPodcastEvent({
                         event: 'session_end',
@@ -1505,8 +1505,10 @@ class AlphaClawdVoiceBot {
         await this.playFillerClip(guildId);
 
         try {
-            // Inject for UI visibility (with word-level data)
-            await this.wsClient.injectMessage(messageText, { label: 'discord-voice' });
+            // Inject for UI visibility when the connected Gateway scope permits it.
+            if (this.wsClient.canInjectMessages?.()) {
+                await this.wsClient.injectMessage(messageText, { label: 'discord-voice' });
+            }
 
             // Send to trigger AI response
             await this.wsClient.sendChat(messageText, {

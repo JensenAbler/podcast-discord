@@ -16,6 +16,7 @@ const {
 } = require('./index');
 const { EndBehaviorType } = require('@discordjs/voice');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
+const { GatewayWsClient } = require('./gateway-ws-client');
 const { EpisodePostProcessor } = require('./post-processor');
 const { PassThrough } = require('stream');
 const fs = require('fs');
@@ -118,6 +119,67 @@ async function runTests() {
         }
     } catch (error) {
         console.log(`  Gateway bridge failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 4a: Gateway WebSocket client declares operator write scope');
+    try {
+        const wsClient = new GatewayWsClient({
+            authToken: 'test-token',
+            scopes: ['operator.read', 'operator.write'],
+            clientId: 'test-client',
+            clientVersion: 'test-version'
+        });
+        let captured = null;
+        let heartbeatStarted = false;
+        let authenticated = false;
+
+        wsClient.sendRequest = async (method, params) => {
+            captured = { method, params };
+            return {
+                type: 'hello-ok',
+                auth: {
+                    scopes: params.scopes
+                }
+            };
+        };
+        wsClient.startHeartbeat = () => {
+            heartbeatStarted = true;
+        };
+        wsClient.on('authenticated', () => {
+            authenticated = true;
+        });
+
+        await wsClient.handleConnectChallenge({ nonce: 'nonce-test' });
+
+        if (captured?.method !== 'connect') {
+            throw new Error(`Expected connect request, got ${captured?.method}`);
+        }
+        if (captured.params.role !== 'operator' || captured.params.client?.mode !== 'operator') {
+            throw new Error(`Gateway connect did not declare operator role: ${JSON.stringify(captured.params)}`);
+        }
+        if (!captured.params.scopes.includes('operator.write') || !captured.params.scopes.includes('operator.read')) {
+            throw new Error(`Gateway connect missing read/write scopes: ${JSON.stringify(captured.params.scopes)}`);
+        }
+        if (!authenticated || !heartbeatStarted || !wsClient.isAuthenticated) {
+            throw new Error('Gateway client did not mark itself authenticated after hello-ok');
+        }
+        if (!wsClient.hasScope('operator.write')) {
+            throw new Error('Gateway client did not retain granted operator.write scope');
+        }
+        if (wsClient.canInjectMessages()) {
+            throw new Error('chat.inject should remain disabled without operator.admin');
+        }
+
+        const adminClient = new GatewayWsClient({ scopes: 'operator.read,operator.write,operator.admin' });
+        if (!adminClient.canInjectMessages()) {
+            throw new Error('chat.inject should be enabled when operator.admin is configured');
+        }
+
+        console.log('  Gateway client asks for operator read/write and gates admin-only injection');
+        passed++;
+    } catch (error) {
+        console.log(`  Gateway WebSocket scope test failed: ${error.message}`);
         failed++;
     }
 

@@ -11,6 +11,17 @@
 const WebSocket = require('ws');
 const EventEmitter = require('events');
 
+function normalizeScopes(scopes) {
+    if (Array.isArray(scopes)) {
+        return scopes.map(scope => String(scope || '').trim()).filter(Boolean);
+    }
+
+    return String(scopes || '')
+        .split(',')
+        .map(scope => scope.trim())
+        .filter(Boolean);
+}
+
 class GatewayWsClient extends EventEmitter {
     constructor(options = {}) {
         super();
@@ -18,6 +29,11 @@ class GatewayWsClient extends EventEmitter {
         this.gatewayUrl = options.gatewayUrl || 'ws://localhost:18789/ws';
         this.authToken = options.authToken || process.env.GATEWAY_AUTH_TOKEN || 'dev-token';
         this.sessionKey = options.sessionKey || 'agent:main:main';
+        this.role = options.role || process.env.GATEWAY_WS_ROLE || 'operator';
+        this.scopes = normalizeScopes(
+            options.scopes || process.env.GATEWAY_WS_SCOPES || 'operator.read,operator.write'
+        );
+        this.grantedScopes = [];
         
         this.ws = null;
         this.isConnected = false;
@@ -164,8 +180,10 @@ class GatewayWsClient extends EventEmitter {
                     id: this.clientId,
                     version: this.clientVersion,
                     platform: 'node',
-                    mode: 'backend'
+                    mode: this.role
                 },
+                role: this.role,
+                scopes: this.scopes,
                 auth: {
                     token: this.authToken
                 },
@@ -175,14 +193,25 @@ class GatewayWsClient extends EventEmitter {
             // Handle successful authentication
             if (response?.type === 'hello-ok') {
                 this.isAuthenticated = true;
+                this.grantedScopes = normalizeScopes(response.auth?.scopes || this.scopes);
                 this.startHeartbeat();
                 this.emit('authenticated');
-                console.log('[GatewayWsClient] Authenticated successfully');
+                console.log(`[GatewayWsClient] Authenticated successfully (role=${this.role}, scopes=${this.grantedScopes.join(',') || 'none'})`);
             }
         } catch (error) {
             console.error('[GatewayWsClient] Authentication failed:', error.message);
             this.emit('error', error);
         }
+    }
+
+    hasScope(scope) {
+        const scopes = this.grantedScopes.length > 0 ? this.grantedScopes : this.scopes;
+        return scopes.includes(scope) || scopes.includes('operator.admin');
+    }
+
+    canInjectMessages() {
+        // The current Gateway build gates chat.inject behind operator.admin.
+        return this.hasScope('operator.admin');
     }
 
     /**
