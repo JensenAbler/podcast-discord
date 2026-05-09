@@ -302,10 +302,10 @@ async function runTests() {
 
             const cappedGenerator = new PodcastGenerator({
                 apiKey: 'cap-test-key',
-                maxCompletionTokens: 320
+                maxCompletionTokens: 1500
             });
             const cappedBody = cappedGenerator.buildRequestBody([]);
-            if (cappedBody.max_completion_tokens !== 320) {
+            if (cappedBody.max_completion_tokens !== 1500) {
                 throw new Error(`Generator did not honor max token cap: ${JSON.stringify(cappedBody)}`);
             }
 
