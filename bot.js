@@ -668,8 +668,7 @@ class AlphaClawdVoiceBot {
         if (this.voiceProvider.isStreamingEnabled(options)) {
             console.log(`[Bot] TTS function called (Fish WS streaming, ${textLength} chars)`);
             return this.voiceProvider.synthesizeStream(this.singleTextChunk(text), {
-                ...options,
-                latency: options.latency || 'balanced'
+                ...options
             });
         }
 
