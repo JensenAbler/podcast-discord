@@ -100,6 +100,8 @@ class AlphaClawdVoiceBot {
         this.directResponseInFlight = new Set(); // guildId
         this.lastParticipantSpeechAt = new Map(); // guildId -> ms timestamp
         this.participantActivityVersion = new Map(); // guildId -> monotonic counter for floor-taking changes
+        this.participantActivityTimers = new Map(); // guildId -> Map<userId, timeout>
+        this.participantActivityConfirmDelayMs = Number(process.env.PODCAST_PARTICIPANT_ACTIVITY_CONFIRM_MS || 200);
 
         // Recording states
         this.RecordingState = {
@@ -216,7 +218,7 @@ class AlphaClawdVoiceBot {
             // Include full word-level data from ElevenLabs STT for confidence analysis
             if (transcription) {
                 this.lastParticipantSpeechAt.set(guildId, Date.now());
-                this.markParticipantActivity(guildId);
+                this.confirmParticipantActivity(guildId, utterance.userId, 'transcript');
             }
 
             this.conversationBuffer.addUtterance({
@@ -242,18 +244,20 @@ class AlphaClawdVoiceBot {
         // Set up speaking start/stop handlers to prevent buffer flush while user is speaking
         this.voiceManager.setSpeakingStartHandler((guildId, userId) => {
             console.log(`[Bot] User ${userId} started speaking, pausing buffer flush`);
-            this.markParticipantActivity(guildId);
+            this.markProvisionalParticipantActivity(guildId, userId, 'speaking start');
             this.conversationBuffer.setUserSpeaking(userId, true);
         });
 
         this.voiceManager.setSpeakingStopHandler((guildId, userId) => {
             console.log(`[Bot] User ${userId} stopped speaking`);
+            this.clearProvisionalParticipantActivity(guildId, userId, 'speaking stop before confirmation');
             this.conversationBuffer.setUserSpeaking(userId, false);
         });
 
         this.voiceManager.setEndpointingHandler((guildId, userId, metadata = {}) => {
             if (metadata.active) {
                 console.log(`[Bot] Endpoint debounce armed for ${userId} (${metadata.reason}, ${metadata.debounceMs}ms)`);
+                this.confirmParticipantActivity(guildId, userId, 'endpointing');
                 this.conversationBuffer.markEndpointing(userId, true);
             } else {
                 this.conversationBuffer.markEndpointing(userId, false);
@@ -262,6 +266,7 @@ class AlphaClawdVoiceBot {
 
         this.voiceManager.setAsrDispatchedHandler((guildId, userId, metadata = {}) => {
             console.log(`[Bot] ASR dispatched to Fish for ${userId} (${metadata.audioBytes} bytes, ${metadata.reason})`);
+            this.confirmParticipantActivity(guildId, userId, 'ASR dispatched');
             this.conversationBuffer.markAsrPending(userId, metadata);
         });
     }
@@ -318,6 +323,7 @@ class AlphaClawdVoiceBot {
         this.lastParticipantSpeechAt.delete(guildId);
         this.idleDecisionHandledSpeechAt.delete(guildId);
         this.participantActivityVersion.delete(guildId);
+        this.clearParticipantActivityTimers(guildId);
     }
 
     canRunIdleDecision(guildId) {
@@ -367,11 +373,129 @@ class AlphaClawdVoiceBot {
         return next;
     }
 
+    getParticipantActivityConfirmDelayMs() {
+        return Number.isFinite(this.participantActivityConfirmDelayMs)
+            ? Math.max(0, this.participantActivityConfirmDelayMs)
+            : 200;
+    }
+
+    getParticipantActivityTimerMap(guildId) {
+        if (!this.participantActivityTimers) {
+            this.participantActivityTimers = new Map();
+        }
+
+        let timers = this.participantActivityTimers.get(guildId);
+        if (!timers) {
+            timers = new Map();
+            this.participantActivityTimers.set(guildId, timers);
+        }
+
+        return timers;
+    }
+
+    markProvisionalParticipantActivity(guildId, userId, reason = 'speaking start') {
+        if (!guildId || !userId) return;
+
+        const timers = this.getParticipantActivityTimerMap(guildId);
+        if (timers.has(userId)) {
+            return;
+        }
+
+        const delayMs = this.getParticipantActivityConfirmDelayMs();
+        const timer = setTimeout(() => {
+            timers.delete(userId);
+            if (timers.size === 0) {
+                this.participantActivityTimers?.delete?.(guildId);
+            }
+
+            const floorState = this.getParticipantFloorState(guildId);
+            if (floorState.activeSpeakers.includes(userId)) {
+                this.markParticipantActivity(guildId);
+                console.log(`[Bot] Participant activity confirmed for ${userId} after sustained ${reason} (${delayMs}ms)`);
+            }
+        }, delayMs);
+
+        timers.set(userId, timer);
+    }
+
+    clearProvisionalParticipantActivity(guildId, userId, reason = 'cleared') {
+        const timers = this.participantActivityTimers?.get?.(guildId);
+        const timer = timers?.get?.(userId);
+        if (!timer) {
+            return;
+        }
+
+        clearTimeout(timer);
+        timers.delete(userId);
+        if (timers.size === 0) {
+            this.participantActivityTimers.delete(guildId);
+        }
+
+        console.log(`[Bot] Provisional participant activity cleared for ${userId} (${reason})`);
+    }
+
+    confirmParticipantActivity(guildId, userId, reason = 'confirmed') {
+        if (userId) {
+            this.clearProvisionalParticipantActivity(guildId, userId, reason);
+        }
+
+        const version = this.markParticipantActivity(guildId);
+        if (guildId) {
+            console.log(`[Bot] Participant activity confirmed${userId ? ` for ${userId}` : ''} (${reason}); version=${version}`);
+        }
+        return version;
+    }
+
+    clearParticipantActivityTimers(guildId) {
+        const timers = this.participantActivityTimers?.get?.(guildId);
+        if (!timers) return;
+
+        for (const timer of timers.values()) {
+            clearTimeout(timer);
+        }
+        this.participantActivityTimers.delete(guildId);
+    }
+
     didParticipantResumeSince(guildId, baseline) {
         if (!Number.isFinite(baseline)) {
             return false;
         }
         return this.getParticipantActivityVersion(guildId) > baseline;
+    }
+
+    getParticipantFloorState(guildId) {
+        const state = this.conversationBuffer?.getState?.() || {};
+        return {
+            activeSpeakerCount: Number(state.activeSpeakerCount || 0),
+            endpointingSpeakerCount: Number(state.endpointingSpeakerCount || 0),
+            pendingAsrCount: Number(state.pendingAsrCount || 0),
+            activeSpeakers: Array.isArray(state.activeSpeakers) ? state.activeSpeakers : []
+        };
+    }
+
+    hasCurrentParticipantFloor(guildId) {
+        const floorState = this.getParticipantFloorState(guildId);
+        return (
+            floorState.activeSpeakerCount > 0 ||
+            floorState.endpointingSpeakerCount > 0 ||
+            floorState.pendingAsrCount > 0
+        );
+    }
+
+    async waitForParticipantFloorToSettle(guildId, timeoutMs = this.getParticipantActivityConfirmDelayMs() + 25) {
+        if (!this.hasCurrentParticipantFloor(guildId)) {
+            return true;
+        }
+
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < timeoutMs) {
+            await new Promise(resolve => setTimeout(resolve, 25));
+            if (!this.hasCurrentParticipantFloor(guildId)) {
+                return true;
+            }
+        }
+
+        return !this.hasCurrentParticipantFloor(guildId);
     }
 
     async handleIdleDecisionTick(guildId) {
@@ -1224,6 +1348,7 @@ class AlphaClawdVoiceBot {
         this.consentWaiters.delete(guildId);
         this.isProcessing.set(guildId, false);
         this.stopIdleDecisionLoop(guildId);
+        this.clearParticipantActivityTimers(guildId);
         this.podcastGenerator.endSession();
 
         await interaction.reply({
@@ -1365,6 +1490,7 @@ class AlphaClawdVoiceBot {
             });
 
             if (!response.shouldRespond) {
+                await this.waitForParticipantFloorToSettle(guildId);
                 if (this.discardStaleDirectResponse(guildId, {
                     source: 'buffer',
                     participantActivityBaseline,
@@ -1386,6 +1512,7 @@ class AlphaClawdVoiceBot {
             });
         } catch (error) {
             console.error('[Bot] Direct generator failed:', error);
+            await this.waitForParticipantFloorToSettle(guildId);
             if (this.discardStaleDirectResponse(guildId, {
                 source: 'buffer',
                 participantActivityBaseline,
@@ -1408,12 +1535,18 @@ class AlphaClawdVoiceBot {
     }
 
     discardStaleDirectResponse(guildId, options = {}, stage = 'before playback') {
-        if (!this.didParticipantResumeSince(guildId, options.participantActivityBaseline)) {
+        const participantResumed = this.didParticipantResumeSince(guildId, options.participantActivityBaseline);
+        const currentFloor = options.includeCurrentFloor ? this.hasCurrentParticipantFloor(guildId) : false;
+
+        if (!participantResumed && !currentFloor) {
             return false;
         }
 
         const source = options.source || 'buffer';
-        console.log(`[Bot] Direct generator response (${source}) discarded ${stage} because a participant resumed before playback`);
+        const reason = participantResumed
+            ? 'a participant resumed before playback'
+            : 'a participant is currently taking the floor';
+        console.log(`[Bot] Direct generator response (${source}) discarded ${stage} because ${reason}`);
 
         if (Array.isArray(options.flushedUtterances) && options.flushedUtterances.length > 0) {
             this.conversationBuffer?.requeueUtterances?.(
@@ -1443,6 +1576,7 @@ class AlphaClawdVoiceBot {
             const generatedAt = response.generatedAt || new Date().toISOString();
             console.log(`[Bot] Direct generator response (${source}): "${response.speech.substring(0, 50)}..."`);
 
+            await this.waitForParticipantFloorToSettle(guildId);
             if (this.discardStaleDirectResponse(guildId, options, 'after generation')) {
                 return { played: false, stale: true };
             }
@@ -1471,7 +1605,7 @@ class AlphaClawdVoiceBot {
             const playbackResult = await this.playTtsAndRecord(guildId, audio, {
                 shouldAbortPlaybackStart: () => this.discardStaleDirectResponse(
                     guildId,
-                    options,
+                    { ...options, includeCurrentFloor: true },
                     'at playback start'
                 )
             });
@@ -1592,7 +1726,7 @@ class AlphaClawdVoiceBot {
             const playbackResult = await this.playTtsAndRecord(guildId, audioBuffer, {
                 shouldAbortPlaybackStart: () => this.discardStaleDirectResponse(
                     guildId,
-                    options,
+                    { ...options, includeCurrentFloor: true },
                     'at fallback playback start'
                 )
             });

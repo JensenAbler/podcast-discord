@@ -958,13 +958,18 @@ async function runTests() {
         let cooldownStarted = false;
         let rememberedTurn = false;
         bot.participantActivityVersion = new Map([[guildId, 0]]);
+        bot.participantActivityTimers = new Map();
+        bot.participantActivityConfirmDelayMs = 20;
+        let testBufferState = {
+            state: BufferState.IDLE,
+            utteranceCount: 0,
+            activeSpeakerCount: 0,
+            endpointingSpeakerCount: 0,
+            pendingAsrCount: 0,
+            activeSpeakers: []
+        };
         bot.conversationBuffer = {
-            getState: () => ({
-                state: BufferState.IDLE,
-                utteranceCount: 0,
-                activeSpeakerCount: 0,
-                pendingAsrCount: 0
-            }),
+            getState: () => testBufferState,
             setFlushHold: (reason, active) => {
                 holdEvents.push({ reason, active });
             },
@@ -1023,12 +1028,67 @@ async function runTests() {
             throw new Error('Stale direct response did not clear the in-flight marker');
         }
 
+        const flapBaseline = bot.getParticipantActivityVersion(guildId);
+        const flapRequeueCount = staleRequeues.length;
+        testBufferState = {
+            ...testBufferState,
+            activeSpeakerCount: 1,
+            activeSpeakers: ['user-vad-flap']
+        };
+        bot.markProvisionalParticipantActivity(guildId, 'user-vad-flap', 'test flap');
+        testBufferState = {
+            ...testBufferState,
+            activeSpeakerCount: 0,
+            activeSpeakers: []
+        };
+        bot.clearProvisionalParticipantActivity(guildId, 'user-vad-flap', 'test flap ended');
+        await sleep(30);
+
+        if (bot.getParticipantActivityVersion(guildId) !== flapBaseline) {
+            throw new Error('Short VAD flap incorrectly confirmed participant activity');
+        }
+        if (bot.discardStaleDirectResponse(guildId, {
+            source: 'buffer',
+            participantActivityBaseline: flapBaseline,
+            flushedUtterances: [{ speaker: 'Jensen', transcription: 'flap should not stale this' }]
+        }, 'after test flap')) {
+            throw new Error('Short VAD flap incorrectly invalidated a direct response');
+        }
+        if (staleRequeues.length !== flapRequeueCount) {
+            throw new Error(`Short VAD flap requeued utterances: ${JSON.stringify(staleRequeues)}`);
+        }
+
+        testBufferState = {
+            ...testBufferState,
+            activeSpeakerCount: 1,
+            activeSpeakers: ['user-sustained']
+        };
+        const sustainedBaseline = bot.getParticipantActivityVersion(guildId);
+        bot.markProvisionalParticipantActivity(guildId, 'user-sustained', 'test sustained speech');
+        await sleep(30);
+        testBufferState = {
+            ...testBufferState,
+            activeSpeakerCount: 0,
+            activeSpeakers: []
+        };
+
+        if (bot.getParticipantActivityVersion(guildId) <= sustainedBaseline) {
+            throw new Error('Sustained provisional speech did not confirm participant activity');
+        }
+
+        const endpointBaseline = bot.getParticipantActivityVersion(guildId);
+        bot.confirmParticipantActivity(guildId, 'user-endpointing', 'test endpointing');
+        if (bot.getParticipantActivityVersion(guildId) <= endpointBaseline) {
+            throw new Error('Endpointing did not confirm participant activity');
+        }
+
         staleRequeues.length = 0;
         playCalled = false;
         transcriptSaved = false;
         cooldownStarted = false;
         rememberedTurn = false;
         bot.participantActivityVersion.set(guildId, 0);
+        bot.clearParticipantActivityTimers(guildId);
         let playbackStartGuardChecked = false;
 
         bot.synthesizeLiveTTS = async () => Buffer.from('audio waiting for playback start');
