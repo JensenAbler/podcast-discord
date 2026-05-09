@@ -281,7 +281,7 @@ class PodcastGenerator {
         }
         console.log(`[PodcastGenerator] Completed in ${duration}ms: respond=${output.shouldRespond}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}`);
         if (output.bigBrain.requested) {
-            console.log(`[PodcastGenerator] bigBrain requested (DRY RUN — not yet dispatched). reason="${output.bigBrain.reason}"`);
+            console.log(`[PodcastGenerator] bigBrain requested. reason="${output.bigBrain.reason}"`);
         }
         return output;
     }
@@ -449,7 +449,7 @@ class PodcastGenerator {
             const duration = Date.now() - startTime;
             console.log(`[PodcastGenerator] Streaming completed in ${duration}ms: respond=${output.shouldRespond}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}`);
             if (output.bigBrain.requested) {
-                console.log(`[PodcastGenerator] bigBrain requested (DRY RUN — not yet dispatched). reason="${output.bigBrain.reason}"`);
+                console.log(`[PodcastGenerator] bigBrain requested. reason="${output.bigBrain.reason}"`);
             }
 
             // Resolve in case the deltas never explicitly carried shouldRespond
@@ -576,6 +576,7 @@ class PodcastGenerator {
             '- EXCEPTION (off-the-cuff waiver): if the guest explicitly waives accuracy with cues like "off the cuff", "gut check", "your best guess", "quickly", "what do you think", "just give me a read", or similar — answer directly without bigBrain. Always prefix with an explicit uncertainty marker so the listener knows it is unverified: "honestly, I\'d guess…", "off the top of my head…", "my best guess is…", "I\'m not sure but…". The default-to-bigBrain rule waives whenever the guest has waived the need for ground truth.',
             '- BEFORE requesting bigBrain, make sure you know WHAT specifically the guest wants to know. If their prompt names a topic but not a specific question (e.g. "tell me about X", "let\'s talk about Y", "what about Z"), ask a brief clarifying question first to narrow it. Only submit a bigBrain call once the question is specific enough that a focused answer would be useful. Vague bigBrain dispatches waste Open Claw cycles and return info the guest may not have wanted.',
             '- When requested=true: speech is a brief, in-character stall (under ~15 words) that explicitly names the specific topic you are about to think about and signals the handoff. Vary BOTH the opening and the body every time — do not lock onto a single template. Examples of varied shapes (do NOT reuse these verbatim): "Specific one — give me a sec on Joshua Tree geology." / "Standby, pulling up our Groq rate-limit status." / "Good question, that needs a proper lookup." / "Hmm, let me actually verify the model details." / "I want to get this right — checking now." Do not attempt to answer the underlying question in the stall — that is Open Claw\'s job. The "reason" parameter is one or two short sentences naming what kind of information you need from bigBrain.'
+            , '- When a completed bigBrain answer is staged in the user prompt, it is on deck, not mandatory. Integrate it only when it fits the current flow. If you use it in speech, set consumedRunId to its runId; otherwise leave consumedRunId empty.'
         ].join('\n');
     }
 
@@ -592,6 +593,17 @@ class PodcastGenerator {
         }
         lines.push(inlineTranscript || transcript || '(empty)');
 
+        const stagedBigBrain = this.formatStagedBigBrain(options.stagedBigBrain || []);
+        if (stagedBigBrain) {
+            lines.push(
+                '',
+                'Staged bigBrain result(s), not yet spoken:',
+                stagedBigBrain,
+                '',
+                'These are Open Claw answers waiting on deck. Use one only when it fits the current conversational moment. If you speak one, weave it into the flow naturally and set bigBrain.consumedRunId to that runId. If it would interrupt or the guest is still developing the thought, leave consumedRunId empty; it will stay staged.'
+            );
+        }
+
         if (wordData) {
             lines.push('', 'STT confidence hints:', wordData);
         }
@@ -601,6 +613,27 @@ class PodcastGenerator {
 
     buildDecisionPrompt() {
         return 'Decide whether Alpha-Clawd should speak now.';
+    }
+
+    formatStagedBigBrain(items = []) {
+        const staged = (Array.isArray(items) ? items : [])
+            .map((item) => {
+                const runId = String(item?.runId || '').trim();
+                const answer = String(item?.answer || '').trim();
+                if (!runId || !answer) return null;
+
+                const reason = String(item?.reason || '').trim();
+                const transcript = String(item?.transcript || '').trim();
+                return [
+                    `runId: ${runId}`,
+                    reason ? `why it was requested: ${reason}` : null,
+                    transcript ? `triggering transcript: ${transcript}` : null,
+                    `Open Claw answer: ${answer}`
+                ].filter(Boolean).join('\n');
+            })
+            .filter(Boolean);
+
+        return staged.join('\n\n');
     }
 
     buildRequestBody(messages, options = {}) {
@@ -1156,8 +1189,8 @@ class PodcastGenerator {
                 bigBrain: {
                     type: 'object',
                     additionalProperties: false,
-                    required: ['requested', 'reason'],
-                    description: 'Escape hatch to hand the next move to the deeper Open Claw agent. Default { requested: false, reason: "" }.',
+                    required: ['requested', 'reason', 'consumedRunId'],
+                    description: 'Escape hatch to hand the next move to the deeper Open Claw agent, plus staged-answer consumption. Default { requested: false, reason: "", consumedRunId: "" }.',
                     properties: {
                         requested: {
                             type: 'boolean',
@@ -1166,6 +1199,10 @@ class PodcastGenerator {
                         reason: {
                             type: 'string',
                             description: 'Short (1-2 sentences) explanation of why bigBrain is needed. Empty string when requested is false.'
+                        },
+                        consumedRunId: {
+                            type: 'string',
+                            description: 'If this speech integrates a staged Open Claw answer, set this to that staged runId. Otherwise empty string.'
                         }
                     }
                 }
@@ -1188,7 +1225,8 @@ class PodcastGenerator {
     normalizeBigBrain(value) {
         const requested = Boolean(value && value.requested === true);
         const reason = requested ? String(value?.reason || '').trim() : '';
-        return { requested, reason };
+        const consumedRunId = requested ? '' : String(value?.consumedRunId || '').trim();
+        return { requested, reason, consumedRunId };
     }
 
     sanitizeSpeech(text) {

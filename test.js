@@ -592,7 +592,7 @@ async function runTests() {
         if (
             !bigBrainSchema.required.includes('bigBrain') ||
             !bigBrainSchema.properties.bigBrain ||
-            bigBrainSchema.properties.bigBrain.required.join(',') !== 'requested,reason'
+            bigBrainSchema.properties.bigBrain.required.join(',') !== 'requested,reason,consumedRunId'
         ) {
             throw new Error(`bigBrain schema is missing or malformed: ${JSON.stringify(bigBrainSchema.properties.bigBrain)}`);
         }
@@ -601,8 +601,8 @@ async function runTests() {
             shouldRespond: true,
             speech: 'No big brain needed.'
         });
-        if (defaultOut.bigBrain.requested !== false || defaultOut.bigBrain.reason !== '') {
-            throw new Error(`Missing bigBrain should default to {requested:false, reason:""}: ${JSON.stringify(defaultOut.bigBrain)}`);
+        if (defaultOut.bigBrain.requested !== false || defaultOut.bigBrain.reason !== '' || defaultOut.bigBrain.consumedRunId !== '') {
+            throw new Error(`Missing bigBrain should default to {requested:false, reason:"", consumedRunId:""}: ${JSON.stringify(defaultOut.bigBrain)}`);
         }
 
         const requestedOut = bigBrainGenerator.normalizeOutput({
@@ -612,7 +612,8 @@ async function runTests() {
         });
         if (
             requestedOut.bigBrain.requested !== true ||
-            requestedOut.bigBrain.reason !== 'Need to verify a date I am unsure about.'
+            requestedOut.bigBrain.reason !== 'Need to verify a date I am unsure about.' ||
+            requestedOut.bigBrain.consumedRunId !== ''
         ) {
             throw new Error(`bigBrain pass-through failed: ${JSON.stringify(requestedOut.bigBrain)}`);
         }
@@ -622,7 +623,7 @@ async function runTests() {
             speech: '',
             bigBrain: { requested: 'yes please', reason: 42 }
         });
-        if (garbageOut.bigBrain.requested !== false || garbageOut.bigBrain.reason !== '') {
+        if (garbageOut.bigBrain.requested !== false || garbageOut.bigBrain.reason !== '' || garbageOut.bigBrain.consumedRunId !== '') {
             throw new Error(`Malformed bigBrain payload was not normalized: ${JSON.stringify(garbageOut.bigBrain)}`);
         }
 
@@ -1120,6 +1121,174 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Idle decision guard failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 7a: bigBrain handoff stages Gateway final until generator integrates it');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-bigbrain';
+        const sentChats = [];
+        const holdEvents = [];
+        const spokenTexts = [];
+        const savedEntries = [];
+        const remembered = [];
+        const stagedInputs = [];
+        let generateCount = 0;
+
+        bot.generatorMode = 'direct';
+        bot.bigBrainEnabled = true;
+        bot.bigBrainTimeoutMs = 1000;
+        bot.bigBrainThinking = 'high';
+        bot.pendingBigBrainResponses = new Map();
+        bot.stagedBigBrainResponses = new Map();
+        bot.directResponseInFlight = new Set();
+        bot.lastParticipantSpeechAt = new Map();
+        bot.idleDecisionHandledSpeechAt = new Map();
+        bot.participantActivityVersion = new Map([[guildId, 0]]);
+        bot.participantActivityTimers = new Map();
+        bot.participantActivityConfirmDelayMs = 0;
+        bot.RecordingState = { RECORDING: 'RECORDING' };
+        bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
+        bot.voiceId = 'voice-test';
+        bot.conversationBuffer = {
+            getState: () => ({
+                state: BufferState.IDLE,
+                utteranceCount: 0,
+                activeSpeakerCount: 0,
+                endpointingSpeakerCount: 0,
+                pendingAsrCount: 0,
+                activeSpeakers: []
+            }),
+            setFlushHold: (reason, active) => holdEvents.push({ reason, active }),
+            requeueUtterances: () => {},
+            startCooldown: () => {}
+        };
+        bot.wsClient = {
+            isAuthenticated: true,
+            sessionKey: 'agent:main:main',
+            sendChat: async (message, options) => {
+                sentChats.push({ message, options });
+                return { runId: options.idempotencyKey, status: 'started' };
+            },
+            abortChat: async () => ({ ok: true })
+        };
+        bot.podcastGenerator = {
+            generate: async (input) => {
+                generateCount++;
+                stagedInputs.push(input.stagedBigBrain || []);
+                if (generateCount === 1) {
+                    return {
+                        shouldRespond: true,
+                        speech: 'Let me check the first episode details.',
+                        bigBrain: { requested: true, reason: 'Need to verify prior episode details.', consumedRunId: '' }
+                    };
+                }
+
+                const staged = input.stagedBigBrain?.[0];
+                return {
+                    shouldRespond: true,
+                    speech: 'Open Claw found that the first episode centered on the desert-to-jungle setup.',
+                    bigBrain: { requested: false, reason: '', consumedRunId: staged?.runId || '' }
+                };
+            },
+            rememberTurn: (_transcript, response) => remembered.push(response.speech),
+            rememberAssistantResponse: (response) => remembered.push(response.speech),
+            sanitizeSpeech: (text) => String(text || '').trim(),
+            formatUtterances: (utterances) => utterances
+                .map(u => `${u.speaker}: ${u.transcription}`)
+                .join('\n')
+        };
+        bot.playFillerClip = async () => {};
+        bot.synthesizeLiveTTS = async (text) => {
+            spokenTexts.push(String(text || ''));
+            return Buffer.from(String(text || 'audio'));
+        };
+        bot.playTtsAndRecord = async () => ({
+            playback: {
+                timing: {
+                    playbackRequestedAt: '2026-05-09T00:00:00.100Z',
+                    playbackStartedAt: '2026-05-09T00:00:01.000Z',
+                    playbackEndedAt: '2026-05-09T00:00:02.000Z'
+                }
+            },
+            playbackTiming: {
+                playbackRequestedAt: '2026-05-09T00:00:00.100Z',
+                playbackStartedAt: '2026-05-09T00:00:01.000Z',
+                playbackEndedAt: '2026-05-09T00:00:02.000Z'
+            },
+            ttsCompletedAt: '2026-05-09T00:00:00.900Z'
+        });
+        bot.voiceManager = {
+            saveTranscriptEntry: (_guildId, entry) => savedEntries.push(entry),
+            getPlaybackStatus: () => ({ isPlaying: false, queueLength: 0 })
+        };
+
+        await bot.handleDirectGeneratorFlush(guildId, [
+            { speaker: 'Jensen', transcription: 'What was the first episode about?' }
+        ], 'Jensen: What was the first episode about?');
+
+        if (sentChats.length !== 1) {
+            throw new Error(`Expected one bigBrain chat dispatch, got ${sentChats.length}`);
+        }
+        if (!sentChats[0].message.includes('[Podcast bigBrain request]') ||
+            !sentChats[0].message.includes('Need to verify prior episode details.') ||
+            !sentChats[0].message.includes('Jensen: What was the first episode about?')) {
+            throw new Error(`bigBrain prompt missing request context: ${sentChats[0].message}`);
+        }
+        const runId = sentChats[0].options.idempotencyKey;
+        if (!runId.startsWith('discord-bigbrain-') || !bot.pendingBigBrainResponses.has(runId)) {
+            throw new Error(`bigBrain pending run was not tracked: ${runId}`);
+        }
+        if (bot.directResponseInFlight.has(guildId)) {
+            throw new Error('bigBrain pending run should not block direct turns while Open Claw works');
+        }
+
+        await bot.handleWsResponse({
+            runId,
+            text: 'The first episode centered on the desert-to-jungle setup.',
+            message: {
+                content: [{ type: 'text', text: 'The first episode centered on the desert-to-jungle setup.' }]
+            }
+        });
+
+        if (bot.pendingBigBrainResponses.has(runId) || bot.directResponseInFlight.has(guildId)) {
+            throw new Error('bigBrain pending state was not cleared after staging final response');
+        }
+        const staged = bot.stagedBigBrainResponses.get(guildId);
+        if (!staged || staged.length !== 1 || staged[0].runId !== runId || staged[0].answer !== 'The first episode centered on the desert-to-jungle setup.') {
+            throw new Error(`bigBrain final was not staged: ${JSON.stringify(staged)}`);
+        }
+        if (spokenTexts.join('|') !== 'Let me check the first episode details.') {
+            throw new Error(`Gateway final should not be spoken directly: ${JSON.stringify(spokenTexts)}`);
+        }
+
+        await bot.handleDirectGeneratorFlush(guildId, [
+            { speaker: 'Jensen', transcription: 'Okay, whenever you have that.' }
+        ], 'Jensen: Okay, whenever you have that.');
+
+        if (stagedInputs[1]?.[0]?.runId !== runId ||
+            stagedInputs[1]?.[0]?.answer !== 'The first episode centered on the desert-to-jungle setup.') {
+            throw new Error(`Staged bigBrain answer was not supplied to generator: ${JSON.stringify(stagedInputs)}`);
+        }
+        if (bot.stagedBigBrainResponses.has(guildId)) {
+            throw new Error(`Staged bigBrain answer was not consumed after generator integration: ${JSON.stringify(bot.stagedBigBrainResponses.get(guildId))}`);
+        }
+        if (spokenTexts.join('|') !== 'Let me check the first episode details.|Open Claw found that the first episode centered on the desert-to-jungle setup.') {
+            throw new Error(`Expected stall then integrated answer to be spoken: ${JSON.stringify(spokenTexts)}`);
+        }
+        const integratedEntry = savedEntries.find(entry => entry.bigBrainRunId === runId);
+        if (!integratedEntry || integratedEntry.source !== 'buffer') {
+            throw new Error(`Integrated transcript entry missing bigBrain run metadata: ${JSON.stringify(savedEntries)}`);
+        }
+        if (!remembered.includes('Open Claw found that the first episode centered on the desert-to-jungle setup.')) {
+            throw new Error(`Integrated bigBrain answer was not remembered: ${JSON.stringify(remembered)}`);
+        }
+
+        console.log('  bigBrain handoff stages runId, supplies it to the generator, and consumes it only after integration');
+        passed++;
+    } catch (error) {
+        console.log(`  bigBrain handoff failed: ${error.message}`);
         failed++;
     }
 

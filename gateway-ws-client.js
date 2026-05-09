@@ -189,6 +189,20 @@ class GatewayWsClient extends EventEmitter {
      * Handle chat events (AI responses)
      */
     handleChatEvent(payload) {
+        if (!payload) {
+            return;
+        }
+
+        this.emit('chatEvent', {
+            state: payload.state,
+            sessionKey: payload.sessionKey,
+            runId: payload.runId,
+            usage: payload.usage,
+            message: payload.message,
+            errorMessage: payload.errorMessage,
+            stopReason: payload.stopReason
+        });
+
         // Extract text from message
         // Gateway sends: { role, content: [{type, text}], timestamp }
         let messageText = '';
@@ -326,11 +340,15 @@ class GatewayWsClient extends EventEmitter {
         
         text += `\n\nTimestamp: ${new Date().toISOString()}`;
 
-        // Use chat.inject with plain text content (type: 'text')
+        if (speakers && speakers.length > 0) {
+            text += `\nSpeakers: ${speakers.join(', ')}`;
+        }
+
+        // Use chat.inject with the gateway-native message/label shape.
         return this.sendRequest('chat.inject', {
             sessionKey: this.sessionKey,
-            role: 'system',  // System role for state changes
-            content: [{ type: 'text', text }]
+            message: text,
+            label: 'podcast-session'
         });
     }
 
@@ -342,12 +360,32 @@ class GatewayWsClient extends EventEmitter {
             throw new Error('Not authenticated');
         }
 
-        return this.sendRequest('chat.send', {
+        const params = {
             sessionKey: this.sessionKey,
             message,
             thinking: options.thinking || 'medium',
             deliver: true,
             idempotencyKey: options.idempotencyKey || `discord-${Date.now()}`
+        };
+
+        if (Number.isFinite(Number(options.timeoutMs))) {
+            params.timeoutMs = Number(options.timeoutMs);
+        }
+
+        return this.sendRequest('chat.send', params);
+    }
+
+    /**
+     * Abort a chat run in a session.
+     */
+    async abortChat(runId, options = {}) {
+        if (!this.isAuthenticated) {
+            throw new Error('Not authenticated');
+        }
+
+        return this.sendRequest('chat.abort', {
+            sessionKey: options.sessionKey || this.sessionKey,
+            runId
         });
     }
 

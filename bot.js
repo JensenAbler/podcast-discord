@@ -113,6 +113,13 @@ class AlphaClawdVoiceBot {
         this.participantActivityVersion = new Map(); // guildId -> monotonic counter for floor-taking changes
         this.participantActivityTimers = new Map(); // guildId -> Map<userId, timeout>
         this.participantActivityConfirmDelayMs = Number(process.env.PODCAST_PARTICIPANT_ACTIVITY_CONFIRM_MS || 200);
+        this.bigBrainEnabled = options.bigBrainEnabled !== undefined
+            ? Boolean(options.bigBrainEnabled)
+            : process.env.PODCAST_BIG_BRAIN_ENABLED !== 'false';
+        this.bigBrainTimeoutMs = Number(process.env.PODCAST_BIG_BRAIN_TIMEOUT_MS || 180000);
+        this.bigBrainThinking = process.env.PODCAST_BIG_BRAIN_THINKING || 'high';
+        this.pendingBigBrainResponses = new Map(); // runId -> pending handoff
+        this.stagedBigBrainResponses = new Map(); // guildId -> completed handoffs awaiting host integration
 
         // Recording states
         this.RecordingState = {
@@ -194,6 +201,7 @@ class AlphaClawdVoiceBot {
 
         // Set up WebSocket event handlers
         this.wsClient.on('response', (response) => this.handleWsResponse(response));
+        this.wsClient.on('chatEvent', (event) => this.handleWsChatEvent(event));
         this.wsClient.on('error', (error) => console.error('[Bot] WebSocket error:', error));
         this.wsClient.on('disconnected', () => console.log('[Bot] WebSocket disconnected'));
 
@@ -295,7 +303,7 @@ class AlphaClawdVoiceBot {
     }
 
     shouldConnectGatewayWs() {
-        return this.useGatewayGenerator() || this.gatewayMirror;
+        return this.useGatewayGenerator() || this.gatewayMirror || this.bigBrainEnabled;
     }
 
     startIdleDecisionLoop(guildId) {
@@ -334,6 +342,7 @@ class AlphaClawdVoiceBot {
         this.lastParticipantSpeechAt.delete(guildId);
         this.idleDecisionHandledSpeechAt.delete(guildId);
         this.participantActivityVersion.delete(guildId);
+        this.stagedBigBrainResponses?.delete?.(guildId);
         this.clearParticipantActivityTimers(guildId);
     }
 
@@ -345,7 +354,7 @@ class AlphaClawdVoiceBot {
 
         const lastSpeechAt = this.lastParticipantSpeechAt.get(guildId);
         const handledSpeechAt = this.idleDecisionHandledSpeechAt.get(guildId) || 0;
-        if (Number.isFinite(lastSpeechAt) && handledSpeechAt >= lastSpeechAt) {
+        if (!this.hasStagedBigBrain(guildId) && Number.isFinite(lastSpeechAt) && handledSpeechAt >= lastSpeechAt) {
             return false;
         }
 
@@ -531,6 +540,7 @@ class AlphaClawdVoiceBot {
                 transcript: '',
                 idleCheck: true,
                 idleSeconds,
+                stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 remember: false
             });
 
@@ -544,12 +554,21 @@ class AlphaClawdVoiceBot {
                 return;
             }
 
-            await this.speakDirectGeneratorResponse(guildId, response, {
+            const playbackResult = await this.speakDirectGeneratorResponse(guildId, response, {
                 source: 'idle',
                 playFiller: false,
                 rememberAssistant: true,
                 participantActivityBaseline
             });
+            const finalResponse = playbackResult?.finalResponse || response;
+            if (playbackResult?.played && finalResponse.bigBrain?.requested) {
+                await this.dispatchBigBrainTurn(guildId, finalResponse, {
+                    source: 'idle',
+                    transcript: '',
+                    participantActivityBaseline: this.getParticipantActivityVersion(guildId)
+                });
+            }
+            this.consumeStagedBigBrainFromResponse(guildId, finalResponse);
         } catch (error) {
             console.error('[Bot] Idle generator failed:', error);
         } finally {
@@ -1189,7 +1208,8 @@ class AlphaClawdVoiceBot {
             });
             this.startIdleDecisionLoop(guildId);
 
-            // Notify Gateway/OpenClaw when it is driving responses or mirroring is enabled.
+            // Notify Gateway/OpenClaw when it is driving responses, mirroring is enabled,
+            // or bigBrain handoff may need session context.
             if (this.wsClient.isAuthenticated && this.shouldConnectGatewayWs()) {
                 try {
                     const PODCAST_GUIDELINES = [
@@ -1271,7 +1291,8 @@ class AlphaClawdVoiceBot {
                 this.podcastGenerator.endSession();
             }
 
-            // Notify Gateway/OpenClaw when it is driving responses or mirroring is enabled.
+            // Notify Gateway/OpenClaw when it is driving responses, mirroring is enabled,
+            // or bigBrain handoff may need session context.
             if (wasRecording && this.wsClient.isAuthenticated && this.shouldConnectGatewayWs()) {
                 try {
                     await this.wsClient.injectPodcastEvent({
@@ -1506,12 +1527,14 @@ class AlphaClawdVoiceBot {
         this.directResponseInFlight.add(guildId);
         this.conversationBuffer?.setFlushHold?.('direct-response', true);
         const participantActivityBaseline = this.getParticipantActivityVersion(guildId);
+        let bigBrainDispatch = null;
 
         try {
             const response = await this.beginGeneratorTurn({
                 utterances,
                 transcript,
                 wordData,
+                stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 remember: false
             });
 
@@ -1533,13 +1556,29 @@ class AlphaClawdVoiceBot {
                 return;
             }
 
-            await this.speakDirectGeneratorResponse(guildId, response, {
+            const playbackResult = await this.speakDirectGeneratorResponse(guildId, response, {
                 source: 'buffer',
                 playFiller: true,
                 participantActivityBaseline,
                 flushedUtterances: utterances,
                 rememberTranscript: transcript
             });
+            const finalResponse = playbackResult?.finalResponse || response;
+            if (playbackResult?.played && finalResponse.bigBrain?.requested) {
+                bigBrainDispatch = {
+                    response: finalResponse,
+                    options: {
+                        source: 'buffer',
+                        transcript,
+                        utterances,
+                        wordData,
+                        participantActivityBaseline: this.getParticipantActivityVersion(guildId)
+                    }
+                };
+            }
+            if (playbackResult?.played) {
+                this.consumeStagedBigBrainFromResponse(guildId, finalResponse);
+            }
         } catch (error) {
             console.error('[Bot] Direct generator failed:', error);
             await this.waitForParticipantFloorToSettle(guildId);
@@ -1561,6 +1600,14 @@ class AlphaClawdVoiceBot {
         } finally {
             this.directResponseInFlight.delete(guildId);
             this.conversationBuffer?.setFlushHold?.('direct-response', false);
+        }
+
+        if (bigBrainDispatch) {
+            await this.dispatchBigBrainTurn(
+                guildId,
+                bigBrainDispatch.response,
+                bigBrainDispatch.options
+            );
         }
     }
 
@@ -1634,6 +1681,240 @@ class AlphaClawdVoiceBot {
             completed: stream.completed,
             isStreaming: true
         };
+    }
+
+    isBigBrainAvailable() {
+        return Boolean(this.bigBrainEnabled && this.wsClient?.isAuthenticated);
+    }
+
+    hasStagedBigBrain(guildId) {
+        return (this.stagedBigBrainResponses?.get?.(guildId) || []).length > 0;
+    }
+
+    getStagedBigBrainForGenerator(guildId) {
+        return (this.stagedBigBrainResponses?.get?.(guildId) || [])
+            .slice(0, 3)
+            .map((item) => ({
+                runId: item.runId,
+                reason: item.reason,
+                transcript: item.transcript,
+                answer: item.answer,
+                requestedAt: item.requestedAt,
+                answeredAt: item.answeredAt
+            }));
+    }
+
+    stageBigBrainResponse(guildId, pending, answer) {
+        if (!guildId || !answer) {
+            return null;
+        }
+        if (!this.stagedBigBrainResponses) {
+            this.stagedBigBrainResponses = new Map();
+        }
+
+        const staged = {
+            runId: pending.runId,
+            reason: pending.reason,
+            transcript: pending.transcript || '',
+            answer,
+            requestedAt: pending.requestedAt,
+            answeredAt: new Date().toISOString()
+        };
+        const existing = this.stagedBigBrainResponses.get(guildId) || [];
+        const withoutDuplicate = existing.filter((item) => item.runId !== staged.runId);
+        withoutDuplicate.push(staged);
+        this.stagedBigBrainResponses.set(guildId, withoutDuplicate.slice(-3));
+        console.log(`[Bot] bigBrain response staged runId=${staged.runId}; stagedCount=${this.stagedBigBrainResponses.get(guildId).length}`);
+        return staged;
+    }
+
+    consumeStagedBigBrainFromResponse(guildId, response = {}) {
+        const consumedRunId = String(response?.bigBrain?.consumedRunId || '').trim();
+        if (!consumedRunId) {
+            return false;
+        }
+
+        const staged = this.stagedBigBrainResponses?.get?.(guildId) || [];
+        const next = staged.filter((item) => item.runId !== consumedRunId);
+        if (next.length === staged.length) {
+            console.warn(`[Bot] Generator reported unknown staged bigBrain consumption: ${consumedRunId}`);
+            return false;
+        }
+
+        if (next.length > 0) {
+            this.stagedBigBrainResponses.set(guildId, next);
+        } else {
+            this.stagedBigBrainResponses.delete(guildId);
+        }
+        console.log(`[Bot] Staged bigBrain consumed by generator: runId=${consumedRunId}`);
+        return true;
+    }
+
+    buildBigBrainPrompt(response, options = {}) {
+        const transcript = String(options.transcript || '').trim()
+            || this.podcastGenerator?.formatUtterances?.(options.utterances || [])
+            || '(no transcript text captured)';
+        const reason = String(response?.bigBrain?.reason || '').trim()
+            || 'The small live host model requested deeper help.';
+        const source = options.source || 'buffer';
+        const lines = [
+            '[Podcast bigBrain request]',
+            '',
+            'You are Open Claw helping Alpha-Clawd during a live Discord voice podcast.',
+            'The small live host model has already spoken a brief stall to the room. Your response will be staged and handed back to that model so it can integrate the answer when the live conversation is ready.',
+            '',
+            'Answer the guest request using any server memory, files, tools, web access, or runtime context available to you. If you cannot verify something, say that plainly.',
+            'Return only the concise spoken answer. No markdown, bullets, code blocks, URLs unless essential, file paths unless asked, or stage directions.',
+            'Aim for one to three natural sentences unless the guest explicitly asked for a longer result.',
+            '',
+            `Trigger source: ${source}`,
+            `Small-model handoff reason: ${reason}`,
+            '',
+            'Live transcript that triggered the handoff:',
+            transcript
+        ];
+
+        const wordData = String(options.wordData || '').trim();
+        if (wordData) {
+            lines.push('', 'STT confidence context:', wordData);
+        }
+
+        return lines.join('\n');
+    }
+
+    async dispatchBigBrainTurn(guildId, response, options = {}) {
+        if (!response?.bigBrain?.requested) {
+            return { dispatched: false, reason: 'not_requested' };
+        }
+
+        const reason = String(response.bigBrain.reason || '').trim();
+        if (!this.bigBrainEnabled) {
+            console.log(`[Bot] bigBrain requested but disabled. reason="${reason}"`);
+            return { dispatched: false, reason: 'disabled' };
+        }
+
+        if (!this.wsClient?.isAuthenticated) {
+            console.warn(`[Bot] bigBrain requested but Gateway WebSocket is not authenticated. reason="${reason}"`);
+            return { dispatched: false, reason: 'gateway_unavailable' };
+        }
+
+        const existing = Array.from(this.pendingBigBrainResponses.values())
+            .find((pending) => pending.guildId === guildId);
+        if (existing) {
+            console.warn(`[Bot] bigBrain request skipped because run ${existing.runId} is still pending`);
+            return { dispatched: false, reason: 'already_pending', runId: existing.runId };
+        }
+
+        const runId = `discord-bigbrain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const timeoutMs = Number.isFinite(this.bigBrainTimeoutMs)
+            ? Math.max(1000, this.bigBrainTimeoutMs)
+            : 180000;
+        const prompt = this.buildBigBrainPrompt(response, options);
+        const pending = {
+            guildId,
+            runId,
+            reason,
+            transcript: options.transcript || '',
+            requestedAt: new Date().toISOString(),
+            participantActivityBaseline: Number.isFinite(options.participantActivityBaseline)
+                ? options.participantActivityBaseline
+                : this.getParticipantActivityVersion(guildId),
+            sessionKey: this.wsClient.sessionKey,
+            timeout: null
+        };
+
+        pending.timeout = setTimeout(() => {
+            this.handleBigBrainTimeout(runId);
+        }, timeoutMs);
+        if (typeof pending.timeout.unref === 'function') {
+            pending.timeout.unref();
+        }
+
+        this.pendingBigBrainResponses.set(runId, pending);
+
+        try {
+            const ack = await this.wsClient.sendChat(prompt, {
+                thinking: this.bigBrainThinking,
+                timeoutMs,
+                idempotencyKey: runId
+            });
+            console.log(`[Bot] bigBrain dispatched runId=${ack?.runId || runId}, timeoutMs=${timeoutMs}, reason="${reason}"`);
+            return { dispatched: true, runId };
+        } catch (error) {
+            console.error('[Bot] bigBrain dispatch failed:', error);
+            this.cleanupPendingBigBrain(runId);
+            return { dispatched: false, reason: 'dispatch_failed', error };
+        }
+    }
+
+    handleBigBrainTimeout(runId) {
+        const pending = this.pendingBigBrainResponses.get(runId);
+        if (!pending) {
+            return;
+        }
+
+        console.warn(`[Bot] bigBrain run timed out: runId=${runId}, reason="${pending.reason}"`);
+        this.wsClient?.abortChat?.(runId, { sessionKey: pending.sessionKey }).catch((error) => {
+            console.warn(`[Bot] Failed to abort timed-out bigBrain run ${runId}: ${error.message}`);
+        });
+        this.cleanupPendingBigBrain(runId);
+    }
+
+    cleanupPendingBigBrain(runId) {
+        const pending = this.pendingBigBrainResponses.get(runId);
+        if (!pending) {
+            return null;
+        }
+
+        if (pending.timeout) {
+            clearTimeout(pending.timeout);
+        }
+        this.pendingBigBrainResponses.delete(runId);
+        return pending;
+    }
+
+    async handleBigBrainWsResponse(response) {
+        const runId = response?.runId;
+        const pending = runId ? this.pendingBigBrainResponses.get(runId) : null;
+        if (!pending) {
+            return false;
+        }
+
+        try {
+            const guildId = pending.guildId;
+            if (this.recordingState.get(guildId) !== this.RecordingState.RECORDING) {
+                console.log(`[Bot] Dropping bigBrain response ${runId}; recording is no longer active`);
+                return true;
+            }
+
+            const text = String(response.text || '').trim();
+            const speech = this.podcastGenerator?.sanitizeSpeech?.(text) || text;
+            if (!speech) {
+                console.warn(`[Bot] bigBrain response ${runId} had no speakable text`);
+                return true;
+            }
+
+            this.stageBigBrainResponse(guildId, pending, speech);
+            return true;
+        } catch (error) {
+            console.error('[Bot] Error handling bigBrain response:', error);
+            return true;
+        } finally {
+            this.cleanupPendingBigBrain(runId);
+        }
+    }
+
+    handleWsChatEvent(event) {
+        if (this.useGatewayGenerator()) {
+            return;
+        }
+        const pending = event?.runId ? this.pendingBigBrainResponses.get(event.runId) : null;
+        if (!pending || !['error', 'aborted'].includes(event.state)) {
+            return;
+        }
+
+        console.warn(`[Bot] bigBrain run ${event.runId} ended with state=${event.state}: ${event.errorMessage || event.stopReason || 'no details'}`);
+        this.cleanupPendingBigBrain(event.runId);
     }
 
     async speakDirectGeneratorResponse(guildId, response, options = {}) {
@@ -1721,7 +2002,7 @@ class AlphaClawdVoiceBot {
                 }
             }
 
-            this.voiceManager.saveTranscriptEntry(guildId, {
+            const transcriptEntry = {
                 speaker: 'Alpha-Clawd',
                 speakerRole: 'host',
                 transcription: finalResponse.speech,
@@ -1733,7 +2014,15 @@ class AlphaClawdVoiceBot {
                 playbackStartedAt,
                 playbackEndedAt,
                 duration: playbackDuration
-            });
+            };
+            if (source) {
+                transcriptEntry.source = source;
+            }
+            const consumedBigBrainRunId = finalResponse?.bigBrain?.consumedRunId;
+            if (options.bigBrainRunId || consumedBigBrainRunId) {
+                transcriptEntry.bigBrainRunId = options.bigBrainRunId || consumedBigBrainRunId;
+            }
+            this.voiceManager.saveTranscriptEntry(guildId, transcriptEntry);
 
             if (typeof options.rememberTranscript === 'string') {
                 this.podcastGenerator.rememberTurn?.(options.rememberTranscript, finalResponse);
@@ -1743,7 +2032,7 @@ class AlphaClawdVoiceBot {
 
             console.log(`[Bot] Direct generator playback complete (${source}), starting cooldown`);
             this.conversationBuffer.startCooldown();
-            return { played: true, stale: false };
+            return { played: true, stale: false, finalResponse };
         } finally {
             if (!alreadyInFlight) {
                 this.directResponseInFlight.delete(guildId);
@@ -1929,8 +2218,8 @@ class AlphaClawdVoiceBot {
         // Initialize Gateway bridge (HTTP response server)
         await this.gatewayBridge.initialize();
 
-        // Connect WebSocket client only when Gateway/OpenClaw is the generator,
-        // or when explicitly mirroring direct sessions into Gateway for visibility.
+        // Connect WebSocket client when Gateway/OpenClaw is the generator,
+        // when direct sessions are mirrored, or when bigBrain handoff is enabled.
         if (this.shouldConnectGatewayWs()) {
             try {
                 await this.wsClient.connect();
@@ -1939,6 +2228,8 @@ class AlphaClawdVoiceBot {
                 console.error('[Bot] WebSocket connection failed:', error.message);
                 if (this.useGatewayGenerator()) {
                     console.warn('[Bot] Will use fallback responses');
+                } else if (this.bigBrainEnabled) {
+                    console.warn('[Bot] bigBrain handoff will be unavailable until Gateway reconnects');
                 }
             }
         } else {
@@ -1967,7 +2258,10 @@ class AlphaClawdVoiceBot {
         console.log(`[Bot] Received WebSocket response: "${text?.substring(0, 50)}..."`);
 
         if (!this.useGatewayGenerator()) {
-            console.log('[Bot] Ignoring Gateway response because direct generator mode is active');
+            const handledBigBrain = await this.handleBigBrainWsResponse(response);
+            if (!handledBigBrain) {
+                console.log('[Bot] Ignoring Gateway response because direct generator mode is active');
+            }
             return;
         }
         
