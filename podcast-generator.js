@@ -8,6 +8,182 @@
  * - bigBrain: escape-hatch handoff to the deeper agent (see schema)
  */
 
+/**
+ * Streams the JSON response from the structured LLM call and pulls the
+ * speech field out token-by-token, so we can hand characters to Fish TTS
+ * before the full payload has finished generating.
+ *
+ * Intended for the schema { shouldRespond, speech, bigBrain }. Tolerates
+ * keys arriving in any order, but requires the speech value to be a JSON
+ * string. JSON escapes (\", \n, \uXXXX, etc.) are decoded incrementally;
+ * if a chunk lands mid-escape we wait for the rest of the bytes before
+ * emitting.
+ */
+class IncrementalSpeechReader {
+    constructor() {
+        this.buffer = '';
+        this.shouldRespondParsed = false;
+        this.shouldRespondValue = null;
+        this.speechStart = -1;       // index of first char inside the speech string
+        this.speechCursor = -1;      // next raw-buffer index to decode
+        this.speechComplete = false; // true once closing quote of speech is seen
+        this.fullSpeech = '';        // running unescaped speech text (for fallback assembly)
+    }
+
+    /**
+     * Feed more raw JSON content (concatenated SSE deltas). Returns
+     * { chunks, shouldRespond, speechComplete } where chunks is an array
+     * of newly-decoded speech fragments produced by this push.
+     */
+    push(text) {
+        if (typeof text !== 'string' || text.length === 0) {
+            return {
+                chunks: [],
+                shouldRespond: this.shouldRespondValue,
+                speechComplete: this.speechComplete
+            };
+        }
+
+        this.buffer += text;
+        const chunks = [];
+
+        if (!this.shouldRespondParsed) {
+            const m = /"shouldRespond"\s*:\s*(true|false)/.exec(this.buffer);
+            if (m) {
+                this.shouldRespondParsed = true;
+                this.shouldRespondValue = m[1] === 'true';
+            }
+        }
+
+        if (this.speechStart < 0) {
+            const m = /"speech"\s*:\s*"/.exec(this.buffer);
+            if (m) {
+                this.speechStart = m.index + m[0].length;
+                this.speechCursor = this.speechStart;
+            }
+        }
+
+        if (this.speechStart >= 0 && !this.speechComplete) {
+            let out = '';
+            let i = this.speechCursor;
+            while (i < this.buffer.length) {
+                const ch = this.buffer[i];
+                if (ch === '\\') {
+                    if (i + 1 >= this.buffer.length) break; // wait for escape continuation
+                    const next = this.buffer[i + 1];
+                    if (next === 'u') {
+                        if (i + 5 >= this.buffer.length) break; // need 4 hex chars
+                        const hex = this.buffer.slice(i + 2, i + 6);
+                        if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
+                            // malformed; pass through literal \u and advance
+                            out += '\\u';
+                            i += 2;
+                        } else {
+                            out += String.fromCharCode(parseInt(hex, 16));
+                            i += 6;
+                        }
+                    } else {
+                        const map = {
+                            'n': '\n', 't': '\t', 'r': '\r',
+                            '"': '"', '\\': '\\', '/': '/',
+                            'b': '\b', 'f': '\f'
+                        };
+                        out += Object.prototype.hasOwnProperty.call(map, next) ? map[next] : next;
+                        i += 2;
+                    }
+                } else if (ch === '"') {
+                    this.speechComplete = true;
+                    this.speechCursor = i + 1;
+                    break;
+                } else {
+                    out += ch;
+                    i += 1;
+                }
+            }
+            if (!this.speechComplete) {
+                this.speechCursor = i;
+            }
+            if (out.length > 0) {
+                chunks.push(out);
+                this.fullSpeech += out;
+            }
+        }
+
+        return {
+            chunks,
+            shouldRespond: this.shouldRespondValue,
+            speechComplete: this.speechComplete
+        };
+    }
+
+    /**
+     * Try to parse the assembled buffer as a complete JSON object. If
+     * parsing fails (e.g., truncation), fall back to a best-effort object
+     * using whatever shouldRespond + speech we did decode.
+     */
+    finalize() {
+        try {
+            return JSON.parse(this.buffer);
+        } catch (e) {
+            return {
+                shouldRespond: this.shouldRespondValue ?? false,
+                speech: this.fullSpeech,
+                bigBrain: { requested: false, reason: '' }
+            };
+        }
+    }
+}
+
+/**
+ * Async generator that yields parsed event objects from a fetch() Response
+ * whose body is an OpenAI/Groq-style server-sent-events stream of chat
+ * completion deltas. Buffers across read boundaries and skips comments;
+ * yields up to (but not including) the [DONE] sentinel.
+ */
+async function* streamChatCompletionEvents(response) {
+    if (!response.body) {
+        throw new Error('Streaming response has no body');
+    }
+
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    for await (const chunk of response.body) {
+        buf += decoder.decode(chunk, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+
+        for (const rawLine of lines) {
+            const line = rawLine.replace(/\r$/, '');
+            if (!line) continue;
+            if (line.startsWith(':')) continue; // SSE comment / keep-alive
+            if (!line.startsWith('data:')) continue;
+
+            const payload = line.slice(5).trim();
+            if (payload === '[DONE]') return;
+            if (!payload) continue;
+
+            try {
+                yield JSON.parse(payload);
+            } catch {
+                // Skip malformed events but keep the stream alive
+                continue;
+            }
+        }
+    }
+
+    buf += decoder.decode();
+    const finalLine = buf.replace(/\r$/, '').trim();
+    if (finalLine.startsWith('data:')) {
+        const payload = finalLine.slice(5).trim();
+        if (payload && payload !== '[DONE]') {
+            try {
+                yield JSON.parse(payload);
+            } catch {}
+        }
+    }
+}
+
 class PodcastGenerator {
     constructor(options = {}) {
         this.keyRouting = this.resolveKeyRouting(options);
@@ -108,6 +284,163 @@ class PodcastGenerator {
             console.log(`[PodcastGenerator] bigBrain requested (DRY RUN — not yet dispatched). reason="${output.bigBrain.reason}"`);
         }
         return output;
+    }
+
+    /**
+     * Streaming variant of generate(). Returns three handles:
+     *   - shouldRespond: Promise<boolean> resolved as soon as the value
+     *     is parsed out of the streaming JSON (gates playback).
+     *   - speechStream: AsyncIterable<string> yielding decoded speech
+     *     fragments as they arrive, suitable for piping into a
+     *     synthesizer that consumes async iterables of text.
+     *   - completed: Promise<output> resolved with the fully normalized
+     *     output (for transcript + history) once the LLM stream ends.
+     *
+     * On any transport / parse error all three handles reject (or in the
+     * case of speechStream, throw on next iteration). The caller is
+     * expected to catch and fall back to the non-streaming generate().
+     *
+     * Does NOT exercise the free-first-paid-fallback failover. If the
+     * configured key 429s the caller should fall back to generate().
+     */
+    async generateStreaming(input = {}) {
+        if (!this.apiKey) {
+            throw new Error(this.apiKeyError || 'OpenAI API key not provided. Set OPENAI_API_KEY or use PODCAST_GENERATOR=gateway.');
+        }
+
+        const transcript = input.transcript || this.formatUtterances(input.utterances || []);
+        const messages = this.buildMessages(input);
+        const body = this.buildRequestBody(messages);
+        body.stream = true;
+        body.stream_options = { include_usage: true };
+
+        const startTime = Date.now();
+        const reader = new IncrementalSpeechReader();
+
+        const queue = [];
+        let waiter = null;
+        let finished = false;
+        let streamError = null;
+        const wakeWaiter = () => {
+            if (waiter) {
+                const w = waiter;
+                waiter = null;
+                w();
+            }
+        };
+
+        const speechStream = (async function* () {
+            while (true) {
+                while (queue.length > 0) {
+                    yield queue.shift();
+                }
+                if (streamError) throw streamError;
+                if (finished) return;
+                await new Promise(resolve => { waiter = resolve; });
+            }
+        })();
+
+        let resolveShould, rejectShould, resolveCompleted, rejectCompleted;
+        let shouldSettled = false;
+        let completedSettled = false;
+        const shouldRespond = new Promise((res, rej) => {
+            resolveShould = (v) => { if (!shouldSettled) { shouldSettled = true; res(v); } };
+            rejectShould = (e) => { if (!shouldSettled) { shouldSettled = true; rej(e); } };
+        });
+        const completed = new Promise((res, rej) => {
+            resolveCompleted = (v) => { if (!completedSettled) { completedSettled = true; res(v); } };
+            rejectCompleted = (e) => { if (!completedSettled) { completedSettled = true; rej(e); } };
+        });
+
+        const drive = async () => {
+            const controller = new AbortController();
+            // Idle timeout: aborts the request only if no SSE delta arrives
+            // within this.timeout. Reset on every event to allow long
+            // legitimate responses without an arbitrary global cap.
+            let idleTimeoutId = setTimeout(() => controller.abort(), this.timeout);
+            const resetIdleTimeout = () => {
+                clearTimeout(idleTimeoutId);
+                idleTimeoutId = setTimeout(() => controller.abort(), this.timeout);
+            };
+
+            try {
+                const response = await fetch(`${this.baseUrl}/chat/completions`, {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${this.apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body),
+                    signal: controller.signal
+                });
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    const err = new Error(`OpenAI API error: ${response.status} - ${errText}`);
+                    err.status = response.status;
+                    err.bodyText = errText;
+                    try { err.body = JSON.parse(errText); } catch { err.body = null; }
+                    throw err;
+                }
+
+                for await (const event of streamChatCompletionEvents(response)) {
+                    resetIdleTimeout();
+                    const choice = event.choices?.[0];
+                    const delta = choice?.delta?.content;
+                    if (typeof delta === 'string' && delta.length > 0) {
+                        const result = reader.push(delta);
+                        if (result.shouldRespond !== null) {
+                            resolveShould(result.shouldRespond);
+                        }
+                        if (result.chunks.length > 0) {
+                            for (const chunk of result.chunks) {
+                                queue.push(chunk);
+                            }
+                            wakeWaiter();
+                        }
+                        if (result.speechComplete && !finished) {
+                            finished = true;
+                            wakeWaiter();
+                        }
+                    }
+                }
+            } catch (err) {
+                streamError = err;
+                finished = true;
+                wakeWaiter();
+                rejectShould(err);
+                rejectCompleted(err);
+                return;
+            } finally {
+                clearTimeout(idleTimeoutId);
+            }
+
+            const final = reader.finalize();
+            const output = this.normalizeOutput(final);
+            if (input.remember !== false) {
+                this.rememberTurn(transcript, output);
+            }
+            const duration = Date.now() - startTime;
+            console.log(`[PodcastGenerator] Streaming completed in ${duration}ms: respond=${output.shouldRespond}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}`);
+            if (output.bigBrain.requested) {
+                console.log(`[PodcastGenerator] bigBrain requested (DRY RUN — not yet dispatched). reason="${output.bigBrain.reason}"`);
+            }
+
+            // Resolve in case the deltas never explicitly carried shouldRespond
+            // (rare; the schema requires it but we don't want to hang).
+            resolveShould(output.shouldRespond);
+            if (!finished) {
+                finished = true;
+                wakeWaiter();
+            }
+            resolveCompleted(output);
+        };
+
+        // Fire and forget: the three returned handles capture all state
+        // the caller needs.
+        drive();
+
+        return { shouldRespond, speechStream, completed };
     }
 
     buildMessages(input = {}) {
@@ -1196,4 +1529,4 @@ class PodcastGenerator {
     }
 }
 
-module.exports = { PodcastGenerator };
+module.exports = { PodcastGenerator, IncrementalSpeechReader };

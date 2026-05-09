@@ -1960,6 +1960,168 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 14: IncrementalSpeechReader decodes streaming JSON');
+    try {
+        const { IncrementalSpeechReader } = require('./podcast-generator');
+
+        // a) Feed the full JSON in one push.
+        const r1 = new IncrementalSpeechReader();
+        const out1 = r1.push('{"shouldRespond":true,"speech":"Hello, world.","bigBrain":{"requested":false,"reason":""}}');
+        if (out1.shouldRespond !== true) {
+            throw new Error(`a: shouldRespond expected true, got ${out1.shouldRespond}`);
+        }
+        if (!out1.speechComplete) {
+            throw new Error('a: expected speechComplete true');
+        }
+        const a_speech = out1.chunks.join('');
+        if (a_speech !== 'Hello, world.') {
+            throw new Error(`a: speech mismatch: ${JSON.stringify(a_speech)}`);
+        }
+        const a_final = r1.finalize();
+        if (a_final.shouldRespond !== true || a_final.speech !== 'Hello, world.') {
+            throw new Error(`a: finalize mismatch: ${JSON.stringify(a_final)}`);
+        }
+
+        // b) Chunked feed: shouldRespond resolves before speech complete.
+        const r2 = new IncrementalSpeechReader();
+        const pushes = [
+            '{"shouldRes',
+            'pond":true,"spe',
+            'ech":"Hello',
+            ', world."',
+            ',"bigBrain":{"requested":false,"reason":""}}'
+        ];
+        const collected = [];
+        let sawShouldRespond = -1;
+        for (let idx = 0; idx < pushes.length; idx++) {
+            const r = r2.push(pushes[idx]);
+            if (sawShouldRespond < 0 && r.shouldRespond !== null) {
+                sawShouldRespond = idx;
+            }
+            collected.push(...r.chunks);
+        }
+        if (sawShouldRespond !== 1) {
+            throw new Error(`b: shouldRespond should resolve on push 1, got ${sawShouldRespond}`);
+        }
+        if (collected.join('') !== 'Hello, world.') {
+            throw new Error(`b: speech mismatch: ${JSON.stringify(collected)}`);
+        }
+        if (!r2.speechComplete) {
+            throw new Error('b: expected speechComplete true');
+        }
+
+        // c) Escape handling: \", \n, \\, \/, \uXXXX.
+        const r3 = new IncrementalSpeechReader();
+        const out3 = r3.push('{"shouldRespond":true,"speech":"a \\"q\\" b\\nc\\\\d\\/e\\u0041f","bigBrain":{"requested":false,"reason":""}}');
+        const c_speech = out3.chunks.join('');
+        if (c_speech !== 'a "q" b\nc\\d/eAf') {
+            throw new Error(`c: escape decode mismatch: ${JSON.stringify(c_speech)}`);
+        }
+
+        // d) Mid-escape boundary: backslash arrives before its mate.
+        const r4 = new IncrementalSpeechReader();
+        let d_speech = '';
+        d_speech += r4.push('{"shouldRespond":true,"speech":"hi\\').chunks.join('');
+        if (r4.speechComplete) {
+            throw new Error('d: should not be complete with dangling backslash');
+        }
+        d_speech += r4.push('nthere"').chunks.join('');
+        if (d_speech !== 'hi\nthere') {
+            throw new Error(`d: mid-escape decode mismatch: ${JSON.stringify(d_speech)}`);
+        }
+        if (!r4.speechComplete) {
+            throw new Error('d: expected speechComplete after closing quote');
+        }
+
+        // e) Mid-\u boundary: hex digits arrive in pieces.
+        const r5 = new IncrementalSpeechReader();
+        let e_speech = '';
+        e_speech += r5.push('{"shouldRespond":true,"speech":"\\u00').chunks.join('');
+        if (e_speech !== '') {
+            throw new Error(`e: should defer until \\u has 4 hex chars, got ${JSON.stringify(e_speech)}`);
+        }
+        e_speech += r5.push('41done"').chunks.join('');
+        if (e_speech !== 'Adone') {
+            throw new Error(`e: \\u boundary decode mismatch: ${JSON.stringify(e_speech)}`);
+        }
+
+        // f) shouldRespond=false: empty speech, finalize returns false.
+        const r6 = new IncrementalSpeechReader();
+        const out6 = r6.push('{"shouldRespond":false,"speech":"","bigBrain":{"requested":false,"reason":""}}');
+        if (out6.shouldRespond !== false) {
+            throw new Error(`f: shouldRespond expected false, got ${out6.shouldRespond}`);
+        }
+        if (out6.chunks.length !== 0) {
+            throw new Error(`f: expected no speech chunks, got ${JSON.stringify(out6.chunks)}`);
+        }
+        const f_final = r6.finalize();
+        if (f_final.shouldRespond !== false) {
+            throw new Error('f: finalize shouldRespond expected false');
+        }
+
+        // g) Truncated buffer: finalize falls back to fullSpeech.
+        const r7 = new IncrementalSpeechReader();
+        r7.push('{"shouldRespond":true,"speech":"partial');
+        const g_final = r7.finalize();
+        if (g_final.speech !== 'partial' || g_final.shouldRespond !== true) {
+            throw new Error(`g: truncated finalize mismatch: ${JSON.stringify(g_final)}`);
+        }
+
+        console.log('  IncrementalSpeechReader handles full, chunked, escaped, mid-escape, and truncated streams');
+        passed++;
+    } catch (error) {
+        console.log(`  IncrementalSpeechReader failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 15: synthesizeLiveTTS accepts an async iterable for streaming text');
+    try {
+        const { AlphaClawdVoiceBot } = require('./index');
+
+        // We only need synthesizeLiveTTS; build a stub bot with the
+        // minimum surface required to exercise the iterable branch.
+        const captured = { textChunks: null, options: null };
+        const stubBot = {
+            voiceProvider: {
+                isStreamingEnabled: () => true,
+                synthesizeStream: (textChunks, options) => {
+                    captured.textChunks = textChunks;
+                    captured.options = options;
+                    return { tag: 'fake-readable' };
+                }
+            },
+            singleTextChunk: AlphaClawdVoiceBot.prototype.singleTextChunk,
+            synthesizeLiveTTS: AlphaClawdVoiceBot.prototype.synthesizeLiveTTS
+        };
+
+        async function* speech() {
+            yield 'Hello ';
+            yield 'world.';
+        }
+
+        const result = await stubBot.synthesizeLiveTTS(speech(), { voiceId: 'v' });
+        if (!result || result.tag !== 'fake-readable') {
+            throw new Error('Expected synthesizeStream return value to pass through');
+        }
+        if (typeof captured.textChunks?.[Symbol.asyncIterator] !== 'function') {
+            throw new Error('Expected async iterable to be passed through to synthesizeStream');
+        }
+        let assembled = '';
+        for await (const chunk of captured.textChunks) assembled += chunk;
+        if (assembled !== 'Hello world.') {
+            throw new Error(`Async iterable not threaded correctly: ${JSON.stringify(assembled)}`);
+        }
+        if (captured.options?.voiceId !== 'v') {
+            throw new Error('Expected options to flow through to synthesizeStream');
+        }
+
+        console.log('  synthesizeLiveTTS forwards async iterables to fish provider verbatim');
+        passed++;
+    } catch (error) {
+        console.log(`  synthesizeLiveTTS streaming wiring failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\n========================================');
     console.log(`Tests complete: ${passed} passed, ${failed} failed`);
     console.log('========================================');

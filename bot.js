@@ -663,16 +663,28 @@ class AlphaClawdVoiceBot {
     }
 
     async synthesizeLiveTTS(text, options = {}) {
-        const textLength = String(text || '').length;
+        const isAsyncIter = text != null
+            && typeof text !== 'string'
+            && !Buffer.isBuffer(text)
+            && typeof text[Symbol.asyncIterator] === 'function';
+        const textLength = isAsyncIter ? null : String(text || '').length;
 
         if (this.voiceProvider.isStreamingEnabled(options)) {
-            console.log(`[Bot] TTS function called (Fish WS streaming, ${textLength} chars)`);
-            return this.voiceProvider.synthesizeStream(this.singleTextChunk(text), {
+            const label = isAsyncIter ? 'live text stream' : `${textLength} chars`;
+            console.log(`[Bot] TTS function called (Fish WS streaming, ${label})`);
+            const textChunks = isAsyncIter ? text : this.singleTextChunk(text);
+            return this.voiceProvider.synthesizeStream(textChunks, {
                 ...options
             });
         }
 
-        console.log(`[Bot] TTS function called (HTTP fallback, ${textLength} chars)`);
+        if (isAsyncIter) {
+            // HTTP fallback can't consume an async iterable; assemble first.
+            let assembled = '';
+            for await (const chunk of text) assembled += chunk;
+            text = assembled;
+        }
+        console.log(`[Bot] TTS function called (HTTP fallback, ${String(text || '').length} chars)`);
         return this.voiceProvider.synthesize(text, options);
     }
 
@@ -1496,7 +1508,7 @@ class AlphaClawdVoiceBot {
         const participantActivityBaseline = this.getParticipantActivityVersion(guildId);
 
         try {
-            const response = await this.podcastGenerator.generate({
+            const response = await this.beginGeneratorTurn({
                 utterances,
                 transcript,
                 wordData,
@@ -1512,7 +1524,11 @@ class AlphaClawdVoiceBot {
                 }, 'after silent generation')) {
                     return;
                 }
-                this.podcastGenerator.rememberTurn?.(transcript, response);
+                let toRemember = response;
+                if (response.isStreaming) {
+                    try { toRemember = await response.completed; } catch {}
+                }
+                this.podcastGenerator.rememberTurn?.(transcript, toRemember);
                 console.log(`[Bot] Direct generator chose silence`);
                 return;
             }
@@ -1578,6 +1594,48 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    /**
+     * Begin a generator turn, picking the streaming or non-streaming path
+     * based on PODCAST_GENERATOR_STREAMING. Streaming returns the same
+     * fields as generate() (shouldRespond, speech, bigBrain, etc.) plus
+     * speechStream + completed handles for piping into Fish TTS while the
+     * LLM is still emitting tokens. On streaming setup error we fall back
+     * to the non-streaming generate() so failover and rate-limit handling
+     * still work.
+     */
+    async beginGeneratorTurn(input = {}) {
+        const useStreaming = process.env.PODCAST_GENERATOR_STREAMING === 'true';
+        if (!useStreaming) {
+            return this.podcastGenerator.generate(input);
+        }
+
+        let stream;
+        try {
+            stream = await this.podcastGenerator.generateStreaming(input);
+        } catch (err) {
+            console.warn(`[Bot] Streaming generator setup failed, falling back: ${err.message}`);
+            return this.podcastGenerator.generate(input);
+        }
+
+        let shouldRespond;
+        try {
+            shouldRespond = await stream.shouldRespond;
+        } catch (err) {
+            console.warn(`[Bot] Streaming generator errored before shouldRespond, falling back: ${err.message}`);
+            return this.podcastGenerator.generate(input);
+        }
+
+        return {
+            shouldRespond,
+            speech: '',
+            text: '',
+            bigBrain: { requested: false, reason: '' },
+            speechStream: stream.speechStream,
+            completed: stream.completed,
+            isStreaming: true
+        };
+    }
+
     async speakDirectGeneratorResponse(guildId, response, options = {}) {
         const alreadyInFlight = this.directResponseInFlight.has(guildId);
         this.directResponseInFlight.add(guildId);
@@ -1587,8 +1645,12 @@ class AlphaClawdVoiceBot {
         const source = options.source || 'buffer';
 
         try {
+            const isStreaming = Boolean(response?.isStreaming && response.speechStream);
             const generatedAt = response.generatedAt || new Date().toISOString();
-            console.log(`[Bot] Direct generator response (${source}): "${response.speech.substring(0, 50)}..."`);
+            const previewText = isStreaming
+                ? '(streaming)'
+                : `${(response.speech || '').substring(0, 50)}...`;
+            console.log(`[Bot] Direct generator response (${source}): "${previewText}"`);
 
             await this.waitForParticipantFloorToSettle(guildId);
             if (this.discardStaleDirectResponse(guildId, options, 'after generation')) {
@@ -1605,7 +1667,8 @@ class AlphaClawdVoiceBot {
             }
 
             const ttsStartedAt = new Date().toISOString();
-            const audio = await this.synthesizeLiveTTS(response.speech, {
+            const speechSource = isStreaming ? response.speechStream : response.speech;
+            const audio = await this.synthesizeLiveTTS(speechSource, {
                 voiceId: this.voiceId
             });
             const ttsSetupCompletedAt = this.isReadableAudio(audio) ? null : new Date().toISOString();
@@ -1639,10 +1702,29 @@ class AlphaClawdVoiceBot {
                 ? Math.max(0, playbackEndedMs - playbackStartedMs)
                 : 0;
 
+            // For the streaming path the LLM call may not be fully done
+            // when playback ends (Fish often outpaces Groq on the tail of
+            // a long response). Wait for the full output so transcript +
+            // history use the authoritative text and bigBrain values.
+            let finalResponse = response;
+            if (isStreaming) {
+                try {
+                    finalResponse = await response.completed;
+                } catch (err) {
+                    console.warn(`[Bot] Streaming generator settled with error after playback: ${err.message}`);
+                    finalResponse = {
+                        shouldRespond: response.shouldRespond,
+                        speech: '',
+                        text: '',
+                        bigBrain: { requested: false, reason: '' }
+                    };
+                }
+            }
+
             this.voiceManager.saveTranscriptEntry(guildId, {
                 speaker: 'Alpha-Clawd',
                 speakerRole: 'host',
-                transcription: response.speech,
+                transcription: finalResponse.speech,
                 timestamp: generatedAt,
                 generatedAt,
                 ttsStartedAt,
@@ -1654,9 +1736,9 @@ class AlphaClawdVoiceBot {
             });
 
             if (typeof options.rememberTranscript === 'string') {
-                this.podcastGenerator.rememberTurn?.(options.rememberTranscript, response);
+                this.podcastGenerator.rememberTurn?.(options.rememberTranscript, finalResponse);
             } else if (options.rememberAssistant) {
-                this.podcastGenerator.rememberAssistantResponse?.(response);
+                this.podcastGenerator.rememberAssistantResponse?.(finalResponse);
             }
 
             console.log(`[Bot] Direct generator playback complete (${source}), starting cooldown`);
