@@ -2122,6 +2122,66 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 16: generateStreaming 429 does not leak unhandled rejections');
+    try {
+        const { PodcastGenerator } = require('./podcast-generator');
+
+        const originalFetch = globalThis.fetch;
+        const seenUnhandled = [];
+        const handler = (reason) => { seenUnhandled.push(reason); };
+        process.on('unhandledRejection', handler);
+
+        let shouldErr = null;
+        try {
+            globalThis.fetch = async () => ({
+                ok: false,
+                status: 429,
+                text: async () => '{"error":{"message":"rate limited","type":"tokens","code":"rate_limit_exceeded"}}'
+            });
+
+            const gen = new PodcastGenerator({
+                apiKey: 'test-key',
+                keyRouting: 'legacy-failover',
+                timeout: 1000
+            });
+            const stream = await gen.generateStreaming({ transcript: 'hi', remember: false });
+
+            // Caller awaits shouldRespond, catches its rejection, and never
+            // touches completed — exactly the bot.js fallback path.
+            try {
+                await stream.shouldRespond;
+            } catch (e) {
+                shouldErr = e;
+            }
+
+            // Give Node multiple turns of the event loop for any pending
+            // unhandledRejection to fire before we assert.
+            await new Promise(resolve => setImmediate(resolve));
+            await new Promise(resolve => setTimeout(resolve, 30));
+            await new Promise(resolve => setImmediate(resolve));
+        } finally {
+            process.off('unhandledRejection', handler);
+            globalThis.fetch = originalFetch;
+        }
+
+        if (!shouldErr) {
+            throw new Error('Expected shouldRespond to reject on 429');
+        }
+        if (!/429/.test(shouldErr.message || '')) {
+            throw new Error(`Expected 429 in error message, got: ${shouldErr.message}`);
+        }
+        if (seenUnhandled.length > 0) {
+            const first = seenUnhandled[0];
+            throw new Error(`Leaked unhandled rejection(s): ${first?.message || first}`);
+        }
+
+        console.log('  Streaming 429 surfaces via shouldRespond without leaking unhandled rejections');
+        passed++;
+    } catch (error) {
+        console.log(`  Streaming unhandled-rejection guard failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\n========================================');
     console.log(`Tests complete: ${passed} passed, ${failed} failed`);
     console.log('========================================');

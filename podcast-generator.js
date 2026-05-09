@@ -352,7 +352,24 @@ class PodcastGenerator {
             rejectCompleted = (e) => { if (!completedSettled) { completedSettled = true; rej(e); } };
         });
 
+        // Suppress unhandled-rejection events for handles the caller chooses
+        // not to await (e.g., bot.js falls back to non-streaming on
+        // shouldRespond rejection without ever touching completed). The
+        // original rejection still propagates to anyone who does await.
+        shouldRespond.catch(() => {});
+        completed.catch(() => {});
+
         const drive = async () => {
+            // Snapshot the active key info now so logUsage at the end
+            // attributes the call correctly even if a parallel non-streaming
+            // turn flips this.apiKey* via setActiveApiKey while we're
+            // mid-stream.
+            const keyConfigSnapshot = {
+                source: this.apiKeySource,
+                activeName: this.apiKeyActiveName,
+                role: this.apiKeyRole
+            };
+            let lastUsage = null;
             const controller = new AbortController();
             // Idle timeout: aborts the request only if no SSE delta arrives
             // within this.timeout. Reset on every event to allow long
@@ -385,6 +402,12 @@ class PodcastGenerator {
 
                 for await (const event of streamChatCompletionEvents(response)) {
                     resetIdleTimeout();
+                    if (event.usage) {
+                        // Groq sends a trailing event with empty choices and a
+                        // populated usage block when stream_options.include_usage
+                        // is set. Capture it for logUsage after the loop.
+                        lastUsage = event.usage;
+                    }
                     const choice = event.choices?.[0];
                     const delta = choice?.delta?.content;
                     if (typeof delta === 'string' && delta.length > 0) {
@@ -420,6 +443,9 @@ class PodcastGenerator {
             if (input.remember !== false) {
                 this.rememberTurn(transcript, output);
             }
+            if (lastUsage) {
+                this.logUsage({ usage: lastUsage }, keyConfigSnapshot);
+            }
             const duration = Date.now() - startTime;
             console.log(`[PodcastGenerator] Streaming completed in ${duration}ms: respond=${output.shouldRespond}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}`);
             if (output.bigBrain.requested) {
@@ -437,8 +463,17 @@ class PodcastGenerator {
         };
 
         // Fire and forget: the three returned handles capture all state
-        // the caller needs.
-        drive();
+        // the caller needs. Defensive .catch absorbs any escape from drive()
+        // itself; its own try/catch should cover the request lifecycle, but
+        // a bug there shouldn't cascade into an unhandled rejection.
+        drive().catch(err => {
+            console.error('[PodcastGenerator] Streaming drive() escaped:', err);
+            streamError = err;
+            finished = true;
+            wakeWaiter();
+            rejectShould(err);
+            rejectCompleted(err);
+        });
 
         return { shouldRespond, speechStream, completed };
     }
