@@ -30,6 +30,7 @@ class GatewayWsClient extends EventEmitter {
         this.authToken = options.authToken || process.env.GATEWAY_AUTH_TOKEN || 'dev-token';
         this.sessionKey = options.sessionKey || 'agent:main:main';
         this.role = options.role || process.env.GATEWAY_WS_ROLE || 'operator';
+        this.clientMode = options.clientMode || process.env.GATEWAY_WS_CLIENT_MODE || 'backend';
         this.scopes = normalizeScopes(
             options.scopes || process.env.GATEWAY_WS_SCOPES || 'operator.read,operator.write'
         );
@@ -180,7 +181,7 @@ class GatewayWsClient extends EventEmitter {
                     id: this.clientId,
                     version: this.clientVersion,
                     platform: 'node',
-                    mode: this.role
+                    mode: this.clientMode
                 },
                 role: this.role,
                 scopes: this.scopes,

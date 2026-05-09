@@ -155,7 +155,7 @@ async function runTests() {
         if (captured?.method !== 'connect') {
             throw new Error(`Expected connect request, got ${captured?.method}`);
         }
-        if (captured.params.role !== 'operator' || captured.params.client?.mode !== 'operator') {
+        if (captured.params.role !== 'operator' || captured.params.client?.mode !== 'backend') {
             throw new Error(`Gateway connect did not declare operator role: ${JSON.stringify(captured.params)}`);
         }
         if (!captured.params.scopes.includes('operator.write') || !captured.params.scopes.includes('operator.read')) {
