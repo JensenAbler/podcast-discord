@@ -1566,15 +1566,19 @@ class AlphaClawdVoiceBot {
                 rememberTranscript: transcript
             });
             const finalResponse = playbackResult?.finalResponse || response;
-            if (playbackResult?.played && finalResponse.bigBrain?.requested) {
+            if ((playbackResult?.played || playbackResult?.stale) && finalResponse.bigBrain?.requested) {
+                if (playbackResult?.stale) {
+                    console.log('[Bot] bigBrain request survived stale host response; dispatching without spoken stall');
+                }
                 bigBrainDispatch = {
                     response: finalResponse,
                     options: {
-                        source: 'buffer',
+                        source: playbackResult?.stale ? 'buffer-stale' : 'buffer',
                         transcript,
                         utterances,
                         wordData,
-                        participantActivityBaseline: this.getParticipantActivityVersion(guildId)
+                        participantActivityBaseline: this.getParticipantActivityVersion(guildId),
+                        stallSpoken: playbackResult?.played === true
                     }
                 };
             }
@@ -1763,7 +1767,9 @@ class AlphaClawdVoiceBot {
             '[Podcast bigBrain request]',
             '',
             'You are Open Claw helping Alpha-Clawd during a live Discord voice podcast.',
-            'The small live host model has already spoken a brief stall to the room. Your response will be staged and handed back to that model so it can integrate the answer when the live conversation is ready.',
+            options.stallSpoken === false
+                ? 'The small live host model tried to speak a brief stall, but it was discarded because the guest resumed. Your response will still be staged and handed back to that model so it can integrate the answer when the live conversation is ready.'
+                : 'The small live host model has already spoken a brief stall to the room. Your response will be staged and handed back to that model so it can integrate the answer when the live conversation is ready.',
             '',
             'Answer the guest request using any server memory, files, tools, web access, or runtime context available to you. If you cannot verify something, say that plainly.',
             'Return only the concise spoken answer. No markdown, bullets, code blocks, URLs unless essential, file paths unless asked, or stage directions.',
@@ -1846,6 +1852,24 @@ class AlphaClawdVoiceBot {
             console.error('[Bot] bigBrain dispatch failed:', error);
             this.cleanupPendingBigBrain(runId);
             return { dispatched: false, reason: 'dispatch_failed', error };
+        }
+    }
+
+    async settleGeneratorResponse(response, context = 'completion') {
+        if (!response?.isStreaming || !response.completed) {
+            return response;
+        }
+
+        try {
+            return await response.completed;
+        } catch (err) {
+            console.warn(`[Bot] Streaming generator settled with error during ${context}: ${err.message}`);
+            return {
+                shouldRespond: response.shouldRespond,
+                speech: '',
+                text: '',
+                bigBrain: { requested: false, reason: '', consumedRunId: '' }
+            };
         }
     }
 
@@ -1937,7 +1961,11 @@ class AlphaClawdVoiceBot {
 
             await this.waitForParticipantFloorToSettle(guildId);
             if (this.discardStaleDirectResponse(guildId, options, 'after generation')) {
-                return { played: false, stale: true };
+                return {
+                    played: false,
+                    stale: true,
+                    finalResponse: await this.settleGeneratorResponse(response, 'stale response after generation')
+                };
             }
 
             // Play a cached filler only after the generator decides to answer.
@@ -1946,7 +1974,11 @@ class AlphaClawdVoiceBot {
             }
 
             if (this.discardStaleDirectResponse(guildId, options, 'after filler')) {
-                return { played: false, stale: true };
+                return {
+                    played: false,
+                    stale: true,
+                    finalResponse: await this.settleGeneratorResponse(response, 'stale response after filler')
+                };
             }
 
             const ttsStartedAt = new Date().toISOString();
@@ -1958,7 +1990,11 @@ class AlphaClawdVoiceBot {
 
             if (this.discardStaleDirectResponse(guildId, options, 'after TTS')) {
                 this.disposeUnusedAudio(audio);
-                return { played: false, stale: true };
+                return {
+                    played: false,
+                    stale: true,
+                    finalResponse: await this.settleGeneratorResponse(response, 'stale response after TTS')
+                };
             }
 
             this.markIdleDecisionHandled(guildId);
@@ -1971,7 +2007,11 @@ class AlphaClawdVoiceBot {
             });
 
             if (playbackResult.abortedBeforePlayback) {
-                return { played: false, stale: true };
+                return {
+                    played: false,
+                    stale: true,
+                    finalResponse: await this.settleGeneratorResponse(response, 'stale response at playback start')
+                };
             }
 
             const playback = playbackResult.playback;
@@ -1989,20 +2029,7 @@ class AlphaClawdVoiceBot {
             // when playback ends (Fish often outpaces Groq on the tail of
             // a long response). Wait for the full output so transcript +
             // history use the authoritative text and bigBrain values.
-            let finalResponse = response;
-            if (isStreaming) {
-                try {
-                    finalResponse = await response.completed;
-                } catch (err) {
-                    console.warn(`[Bot] Streaming generator settled with error after playback: ${err.message}`);
-                    finalResponse = {
-                        shouldRespond: response.shouldRespond,
-                        speech: '',
-                        text: '',
-                        bigBrain: { requested: false, reason: '' }
-                    };
-                }
-            }
+            let finalResponse = await this.settleGeneratorResponse(response, 'playback');
 
             const transcriptEntry = {
                 speaker: 'Alpha-Clawd',

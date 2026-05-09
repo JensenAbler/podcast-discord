@@ -1354,7 +1354,110 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7b: Generator fallback is honest and transcripted');
+    console.log('\nTest 7b: Stale host stall still dispatches bigBrain');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-stale-bigbrain';
+        const sentChats = [];
+        const requeued = [];
+        const holdEvents = [];
+
+        bot.generatorMode = 'direct';
+        bot.bigBrainEnabled = true;
+        bot.bigBrainTimeoutMs = 1000;
+        bot.bigBrainThinking = 'high';
+        bot.pendingBigBrainResponses = new Map();
+        bot.stagedBigBrainResponses = new Map();
+        bot.directResponseInFlight = new Set();
+        bot.participantActivityVersion = new Map([[guildId, 3]]);
+        bot.participantActivityTimers = new Map();
+        bot.participantActivityConfirmDelayMs = 0;
+        bot.waitForParticipantFloorToSettle = async () => true;
+        bot.discardStaleDirectResponse = (_guildId, options, stage) => {
+            if (stage !== 'after generation') return false;
+            if (Array.isArray(options.flushedUtterances)) {
+                requeued.push(options.flushedUtterances);
+            }
+            return true;
+        };
+        bot.conversationBuffer = {
+            setFlushHold: (reason, active) => holdEvents.push({ reason, active }),
+            requeueUtterances: () => {},
+            startCooldown: () => {},
+            getState: () => ({
+                state: BufferState.IDLE,
+                utteranceCount: 0,
+                activeSpeakerCount: 0,
+                endpointingSpeakerCount: 0,
+                pendingAsrCount: 0,
+                activeSpeakers: []
+            })
+        };
+        bot.wsClient = {
+            isAuthenticated: true,
+            sessionKey: 'agent:main:main',
+            sendChat: async (message, options) => {
+                sentChats.push({ message, options });
+                return { runId: options.idempotencyKey, status: 'started' };
+            },
+            abortChat: async () => ({ ok: true })
+        };
+        bot.podcastGenerator = {
+            formatUtterances: (utterances) => utterances
+                .map(u => `${u.speaker}: ${u.transcription}`)
+                .join('\n')
+        };
+        bot.beginGeneratorTurn = async () => ({
+            shouldRespond: true,
+            speech: '',
+            text: '',
+            bigBrain: { requested: false, reason: '', consumedRunId: '' },
+            isStreaming: true,
+            speechStream: (async function* () {})(),
+            completed: Promise.resolve({
+                shouldRespond: true,
+                speech: 'Let me check the current GameStop price.',
+                text: 'Let me check the current GameStop price.',
+                bigBrain: {
+                    requested: true,
+                    reason: 'Need the current price of GameStop stock.',
+                    consumedRunId: ''
+                }
+            })
+        });
+
+        await bot.handleDirectGeneratorFlush(guildId, [
+            { speaker: 'Jensen', transcription: 'Check the current price of GameStop.' }
+        ], 'Jensen: Check the current price of GameStop.');
+
+        if (sentChats.length !== 1) {
+            throw new Error(`Expected stale bigBrain request to dispatch once, got ${sentChats.length}`);
+        }
+        if (!sentChats[0].message.includes('Need the current price of GameStop stock.') ||
+            !sentChats[0].message.includes('tried to speak a brief stall, but it was discarded')) {
+            throw new Error(`Stale bigBrain prompt missing context: ${sentChats[0].message}`);
+        }
+        const runId = sentChats[0].options.idempotencyKey;
+        if (!runId.startsWith('discord-bigbrain-') || !bot.pendingBigBrainResponses.has(runId)) {
+            throw new Error(`Stale bigBrain run was not tracked: ${runId}`);
+        }
+        if (requeued.length !== 1 || requeued[0][0]?.transcription !== 'Check the current price of GameStop.') {
+            throw new Error(`Stale host turn did not preserve participant utterance: ${JSON.stringify(requeued)}`);
+        }
+        if (holdEvents.at(-1)?.active !== false) {
+            throw new Error(`Direct response hold was not released: ${JSON.stringify(holdEvents)}`);
+        }
+
+        bot.cleanupPendingBigBrain(runId);
+
+        console.log('  Stale generated stalls can drop audio while preserving and dispatching the bigBrain request');
+        passed++;
+    } catch (error) {
+        console.log(`  Stale bigBrain dispatch failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 7c: Generator fallback is honest and transcripted');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-fallback';
