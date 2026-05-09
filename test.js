@@ -1908,6 +1908,58 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 13: Audio Transmitter skips inline volume at unity');
+    try {
+        const { AudioTransmitter } = require('./audio-transmitter');
+        const { StreamType } = require('@discordjs/voice');
+        const { Readable } = require('stream');
+
+        const probe = new AudioTransmitter({});
+        const cases = [
+            [1.0, false, 'unity'],
+            [1.0001, false, 'within tolerance'],
+            [0.9999, false, 'within tolerance below'],
+            [1.01, true, 'past tolerance'],
+            [0.5, true, 'half'],
+            [0, true, 'mute'],
+            [NaN, true, 'NaN falls back to inline'],
+        ];
+        for (const [v, expected, label] of cases) {
+            const got = probe.shouldUseInlineVolume(v);
+            if (got !== expected) {
+                throw new Error(`shouldUseInlineVolume(${v}) [${label}] expected ${expected}, got ${got}`);
+            }
+        }
+
+        let captured = null;
+        const fakePlayer = { on() {}, play(resource) { captured = resource; } };
+
+        const unityT = new AudioTransmitter({ player: fakePlayer });
+        await unityT.play(Readable.from([Buffer.alloc(0)]), { volume: 1, inputType: StreamType.Raw });
+        if (!captured) {
+            throw new Error('Unity playback did not reach player');
+        }
+        if (captured.volume) {
+            throw new Error('Expected no VolumeTransformer at v=1.0');
+        }
+
+        captured = null;
+        const halfT = new AudioTransmitter({ player: fakePlayer });
+        await halfT.play(Readable.from([Buffer.alloc(0)]), { volume: 0.5, inputType: StreamType.Raw });
+        if (!captured) {
+            throw new Error('Half-volume playback did not reach player');
+        }
+        if (!captured.volume) {
+            throw new Error('Expected VolumeTransformer at v=0.5');
+        }
+
+        console.log('  Inline volume skipped at unity, applied otherwise');
+        passed++;
+    } catch (error) {
+        console.log(`  Audio Transmitter inline volume failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\n========================================');
     console.log(`Tests complete: ${passed} passed, ${failed} failed`);
     console.log('========================================');

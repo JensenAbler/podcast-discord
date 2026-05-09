@@ -36,6 +36,17 @@ class AudioTransmitter {
     }
 
     /**
+     * Decide whether a Discord VolumeTransformer is needed for the requested
+     * playback volume. At unity (within tolerance) we skip the transformer to
+     * shave decode/encode latency from the live TTS path.
+     */
+    shouldUseInlineVolume(volume) {
+        const v = Number(volume);
+        if (!Number.isFinite(v)) return true;
+        return Math.abs(v - 1.0) > 0.0001;
+    }
+
+    /**
      * Set up audio player event handlers
      */
     setupPlayerEvents() {
@@ -88,7 +99,7 @@ class AudioTransmitter {
     async play(audio, options = {}) {
         return new Promise((resolve, reject) => {
             const playOptions = {
-                volume: options.volume || this.options.volume,
+                volume: options.volume ?? this.options.volume,
                 ...options
             };
 
@@ -114,6 +125,8 @@ class AudioTransmitter {
         try {
             let resource;
             const inputType = options.inputType || StreamType.Arbitrary;
+            const requestedVolume = Number(options.volume ?? this.options.volume ?? 1.0);
+            const inlineVolume = this.shouldUseInlineVolume(requestedVolume);
 
             if (Buffer.isBuffer(audio)) {
                 // Buffer - create readable stream
@@ -121,7 +134,7 @@ class AudioTransmitter {
                 const stream = Readable.from([audio]);
                 resource = createAudioResource(stream, {
                     inputType,
-                    inlineVolume: true
+                    inlineVolume
                 });
             } else if (typeof audio === 'string') {
                 // File path
@@ -131,22 +144,21 @@ class AudioTransmitter {
                 }
                 resource = createAudioResource(audio, {
                     inputType,
-                    inlineVolume: true
+                    inlineVolume
                 });
             } else if (audio && typeof audio.pipe === 'function') {
                 // Stream
                 console.log('[AudioTransmitter] Playing stream');
                 resource = createAudioResource(audio, {
                     inputType,
-                    inlineVolume: true
+                    inlineVolume
                 });
             } else {
                 throw new Error('Invalid audio format');
             }
 
-            // Set volume if supported
-            if (resource.volume && options.volume !== undefined) {
-                resource.volume.setVolume(options.volume);
+            if (inlineVolume && resource.volume) {
+                resource.volume.setVolume(requestedVolume);
             }
 
             this.currentResource = resource;
