@@ -26,7 +26,7 @@ class AudioReceiver {
     constructor(options = {}) {
         this.options = {
             silenceDuration: options.silenceDuration || 2000, // 2 seconds
-            endpointingDebounce: options.endpointingDebounce || 700, // ms to wait after Discord stop before flushing for ASR
+            endpointingDebounce: options.endpointingDebounce || 50, // ms to wait after Discord stop before flushing for ASR
             speakerMap: options.speakerMap || {},
             maxUtteranceDuration: options.maxUtteranceDuration || 60000, // 60 seconds
             onUtterance: options.onUtterance || (() => {}),

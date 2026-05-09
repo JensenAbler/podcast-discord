@@ -168,6 +168,8 @@ async function runTests() {
             systemPrompt.includes('Read the latest utterance first:') &&
             systemPrompt.includes('Hold-space cues:') &&
             systemPrompt.includes('"actually", "wait", "hold on"') &&
+            systemPrompt.includes('"even though", "because", "and", "but", "so", "like", "I mean"') &&
+            systemPrompt.includes('"what I was going to say"') &&
             systemPrompt.includes('Completed beat cues:') &&
             systemPrompt.includes('Closure cues:') &&
             systemPrompt.includes('"we\'ll dig into it later"') &&
@@ -196,6 +198,7 @@ async function runTests() {
             systemPrompt.includes('Permission framing is for sensitive, personal, or easy-to-decline invitations') &&
             systemPrompt.includes('Do not ask a question every turn') &&
             systemPrompt.includes('Minimal backchannel is allowed but should be rare') &&
+            systemPrompt.includes('meta-comment naming a missed signal') &&
             !systemPrompt.includes('Vary your surface form') &&
             !systemPrompt.includes('one integrated sentence or two short sentences') &&
             !systemPrompt.includes('Signals they are still mid-thought:') &&
@@ -631,6 +634,66 @@ async function runTests() {
 
     console.log('\nTest 6: Conversation Buffer ASR-aware state machine');
     try {
+        const dynamicGraceProbe = new ConversationBuffer();
+        const graceCases = [
+            [100, 50],
+            [1000, 200],
+            [5000, 300],
+            [10000, 500],
+            [20000, 700],
+            [30000, 750],
+            [60000, 750]
+        ];
+
+        for (const [speechDuration, expectedGrace] of graceCases) {
+            const actualGrace = dynamicGraceProbe.calculateGracePeriod([
+                {
+                    speaker: 'Jensen',
+                    transcription: `duration ${speechDuration}`,
+                    speechDuration
+                }
+            ]);
+            if (actualGrace !== expectedGrace) {
+                throw new Error(`Dynamic grace for ${speechDuration}ms speech should be ${expectedGrace}ms, got ${actualGrace}ms`);
+            }
+        }
+
+        const unknownDurationGrace = dynamicGraceProbe.calculateGracePeriod([
+            {
+                speaker: 'Jensen',
+                transcription: 'timing unavailable'
+            }
+        ]);
+        if (unknownDurationGrace !== 200) {
+            throw new Error(`Missing speech timing should use 200ms fallback grace, got ${unknownDurationGrace}ms`);
+        }
+
+        const spanGrace = dynamicGraceProbe.calculateGracePeriod([
+            {
+                speaker: 'Jensen',
+                transcription: 'first timed chunk',
+                speechStartedAt: '2026-05-03T00:00:00.000Z',
+                speechEndedAt: '2026-05-03T00:00:04.000Z'
+            },
+            {
+                speaker: 'Jensen',
+                transcription: 'second timed chunk',
+                speechStartedAt: '2026-05-03T00:00:08.000Z',
+                speechEndedAt: '2026-05-03T00:00:10.000Z'
+            }
+        ]);
+        if (spanGrace !== 500) {
+            throw new Error(`Buffered speech span should drive dynamic grace, got ${spanGrace}ms`);
+        }
+
+        const fixedGraceProbe = new ConversationBuffer({ gracePeriod: 25 });
+        const fixedGrace = fixedGraceProbe.calculateGracePeriod([
+            { speaker: 'Jensen', transcription: 'fixed timing', speechDuration: 20000 }
+        ]);
+        if (fixedGrace !== 25 || fixedGraceProbe.getState().dynamicGrace) {
+            throw new Error(`Explicit fixed grace should stay fixed, got ${fixedGrace}`);
+        }
+
         const flushed = [];
         const buffer = new ConversationBuffer({
             gracePeriod: 25,
@@ -1180,6 +1243,11 @@ async function runTests() {
         const endpointing = [];
         const fakeStream = new PassThrough();
         let subscribeOptions = null;
+
+        const defaultReceiver = new AudioReceiver();
+        if (defaultReceiver.options.endpointingDebounce !== 50) {
+            throw new Error(`Default endpoint debounce should be 50ms, got ${defaultReceiver.options.endpointingDebounce}`);
+        }
 
         const receiver = new AudioReceiver({
             botUserId: 'bot-user',

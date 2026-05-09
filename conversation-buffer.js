@@ -24,15 +24,27 @@ const BufferState = Object.freeze({
 
 const DEFAULT_USER_ID = '__default_user__';
 const DEFAULT_PENDING_ASR_TIMEOUT = 8000;
-const DEFAULT_GRACE_PERIOD = 700;       // wait briefly after ASR lands in case speech resumes
+const DEFAULT_GRACE_PERIOD = 200;       // fallback post-ASR hold when speech timing is missing
 const DEFAULT_COOLDOWN_PERIOD = 2000;   // hold after a host turn before another response
+const DYNAMIC_GRACE_POINTS = Object.freeze([
+    { speechMs: 100, graceMs: 50 },
+    { speechMs: 1000, graceMs: 200 },
+    { speechMs: 5000, graceMs: 300 },
+    { speechMs: 10000, graceMs: 500 },
+    { speechMs: 20000, graceMs: 700 },
+    { speechMs: 30000, graceMs: 750 }
+]);
 
 class ConversationBuffer {
     constructor(config = {}) {
+        const hasExplicitGracePeriod = Object.prototype.hasOwnProperty.call(config, 'gracePeriod');
+        const hasExplicitDynamicGrace = Object.prototype.hasOwnProperty.call(config, 'dynamicGrace');
+
         this.config = {
             gracePeriod: DEFAULT_GRACE_PERIOD,
             cooldownPeriod: DEFAULT_COOLDOWN_PERIOD,
             pendingAsrTimeout: DEFAULT_PENDING_ASR_TIMEOUT,
+            dynamicGrace: hasExplicitDynamicGrace ? config.dynamicGrace : !hasExplicitGracePeriod,
             ...config
         };
 
@@ -55,6 +67,7 @@ class ConversationBuffer {
 
         this.graceTimer = null;
         this.cooldownTimer = null;
+        this.lastGracePeriod = this.config.gracePeriod;
 
         // Backwards-compatible status fields read by bot.js.
         this.isUserSpeaking = false;
@@ -164,12 +177,13 @@ class ConversationBuffer {
 
         this.clearGraceTimer();
 
-        console.log(`[ConversationBuffer] Starting grace period after ASR completion (${this.config.gracePeriod}ms)`);
+        const gracePeriod = this.calculateGracePeriod();
+        console.log(`[ConversationBuffer] Starting grace period after ASR completion (${gracePeriod}ms)`);
         this.graceTimer = setTimeout(() => {
             console.log('[ConversationBuffer] Grace period expired');
             this.graceTimer = null;
             this.attemptFlush();
-        }, this.config.gracePeriod);
+        }, gracePeriod);
     }
 
     /**
@@ -312,6 +326,8 @@ class ConversationBuffer {
             isUserSpeaking: this.activeSpeakers.size > 0,
             isReady: this.state !== BufferState.COOLDOWN && this.flushHolds.size === 0,
             gracePending: this.graceTimer !== null,
+            gracePeriod: this.lastGracePeriod,
+            dynamicGrace: Boolean(this.config.dynamicGrace),
             cooldownPending: this.cooldownTimer !== null,
             activeSpeakerCount: this.activeSpeakers.size,
             endpointingSpeakerCount: this.endpointingSpeakers.size,
@@ -347,6 +363,102 @@ class ConversationBuffer {
      */
     setDebug(enabled) {
         this.debugMode = enabled;
+    }
+
+    calculateGracePeriod(utterances = this.getOrderedUtterances()) {
+        if (!this.config.dynamicGrace) {
+            this.lastGracePeriod = this.config.gracePeriod;
+            return this.lastGracePeriod;
+        }
+
+        const speechDurationMs = this.getBufferedSpeechDurationMs(utterances);
+        this.lastGracePeriod = this.mapSpeechDurationToGracePeriod(speechDurationMs);
+        return this.lastGracePeriod;
+    }
+
+    mapSpeechDurationToGracePeriod(speechDurationMs) {
+        if (!Number.isFinite(speechDurationMs)) {
+            return this.config.gracePeriod;
+        }
+
+        const durationMs = Math.max(0, speechDurationMs);
+        const firstPoint = DYNAMIC_GRACE_POINTS[0];
+        if (durationMs <= firstPoint.speechMs) {
+            return firstPoint.graceMs;
+        }
+
+        for (let index = 1; index < DYNAMIC_GRACE_POINTS.length; index++) {
+            const previous = DYNAMIC_GRACE_POINTS[index - 1];
+            const next = DYNAMIC_GRACE_POINTS[index];
+
+            if (durationMs <= next.speechMs) {
+                const progress = (durationMs - previous.speechMs) / (next.speechMs - previous.speechMs);
+                return Math.round(previous.graceMs + progress * (next.graceMs - previous.graceMs));
+            }
+        }
+
+        return DYNAMIC_GRACE_POINTS[DYNAMIC_GRACE_POINTS.length - 1].graceMs;
+    }
+
+    getBufferedSpeechDurationMs(utterances = []) {
+        const timings = utterances
+            .map(utterance => this.getUtteranceTiming(utterance))
+            .filter(Boolean);
+
+        if (timings.length === 0) {
+            return null;
+        }
+
+        const starts = timings.map(timing => timing.startMs).filter(Number.isFinite);
+        const ends = timings.map(timing => timing.endMs).filter(Number.isFinite);
+
+        if (starts.length > 0 && ends.length > 0) {
+            return Math.max(0, Math.max(...ends) - Math.min(...starts));
+        }
+
+        const durations = timings.map(timing => timing.durationMs).filter(Number.isFinite);
+        if (durations.length > 0) {
+            return durations.reduce((sum, duration) => sum + Math.max(0, duration), 0);
+        }
+
+        return null;
+    }
+
+    getUtteranceTiming(utterance = {}) {
+        const startMs = this.parseTimestamp(utterance.speechStartedAt)
+            ?? this.parseTimestamp(utterance.startTime)
+            ?? this.parseTimestamp(utterance.timestamp)
+            ?? this.parseTimestamp(utterance.asrCompletedAt);
+        const endMs = this.parseTimestamp(utterance.speechEndedAt);
+        const explicitDurationMs = this.getExplicitUtteranceDurationMs(utterance);
+        const inferredDurationMs = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs
+            ? endMs - startMs
+            : null;
+        const durationMs = Number.isFinite(explicitDurationMs)
+            ? explicitDurationMs
+            : inferredDurationMs;
+
+        return {
+            startMs,
+            endMs: Number.isFinite(endMs)
+                ? endMs
+                : (Number.isFinite(startMs) && Number.isFinite(durationMs) ? startMs + durationMs : null),
+            durationMs
+        };
+    }
+
+    getExplicitUtteranceDurationMs(utterance = {}) {
+        const speechDuration = Number(utterance.speechDuration);
+        if (Number.isFinite(speechDuration) && speechDuration >= 0) {
+            return speechDuration;
+        }
+
+        const duration = Number(utterance.duration);
+        if (Number.isFinite(duration) && duration >= 0) {
+            return duration;
+        }
+
+        return null;
     }
 
     normalizeUserId(userId) {
@@ -391,12 +503,16 @@ class ConversationBuffer {
     }
 
     parseTimestamp(value) {
-        if (typeof value === 'number') {
+        if (typeof value === 'number' && Number.isFinite(value)) {
             return value;
         }
 
+        if (value === undefined || value === null || value === '') {
+            return null;
+        }
+
         const parsed = Date.parse(value);
-        return Number.isNaN(parsed) ? NaN : parsed;
+        return Number.isNaN(parsed) ? null : parsed;
     }
 
     describeUser(userId, utterance = {}) {
@@ -409,7 +525,7 @@ class ConversationBuffer {
      * Mark a user as endpointing (Discord-stop debounce window in the receiver).
      * Treated like an active speaker for gating: blocks idle decisions and
      * delays flush. No safety timeout — the receiver guarantees the window
-     * expires (~700ms) and will then either dispatch ASR or, if the user
+     * expires quickly and will then either dispatch ASR or, if the user
      * resumed, clear endpointing via this same setter.
      */
     markEndpointing(userId, isEndpointing) {
