@@ -1701,7 +1701,73 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 11c: ConversationBuffer endpointing blocks flush like an active speaker');
+    console.log('\nTest 11c: Audio Receiver discards non-speech VAD flaps');
+    try {
+        const utterances = [];
+        const dispatched = [];
+        const endpointing = [];
+        const speechChunk = createSpeechPcm(140);
+
+        const receiver = new AudioReceiver({
+            botUserId: 'bot-user',
+            endpointingDebounce: 50,
+            stt: {
+                transcribe: async () => ({ text: 'real speech', confidence: 0.9, words: [] })
+            },
+            onUtterance: (u) => utterances.push(u),
+            onEndpointing: (userId, metadata) => endpointing.push({ userId, metadata }),
+            onAsrDispatched: (userId, metadata) => dispatched.push({ userId, metadata })
+        });
+
+        receiver.start({
+            receiver: {
+                speaking: { on: () => {} },
+                subscribe: () => new PassThrough()
+            }
+        });
+
+        receiver.handleUserStartSpeaking('user-flap');
+        receiver.handleAudioChunk('user-flap', Buffer.alloc(createSpeechPcm(120).length));
+        receiver.handleUserStopSpeaking('user-flap');
+        await sleep(100);
+
+        const flapBuffer = receiver.speakerBuffers.get('user-flap');
+        if (!flapBuffer || flapBuffer.chunks.length !== 0 || flapBuffer.startTime !== null) {
+            throw new Error('Non-speech VAD flap was retained in the utterance buffer');
+        }
+        if (dispatched.length !== 0 || utterances.length !== 0) {
+            throw new Error(`Non-speech VAD flap triggered ASR: ${JSON.stringify({ dispatched, utterances })}`);
+        }
+        if (endpointing.some(e => e.metadata.active === true)) {
+            throw new Error(`Non-speech VAD flap armed endpointing: ${JSON.stringify(endpointing)}`);
+        }
+
+        receiver.handleUserStartSpeaking('user-flap');
+        receiver.handleAudioChunk('user-flap', speechChunk);
+        receiver.handleUserStopSpeaking('user-flap');
+        await sleep(100);
+        await receiver.waitForPendingUtterances();
+
+        if (dispatched.length !== 1) {
+            throw new Error(`Expected exactly one ASR dispatch for real speech, got ${dispatched.length}`);
+        }
+        if (dispatched[0].metadata.audioBytes !== speechChunk.length) {
+            throw new Error(`VAD flap bytes leaked into speech buffer: ${JSON.stringify(dispatched[0].metadata)}`);
+        }
+        if (utterances.length !== 1 || utterances[0].transcription !== 'real speech') {
+            throw new Error(`Real speech was not emitted after flap discard: ${JSON.stringify(utterances)}`);
+        }
+
+        receiver.destroy();
+
+        console.log('  Non-speech VAD flap audio is dropped before the next real utterance');
+        passed++;
+    } catch (error) {
+        console.log(`  VAD flap discard failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 11d: ConversationBuffer endpointing blocks flush like an active speaker');
     try {
         const flushed = [];
         const buffer = new ConversationBuffer({ gracePeriod: 30, cooldownPeriod: 10, pendingAsrTimeout: 1000 });

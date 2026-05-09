@@ -250,6 +250,8 @@ class AudioReceiver {
             // endpoint timer is canceled by snapshotUserBuffer.
             if (this.hasAsrCandidate(buffer)) {
                 this.armEndpointTimer(userId, 'speaking stop with buffered audio');
+            } else if (buffer.chunks.length > 0) {
+                this.discardUserBuffer(userId, 'non-speech VAD flap');
             }
         }
     }
@@ -306,6 +308,39 @@ class AudioReceiver {
 
         const stats = buffer.detector?.getStats?.();
         return !stats || stats.speakingFrames > 0;
+    }
+
+    /**
+     * Drop buffered audio that never crossed the speech detector. Persistent
+     * Discord subscriptions can receive tiny VAD blips; if we keep their PCM,
+     * it gets prepended to the next real utterance and contaminates the mix.
+     * @param {string} userId - Discord user ID
+     * @param {string} reason - Reason for discarding the buffer
+     */
+    discardUserBuffer(userId, reason) {
+        const buffer = this.speakerBuffers.get(userId);
+        if (!buffer) return;
+
+        const audioBytes = buffer.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const stats = buffer.detector?.getStats?.() || {};
+
+        buffer.chunks = [];
+        buffer.startTime = null;
+
+        if (buffer.endpointTimer) {
+            clearTimeout(buffer.endpointTimer);
+            buffer.endpointTimer = null;
+            this.options.onEndpointing(userId, { active: false, reason: `discard: ${reason}` });
+        }
+
+        if (buffer.detector) {
+            buffer.detector.reset();
+        }
+
+        console.log(
+            `[AudioReceiver] Discarded ${audioBytes} bytes for ${userId} (${reason}; ` +
+            `speakingFrames=${stats.speakingFrames || 0}, silentFrames=${stats.silentFrames || 0})`
+        );
     }
 
     /**
@@ -376,9 +411,6 @@ class AudioReceiver {
         const speechEndedAtMs = detectorStats.lastSpeechAtMs || snapshotAtMs;
         const speechDuration = Math.max(0, speechEndedAtMs - speechStartedAtMs);
 
-        buffer.chunks = [];
-        buffer.startTime = null;
-
         // Whatever caused this snapshot supersedes the endpoint debounce.
         if (buffer.endpointTimer) {
             clearTimeout(buffer.endpointTimer);
@@ -388,11 +420,21 @@ class AudioReceiver {
 
         if (audioBuffer.length === 0) {
             console.log(`[AudioReceiver] No buffered audio for ${userId} on ${reason}`);
+            buffer.chunks = [];
+            buffer.startTime = null;
             if (buffer.detector) {
                 buffer.detector.reset();
             }
             return null;
         }
+
+        if (!this.hasAsrCandidate(buffer)) {
+            this.discardUserBuffer(userId, reason);
+            return null;
+        }
+
+        buffer.chunks = [];
+        buffer.startTime = null;
 
         if (buffer.detector) {
             buffer.detector.reset();
