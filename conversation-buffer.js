@@ -35,17 +35,47 @@ const DYNAMIC_GRACE_POINTS = Object.freeze([
     { speechMs: 30000, graceMs: 750 }
 ]);
 
+function parseFiniteEnv(raw) {
+    if (raw == null || raw === '') return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+}
+
+function parseBoolEnv(raw) {
+    if (typeof raw !== 'string' || raw.length === 0) return null;
+    return !['false', '0', 'no', 'off'].includes(raw.toLowerCase());
+}
+
 class ConversationBuffer {
     constructor(config = {}) {
-        const hasExplicitGracePeriod = Object.prototype.hasOwnProperty.call(config, 'gracePeriod');
-        const hasExplicitDynamicGrace = Object.prototype.hasOwnProperty.call(config, 'dynamicGrace');
+        const envGracePeriod = parseFiniteEnv(process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS);
+        const envDynamicGrace = parseBoolEnv(process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE);
+
+        const explicitGracePeriod = Object.prototype.hasOwnProperty.call(config, 'gracePeriod');
+        const explicitDynamicGrace = Object.prototype.hasOwnProperty.call(config, 'dynamicGrace');
+
+        // gracePeriod: explicit arg wins, then env, then default.
+        const gracePeriod = explicitGracePeriod
+            ? config.gracePeriod
+            : (envGracePeriod !== null ? envGracePeriod : DEFAULT_GRACE_PERIOD);
+
+        // dynamicGrace: explicit arg wins, then env, then implicit "true unless
+        // someone pinned a gracePeriod" — preserving the legacy behavior where
+        // passing a gracePeriod silently switches off the dynamic ladder.
+        const hasPinnedGracePeriod = explicitGracePeriod || envGracePeriod !== null;
+        const dynamicGrace = explicitDynamicGrace
+            ? config.dynamicGrace
+            : (envDynamicGrace !== null ? envDynamicGrace : !hasPinnedGracePeriod);
 
         this.config = {
-            gracePeriod: DEFAULT_GRACE_PERIOD,
-            cooldownPeriod: DEFAULT_COOLDOWN_PERIOD,
-            pendingAsrTimeout: DEFAULT_PENDING_ASR_TIMEOUT,
-            dynamicGrace: hasExplicitDynamicGrace ? config.dynamicGrace : !hasExplicitGracePeriod,
-            ...config
+            gracePeriod,
+            cooldownPeriod: Object.prototype.hasOwnProperty.call(config, 'cooldownPeriod')
+                ? config.cooldownPeriod
+                : DEFAULT_COOLDOWN_PERIOD,
+            pendingAsrTimeout: Object.prototype.hasOwnProperty.call(config, 'pendingAsrTimeout')
+                ? config.pendingAsrTimeout
+                : DEFAULT_PENDING_ASR_TIMEOUT,
+            dynamicGrace
         };
 
         this.buffer = []; // Stores {userId, speaker, transcription, timestamp, ...}
