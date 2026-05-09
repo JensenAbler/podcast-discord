@@ -1396,7 +1396,10 @@ class AlphaClawdVoiceBot {
             const lastSpeaker = utterances[utterances.length - 1]?.speaker || 'there';
             await this.fallbackResponse(guildId, lastSpeaker, {
                 error,
-                rememberTranscript: transcript
+                rememberTranscript: transcript,
+                source: 'fallback',
+                participantActivityBaseline,
+                flushedUtterances: utterances
             });
         } finally {
             this.directResponseInFlight.delete(guildId);
@@ -1574,14 +1577,30 @@ class AlphaClawdVoiceBot {
         const text = this.buildFallbackResponseText(options.error);
 
         try {
-            this.markIdleDecisionHandled(guildId);
-
             const ttsStartedAt = new Date().toISOString();
             const audioBuffer = await this.voiceProvider.synthesize(text, {
                 voiceId: this.voiceId
             });
             const ttsCompletedAt = new Date().toISOString();
-            const playbackResult = await this.playTtsAndRecord(guildId, audioBuffer);
+
+            if (this.discardStaleDirectResponse(guildId, options, 'after fallback TTS')) {
+                this.disposeUnusedAudio(audioBuffer);
+                return { played: false, stale: true };
+            }
+
+            this.markIdleDecisionHandled(guildId);
+            const playbackResult = await this.playTtsAndRecord(guildId, audioBuffer, {
+                shouldAbortPlaybackStart: () => this.discardStaleDirectResponse(
+                    guildId,
+                    options,
+                    'at fallback playback start'
+                )
+            });
+
+            if (playbackResult.abortedBeforePlayback) {
+                return { played: false, stale: true };
+            }
+
             const playback = playbackResult.playback;
             const playbackTiming = playbackResult.playbackTiming || playback?.timing || {};
             const playbackStartedAt = playbackTiming.playbackStartedAt || playback?.timing?.playbackStartedAt || null;
@@ -1625,8 +1644,10 @@ class AlphaClawdVoiceBot {
             }
 
             this.conversationBuffer.startCooldown();
+            return { played: true, stale: false };
         } catch (error) {
             console.error('[Bot] Fallback error:', error);
+            return { played: false, stale: false, error };
         }
     }
 

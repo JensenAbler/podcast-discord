@@ -948,7 +948,75 @@ async function runTests() {
             throw new Error(`Fallback speech was not remembered with the triggering transcript: ${JSON.stringify(rememberedTurn)}`);
         }
 
-        console.log('  Fallback responses explain provider failures and save playback-timed transcript entries');
+        const staleBot = Object.create(AlphaClawdVoiceBot.prototype);
+        const staleGuildId = 'guild-fallback-stale';
+        const staleRequeues = [];
+        let stalePlaybackGuardChecked = false;
+        let staleTranscriptSaved = false;
+        let staleCooldownStarted = false;
+        let staleRemembered = false;
+
+        staleBot.voiceId = 'voice-test';
+        staleBot.participantActivityVersion = new Map([[staleGuildId, 0]]);
+        staleBot.markIdleDecisionHandled = () => {};
+        staleBot.voiceProvider = {
+            synthesize: async () => Buffer.from('fallback audio waiting for playback start')
+        };
+        staleBot.playTtsAndRecord = async (_guildId, _audio, playbackOptions) => {
+            stalePlaybackGuardChecked = true;
+            staleBot.markParticipantActivity(staleGuildId);
+            const aborted = playbackOptions.shouldAbortPlaybackStart();
+            return { abortedBeforePlayback: aborted };
+        };
+        staleBot.voiceManager = {
+            saveTranscriptEntry: () => {
+                staleTranscriptSaved = true;
+            }
+        };
+        staleBot.conversationBuffer = {
+            requeueUtterances: (utterances, reason) => {
+                staleRequeues.push({ utterances, reason });
+            },
+            startCooldown: () => {
+                staleCooldownStarted = true;
+            }
+        };
+        staleBot.podcastGenerator = {
+            rememberTurn: () => {
+                staleRemembered = true;
+            },
+            rememberAssistantResponse: () => {
+                staleRemembered = true;
+            }
+        };
+
+        const staleResult = await staleBot.fallbackResponse(staleGuildId, 'Jensen', {
+            error: rateLimit,
+            source: 'fallback',
+            participantActivityBaseline: 0,
+            flushedUtterances: [
+                { speaker: 'Jensen', transcription: 'Alpha Claude, write us a poem.' }
+            ],
+            rememberTranscript: 'Jensen: Alpha Claude, write us a poem.'
+        });
+
+        if (!stalePlaybackGuardChecked) {
+            throw new Error('Fallback playback-start stale guard was not checked');
+        }
+        if (!staleResult?.stale) {
+            throw new Error(`Fallback did not report stale playback abort: ${JSON.stringify(staleResult)}`);
+        }
+        if (
+            staleRequeues.length !== 1 ||
+            staleRequeues[0].utterances[0]?.transcription !== 'Alpha Claude, write us a poem.'
+        ) {
+            throw new Error(`Stale fallback did not requeue the triggering utterance: ${JSON.stringify(staleRequeues)}`);
+        }
+        if (staleTranscriptSaved || staleCooldownStarted || staleRemembered) {
+            throw new Error(`Stale fallback should not save transcript, remember history, or start cooldown: ${JSON.stringify({ staleTranscriptSaved, staleCooldownStarted, staleRemembered })}`);
+        }
+
+        console.log('  Fallback responses explain provider failures, save metadata, and abort if the participant resumes before playback');
         passed++;
     } catch (error) {
         console.log(`  Generator fallback transcript failed: ${error.message}`);
