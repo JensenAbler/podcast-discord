@@ -11,6 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { PassThrough } = require('stream');
+const { StreamType } = require('@discordjs/voice');
 
 // Setup robust file logging
 const LOG_FILE = '/tmp/alpha-clawd-bot.log';
@@ -74,6 +75,16 @@ const { GatewayWsClient } = require('./gateway-ws-client');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { getRecordingDir } = require('./paths');
 const { PodcastGenerator } = require('./podcast-generator');
+
+// Map a Fish TTS format string to the @discordjs/voice StreamType that lets
+// Discord play the bytes without an FFmpeg transcode. Returning undefined
+// preserves the legacy StreamType.Arbitrary path inside AudioTransmitter.
+function streamTypeForLiveFormat(format) {
+    switch (String(format || '').toLowerCase()) {
+        case 'opus': return StreamType.OggOpus;
+        default: return undefined;
+    }
+}
 
 class AlphaClawdVoiceBot {
     constructor(options = {}) {
@@ -728,8 +739,12 @@ class AlphaClawdVoiceBot {
         let playbackStartMs;
         let playbackStartAborted = false;
 
+        const inputType = options.inputType
+            ?? (capture.isStream ? streamTypeForLiveFormat(this.voiceProvider?.format) : undefined);
+
         const playback = await this.voiceManager.speakWithTiming(guildId, capture.playbackAudio, {
             ...options,
+            inputType,
             onStart: (timing) => {
                 if (
                     typeof options.shouldAbortPlaybackStart === 'function' &&
