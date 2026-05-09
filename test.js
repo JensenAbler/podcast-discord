@@ -16,7 +16,7 @@ const {
 } = require('./index');
 const { EndBehaviorType } = require('@discordjs/voice');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
-const { GatewayWsClient } = require('./gateway-ws-client');
+const { GatewayWsClient, verifyDeviceSignature } = require('./gateway-ws-client');
 const { EpisodePostProcessor } = require('./post-processor');
 const { PassThrough } = require('stream');
 const fs = require('fs');
@@ -124,11 +124,14 @@ async function runTests() {
 
     console.log('\nTest 4a: Gateway WebSocket client declares operator write scope');
     try {
+        const identityDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gateway-client-'));
+        const identityPath = path.join(identityDir, 'device.json');
         const wsClient = new GatewayWsClient({
             authToken: 'test-token',
             scopes: ['operator.read', 'operator.write'],
             clientId: 'test-client',
-            clientVersion: 'test-version'
+            clientVersion: 'test-version',
+            deviceIdentityPath: identityPath
         });
         let captured = null;
         let heartbeatStarted = false;
@@ -138,8 +141,13 @@ async function runTests() {
             captured = { method, params };
             return {
                 type: 'hello-ok',
-                auth: {
-                    scopes: params.scopes
+                snapshot: {
+                    presence: [
+                        {
+                            deviceId: params.device?.id,
+                            scopes: params.scopes
+                        }
+                    ]
                 }
             };
         };
@@ -161,14 +169,41 @@ async function runTests() {
         if (!captured.params.scopes.includes('operator.write') || !captured.params.scopes.includes('operator.read')) {
             throw new Error(`Gateway connect missing read/write scopes: ${JSON.stringify(captured.params.scopes)}`);
         }
+        if (!captured.params.device?.id || !captured.params.device?.signature) {
+            throw new Error(`Gateway connect missing signed device identity: ${JSON.stringify(captured.params.device)}`);
+        }
+        if (captured.params.device.nonce !== 'nonce-test') {
+            throw new Error('Gateway device signature did not include the challenge nonce');
+        }
+        const signedPayload = wsClient.buildDeviceAuthPayload({
+            deviceId: captured.params.device.id,
+            signedAtMs: captured.params.device.signedAt,
+            token: 'test-token',
+            nonce: 'nonce-test'
+        });
+        if (!verifyDeviceSignature(captured.params.device.publicKey, signedPayload, captured.params.device.signature)) {
+            throw new Error('Gateway device signature did not verify');
+        }
         if (!authenticated || !heartbeatStarted || !wsClient.isAuthenticated) {
             throw new Error('Gateway client did not mark itself authenticated after hello-ok');
         }
         if (!wsClient.hasScope('operator.write')) {
-            throw new Error('Gateway client did not retain granted operator.write scope');
+            throw new Error('Gateway client did not retain granted operator.write scope from server presence');
         }
         if (wsClient.canInjectMessages()) {
             throw new Error('chat.inject should remain disabled without operator.admin');
+        }
+
+        const unboundClient = new GatewayWsClient({
+            authToken: 'test-token',
+            scopes: ['operator.read', 'operator.write'],
+            useDeviceIdentity: false
+        });
+        unboundClient.sendRequest = async () => ({ type: 'hello-ok' });
+        unboundClient.startHeartbeat = () => {};
+        await unboundClient.handleConnectChallenge({ nonce: 'nonce-test' });
+        if (unboundClient.hasScope('operator.write')) {
+            throw new Error('Gateway client should not claim operator.write when the server did not grant it');
         }
 
         const adminClient = new GatewayWsClient({ scopes: 'operator.read,operator.write,operator.admin' });
@@ -176,7 +211,8 @@ async function runTests() {
             throw new Error('chat.inject should be enabled when operator.admin is configured');
         }
 
-        console.log('  Gateway client asks for operator read/write and gates admin-only injection');
+        fs.rmSync(identityDir, { recursive: true, force: true });
+        console.log('  Gateway client signs device auth and gates admin-only injection');
         passed++;
     } catch (error) {
         console.log(`  Gateway WebSocket scope test failed: ${error.message}`);
