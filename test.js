@@ -266,6 +266,9 @@ async function runTests() {
 
         const savedEnv = {
             PODCAST_GENERATOR_API_KEY_ACTIVE: process.env.PODCAST_GENERATOR_API_KEY_ACTIVE,
+            PODCAST_GENERATOR_KEY_ROUTING: process.env.PODCAST_GENERATOR_KEY_ROUTING,
+            PODCAST_GENERATOR_API_KEY_GROQ_FREE: process.env.PODCAST_GENERATOR_API_KEY_GROQ_FREE,
+            PODCAST_GENERATOR_API_KEY_GROQ_PAID: process.env.PODCAST_GENERATOR_API_KEY_GROQ_PAID,
             PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY: process.env.PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY,
             PODCAST_GENERATOR_API_KEY_GROQ_STANDBY: process.env.PODCAST_GENERATOR_API_KEY_GROQ_STANDBY,
             OPENAI_API_KEY: process.env.OPENAI_API_KEY
@@ -273,6 +276,9 @@ async function runTests() {
 
         try {
             process.env.PODCAST_GENERATOR_API_KEY_ACTIVE = 'groq-primary';
+            delete process.env.PODCAST_GENERATOR_KEY_ROUTING;
+            delete process.env.PODCAST_GENERATOR_API_KEY_GROQ_FREE;
+            delete process.env.PODCAST_GENERATOR_API_KEY_GROQ_PAID;
             process.env.PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY = 'primary-key';
             process.env.PODCAST_GENERATOR_API_KEY_GROQ_STANDBY = 'standby-key';
             process.env.OPENAI_API_KEY = 'legacy-key';
@@ -294,22 +300,74 @@ async function runTests() {
                 throw new Error('Standby generator API key alias was not selected');
             }
 
-            process.env.PODCAST_GENERATOR_API_KEY_ACTIVE = 'groq-primary';
+            const cappedGenerator = new PodcastGenerator({
+                apiKey: 'cap-test-key',
+                maxCompletionTokens: 320
+            });
+            const cappedBody = cappedGenerator.buildRequestBody([]);
+            if (cappedBody.max_completion_tokens !== 320) {
+                throw new Error(`Generator did not honor max token cap: ${JSON.stringify(cappedBody)}`);
+            }
+
+            delete process.env.PODCAST_GENERATOR_API_KEY_ACTIVE;
+            process.env.PODCAST_GENERATOR_KEY_ROUTING = 'free-first-paid-fallback';
+            process.env.PODCAST_GENERATOR_API_KEY_GROQ_FREE = 'free-key';
+            process.env.PODCAST_GENERATOR_API_KEY_GROQ_PAID = 'paid-key';
+
+            const makeRateLimited = (retryAfter = 2.5) => {
+                const rateLimited = new Error('OpenAI API error: 429 - rate limit reached');
+                rateLimited.status = 429;
+                rateLimited.body = {
+                    error: {
+                        message: `Rate limit reached in organization \`org_test_free\`. Please try again in ${retryAfter}s.`,
+                        type: 'tokens',
+                        code: 'rate_limit_exceeded'
+                    }
+                };
+                return rateLimited;
+            };
+
+            const freeSuccessGenerator = new PodcastGenerator();
+            const freeSuccessCalls = [];
+            freeSuccessGenerator.fetchJson = async () => {
+                freeSuccessCalls.push(freeSuccessGenerator.apiKeySource);
+                return {
+                    choices: [{
+                        message: {
+                            content: JSON.stringify({
+                                shouldRespond: true,
+                                speech: 'Free key handled the turn.',
+                                bigBrain: { requested: false, reason: '' }
+                            })
+                        }
+                    }],
+                    usage: {
+                        prompt_tokens: 100,
+                        completion_tokens: 10,
+                        prompt_tokens_details: { cached_tokens: 50 }
+                    }
+                };
+            };
+
+            const freeSuccessOutput = await freeSuccessGenerator.generate({
+                transcript: 'Jensen: Try the free key first.'
+            });
+
+            if (
+                freeSuccessOutput.speech !== 'Free key handled the turn.' ||
+                freeSuccessCalls.join(',') !== 'PODCAST_GENERATOR_API_KEY_GROQ_FREE' ||
+                freeSuccessGenerator.apiKeySource !== 'PODCAST_GENERATOR_API_KEY_GROQ_FREE' ||
+                freeSuccessGenerator.keyRouting !== 'free-first-paid-fallback'
+            ) {
+                throw new Error(`Free-first routing did not prefer the free key: ${JSON.stringify({ freeSuccessCalls, output: freeSuccessOutput, source: freeSuccessGenerator.apiKeySource, routing: freeSuccessGenerator.keyRouting })}`);
+            }
+
             const failoverCalls = [];
             const failoverGenerator = new PodcastGenerator();
             failoverGenerator.fetchJson = async () => {
                 failoverCalls.push(failoverGenerator.apiKeySource);
                 if (failoverCalls.length === 1) {
-                    const rateLimited = new Error('OpenAI API error: 429 - rate limit reached');
-                    rateLimited.status = 429;
-                    rateLimited.body = {
-                        error: {
-                            message: 'Rate limit reached in organization `org_test_primary`. Please try again in 2.5s.',
-                            type: 'tokens',
-                            code: 'rate_limit_exceeded'
-                        }
-                    };
-                    throw rateLimited;
+                    throw makeRateLimited(2.5);
                 }
 
                 return {
@@ -321,7 +379,12 @@ async function runTests() {
                                 bigBrain: { requested: false, reason: '' }
                             })
                         }
-                    }]
+                    }],
+                    usage: {
+                        prompt_tokens: 1000,
+                        completion_tokens: 100,
+                        prompt_tokens_details: { cached_tokens: 500 }
+                    }
                 };
             };
 
@@ -342,23 +405,110 @@ async function runTests() {
 
             if (
                 failoverOutput.speech !== 'Standby key handled the turn.' ||
-                failoverCalls.join(',') !== 'PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY,PODCAST_GENERATOR_API_KEY_GROQ_STANDBY' ||
-                failoverGenerator.apiKeySource !== 'PODCAST_GENERATOR_API_KEY_GROQ_STANDBY'
+                failoverCalls.join(',') !== 'PODCAST_GENERATOR_API_KEY_GROQ_FREE,PODCAST_GENERATOR_API_KEY_GROQ_PAID' ||
+                failoverGenerator.apiKeySource !== 'PODCAST_GENERATOR_API_KEY_GROQ_PAID' ||
+                !failoverGenerator.isFreeKeyCoolingDown() ||
+                failoverGenerator.paidSessionSpendUsd <= 0
             ) {
                 throw new Error(`Generator did not fail over from primary to standby on rate limit: ${JSON.stringify({ failoverCalls, output: failoverOutput, source: failoverGenerator.apiKeySource })}`);
             }
             if (
                 !warnLines.some(line =>
-                    line.includes('PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY failed: status=429') &&
+                    line.includes('Free Groq key unavailable: status=429') &&
                     line.includes('code=rate_limit_exceeded') &&
-                    line.includes('org=org_test_primary') &&
+                    line.includes('org=org_test_free') &&
                     line.includes('retryAfter=2.5s') &&
-                    line.includes('retrying with PODCAST_GENERATOR_API_KEY_GROQ_STANDBY')
+                    line.includes('retrying live turn with PODCAST_GENERATOR_API_KEY_GROQ_PAID')
                 )
             ) {
                 throw new Error(`Failover log did not include safe source-tagged rate-limit metadata: ${JSON.stringify(warnLines)}`);
             }
 
+            const cooldownCalls = [];
+            failoverGenerator.freeKeyCooldownUntil = Date.now() + 10_000;
+            failoverGenerator.fetchJson = async () => {
+                cooldownCalls.push(failoverGenerator.apiKeySource);
+                return {
+                    choices: [{
+                        message: {
+                            content: JSON.stringify({
+                                shouldRespond: true,
+                                speech: 'Paid key handled cooldown.',
+                                bigBrain: { requested: false, reason: '' }
+                            })
+                        }
+                    }]
+                };
+            };
+            await failoverGenerator.generate({
+                transcript: 'Jensen: Continue while free is cooling down.'
+            });
+            if (cooldownCalls.join(',') !== 'PODCAST_GENERATOR_API_KEY_GROQ_PAID') {
+                throw new Error(`Free cooldown did not route directly to paid: ${JSON.stringify(cooldownCalls)}`);
+            }
+
+            const switchbackCalls = [];
+            failoverGenerator.freeKeyCooldownUntil = Date.now() - 1;
+            failoverGenerator.fetchJson = async () => {
+                switchbackCalls.push(failoverGenerator.apiKeySource);
+                return {
+                    choices: [{
+                        message: {
+                            content: JSON.stringify({
+                                shouldRespond: true,
+                                speech: 'Free key is back.',
+                                bigBrain: { requested: false, reason: '' }
+                            })
+                        }
+                    }]
+                };
+            };
+            await failoverGenerator.generate({
+                transcript: 'Jensen: Try free again.'
+            });
+            if (switchbackCalls.join(',') !== 'PODCAST_GENERATOR_API_KEY_GROQ_FREE') {
+                throw new Error(`Expired cooldown did not switch back to free: ${JSON.stringify(switchbackCalls)}`);
+            }
+
+            const idleCalls = [];
+            const idleGenerator = new PodcastGenerator();
+            idleGenerator.fetchJson = async () => {
+                idleCalls.push(idleGenerator.apiKeySource);
+                throw makeRateLimited(4);
+            };
+            const idleOutput = await idleGenerator.generate({
+                transcript: '',
+                idleCheck: true,
+                idleSeconds: 9,
+                remember: false
+            });
+            if (idleOutput.shouldRespond || idleCalls.join(',') !== 'PODCAST_GENERATOR_API_KEY_GROQ_FREE') {
+                throw new Error(`Idle check should not spend paid tokens on free rate limit: ${JSON.stringify({ idleOutput, idleCalls })}`);
+            }
+
+            const cappedPaidGenerator = new PodcastGenerator({ paidSessionSoftCapUsd: 0.01 });
+            cappedPaidGenerator.paidSessionSpendUsd = 0.01;
+            cappedPaidGenerator.freeKeyCooldownUntil = Date.now() + 10_000;
+            let cappedPaidCalled = false;
+            cappedPaidGenerator.fetchJson = async () => {
+                cappedPaidCalled = true;
+                return {};
+            };
+            let cappedPaidError = null;
+            try {
+                await cappedPaidGenerator.generate({
+                    transcript: 'Jensen: Paid should be capped.'
+                });
+            } catch (error) {
+                cappedPaidError = error;
+            }
+            if (!cappedPaidError?.paidFallbackSkippedReason || cappedPaidCalled) {
+                throw new Error(`Paid cap did not prevent paid fallback: ${JSON.stringify({ cappedPaidCalled, reason: cappedPaidError?.paidFallbackSkippedReason })}`);
+            }
+
+            delete process.env.PODCAST_GENERATOR_KEY_ROUTING;
+            delete process.env.PODCAST_GENERATOR_API_KEY_GROQ_FREE;
+            delete process.env.PODCAST_GENERATOR_API_KEY_GROQ_PAID;
             delete process.env.PODCAST_GENERATOR_API_KEY_ACTIVE;
             delete process.env.PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY;
             delete process.env.PODCAST_GENERATOR_API_KEY_GROQ_STANDBY;
@@ -384,7 +534,7 @@ async function runTests() {
             }
         }
 
-        console.log('  Generator API key aliases select active and standby keys, with rate-limit failover');
+        console.log('  Generator API key aliases and free-first paid fallback routing work as configured');
 
         const fallbackCalls = [];
         const fallbackFormatGenerator = new PodcastGenerator({

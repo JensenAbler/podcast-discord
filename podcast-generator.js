@@ -10,15 +10,18 @@
 
 class PodcastGenerator {
     constructor(options = {}) {
-        const apiKeyConfig = this.resolveApiKey(options);
+        this.keyRouting = this.resolveKeyRouting(options);
+        this.groqRoleKeys = this.resolveGroqRoleKeys(options);
+        const apiKeyConfig = this.resolveApiKey(options, process.env, this.keyRouting);
         this.apiKey = apiKeyConfig.apiKey;
         this.apiKeySource = apiKeyConfig.source;
         this.apiKeyActiveName = apiKeyConfig.activeName || null;
+        this.apiKeyRole = apiKeyConfig.role || this.resolveApiKeyRole(apiKeyConfig.source);
         this.apiKeyError = apiKeyConfig.error;
         this.baseUrl = options.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
         this.model = options.model || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini';
         this.timeout = Number(options.timeout || process.env.PODCAST_GENERATOR_TIMEOUT_MS || 15000);
-        this.maxCompletionTokens = Number(options.maxCompletionTokens || process.env.PODCAST_GENERATOR_MAX_TOKENS || 1500);
+        this.maxCompletionTokens = Number(options.maxCompletionTokens || process.env.PODCAST_GENERATOR_MAX_TOKENS || 320);
         this.maxHistoryTurns = Number(options.maxHistoryTurns || process.env.PODCAST_GENERATOR_HISTORY_TURNS || 8);
         this.maxSpeechChars = Number(options.maxSpeechChars || process.env.PODCAST_GENERATOR_MAX_SPEECH_CHARS || 520);
         this.responseFormat = options.responseFormat || process.env.PODCAST_GENERATOR_RESPONSE_FORMAT || 'json_schema';
@@ -27,6 +30,17 @@ class PodcastGenerator {
             ? Boolean(options.allowJsonObjectFallback)
             : process.env.PODCAST_GENERATOR_JSON_OBJECT_FALLBACK !== 'false';
         this.temperature = process.env.PODCAST_GENERATOR_TEMPERATURE;
+        this.freeKeyCooldownUntil = 0;
+        this.paidSessionSpendUsd = 0;
+        this.paidDailySpendUsd = 0;
+        this.paidSessionSoftCapUsd = this.parseDollarCap(
+            options.paidSessionSoftCapUsd ?? process.env.PODCAST_GENERATOR_PAID_SESSION_SOFT_CAP_USD,
+            0.25
+        );
+        this.paidDailySoftCapUsd = this.parseDollarCap(
+            options.paidDailySoftCapUsd ?? process.env.PODCAST_GENERATOR_PAID_DAILY_SOFT_CAP_USD,
+            2
+        );
         this.history = [];
         this.session = {
             topic: 'general discussion',
@@ -60,7 +74,7 @@ class PodcastGenerator {
         const messages = this.buildMessages(input);
 
         const startTime = Date.now();
-        const result = await this.fetchCompletion(messages);
+        const result = await this.fetchCompletion(messages, input);
         const duration = Date.now() - startTime;
         const choice = result.choices?.[0];
         const content = choice?.message?.content;
@@ -253,21 +267,21 @@ class PodcastGenerator {
         return body;
     }
 
-    async fetchCompletion(messages) {
+    async fetchCompletion(messages, input = {}) {
         const body = this.buildRequestBody(messages);
 
         try {
-            return await this.fetchJsonWithKeyFailover('/chat/completions', body);
+            return await this.fetchJsonWithKeyRouting('/chat/completions', body, input);
         } catch (error) {
             if (!this.shouldRetryWithJsonObject(error, body)) {
                 throw error;
             }
 
             console.warn('[PodcastGenerator] Model rejected json_schema response_format; retrying with json_object');
-            return this.fetchJsonWithKeyFailover('/chat/completions', this.buildRequestBody(messages, {
+            return this.fetchJsonWithKeyRouting('/chat/completions', this.buildRequestBody(messages, {
                 responseFormat: 'json_object',
                 reasoningFormat: this.reasoningFormat || 'hidden'
-            }));
+            }), input);
         }
     }
 
@@ -283,9 +297,91 @@ class PodcastGenerator {
         return param === 'response_format' || /does not support response format `?json_schema`?/i.test(message);
     }
 
+    async fetchJsonWithKeyRouting(path, body, input = {}) {
+        if (this.keyRouting === 'free-first-paid-fallback') {
+            return this.fetchJsonFreeFirstPaidFallback(path, body, input);
+        }
+
+        return this.fetchJsonWithKeyFailover(path, body);
+    }
+
+    async fetchJsonFreeFirstPaidFallback(path, body, input = {}) {
+        const free = this.groqRoleKeys.free;
+        const paid = this.groqRoleKeys.paid;
+        if (!free?.apiKey) {
+            return this.fetchJsonWithKeyFailover(path, body);
+        }
+
+        const idleCheck = Boolean(input.idleCheck);
+        const now = Date.now();
+        if (!this.isFreeKeyCoolingDown(now)) {
+            try {
+                return await this.fetchJsonWithApiKey(path, body, free);
+            } catch (error) {
+                this.annotateApiError(error, free.source, free.activeName, free.role);
+                if (!this.isRateLimitError(error)) {
+                    throw error;
+                }
+
+                this.recordFreeKeyCooldown(error);
+                if (idleCheck) {
+                    return this.buildSilentCompletion('free-key-rate-limited-idle');
+                }
+
+                return this.fetchPaidFallback(path, body, paid, error);
+            }
+        }
+
+        if (idleCheck) {
+            return this.buildSilentCompletion('free-key-cooling-down-idle');
+        }
+
+        const cooldownError = this.buildFreeKeyCooldownError();
+        return this.fetchPaidFallback(path, body, paid, cooldownError);
+    }
+
+    async fetchPaidFallback(path, body, paid, originalRateLimitError) {
+        if (!paid?.apiKey) {
+            throw originalRateLimitError;
+        }
+
+        const budgetReason = this.getPaidBudgetExceededReason();
+        if (budgetReason) {
+            originalRateLimitError.paidFallbackSkippedReason = budgetReason;
+            console.warn(`[PodcastGenerator] Paid Groq fallback skipped: ${budgetReason}`);
+            throw originalRateLimitError;
+        }
+
+        console.warn(`[PodcastGenerator] Free Groq key unavailable: ${this.formatApiErrorSummary(originalRateLimitError)}; retrying live turn with ${paid.source}`);
+        try {
+            return await this.fetchJsonWithApiKey(path, body, paid);
+        } catch (paidError) {
+            this.annotateApiError(paidError, paid.source, paid.activeName, paid.role);
+            paidError.originalRateLimitError = originalRateLimitError;
+            paidError.failoverSources = [
+                originalRateLimitError.apiKeySource || this.groqRoleKeys.free?.source,
+                paid.source
+            ].filter(Boolean);
+            throw paidError;
+        }
+    }
+
+    async fetchJsonWithApiKey(path, body, keyConfig) {
+        this.setActiveApiKey(keyConfig);
+        const result = await this.fetchJson(path, body);
+        this.logUsage(result, keyConfig);
+        return result;
+    }
+
     async fetchJsonWithKeyFailover(path, body) {
         try {
-            return await this.fetchJson(path, body);
+            const result = await this.fetchJson(path, body);
+            this.logUsage(result, {
+                source: this.apiKeySource,
+                activeName: this.apiKeyActiveName,
+                role: this.apiKeyRole
+            });
+            return result;
         } catch (error) {
             const alternate = this.resolveAlternateApiKey();
             if (!this.shouldRetryWithAlternateApiKey(error, alternate)) {
@@ -298,22 +394,25 @@ class PodcastGenerator {
                 apiKeyActiveName: this.apiKeyActiveName
             };
 
-            this.annotateApiError(error, original.apiKeySource, original.apiKeyActiveName);
+            this.annotateApiError(error, original.apiKeySource, original.apiKeyActiveName, this.apiKeyRole);
             console.warn(`[PodcastGenerator] API key source ${original.apiKeySource} failed: ${this.formatApiErrorSummary(error)}; retrying with ${alternate.source}`);
             this.apiKey = alternate.apiKey;
             this.apiKeySource = alternate.source;
             this.apiKeyActiveName = alternate.activeName;
+            this.apiKeyRole = alternate.role || this.resolveApiKeyRole(alternate.source);
 
             try {
                 const result = await this.fetchJson(path, body);
+                this.logUsage(result, alternate);
                 console.warn(`[PodcastGenerator] API key failover succeeded; active source is now ${this.apiKeySource}`);
                 return result;
             } catch (retryError) {
-                this.annotateApiError(retryError, alternate.source, alternate.activeName);
+                this.annotateApiError(retryError, alternate.source, alternate.activeName, alternate.role);
                 console.warn(`[PodcastGenerator] API key source ${alternate.source} failed after failover: ${this.formatApiErrorSummary(retryError)}`);
                 this.apiKey = original.apiKey;
                 this.apiKeySource = original.apiKeySource;
                 this.apiKeyActiveName = original.apiKeyActiveName;
+                this.apiKeyRole = this.resolveApiKeyRole(original.apiKeySource);
                 retryError.originalRateLimitError = error;
                 retryError.failoverSources = [original.apiKeySource, alternate.source];
                 throw retryError;
@@ -321,10 +420,18 @@ class PodcastGenerator {
         }
     }
 
-    annotateApiError(error, apiKeySource, apiKeyActiveName = null) {
+    setActiveApiKey(keyConfig = {}) {
+        this.apiKey = keyConfig.apiKey;
+        this.apiKeySource = keyConfig.source;
+        this.apiKeyActiveName = keyConfig.activeName || null;
+        this.apiKeyRole = keyConfig.role || this.resolveApiKeyRole(keyConfig.source);
+    }
+
+    annotateApiError(error, apiKeySource, apiKeyActiveName = null, apiKeyRole = null) {
         if (!error || typeof error !== 'object') return error;
         error.apiKeySource = apiKeySource;
         error.apiKeyActiveName = apiKeyActiveName;
+        error.apiKeyRole = apiKeyRole || this.resolveApiKeyRole(apiKeySource);
         error.providerError = this.getApiErrorSummary(error);
         return error;
     }
@@ -337,13 +444,19 @@ class PodcastGenerator {
         const type = String(errorBody.type || '');
         const orgMatch = message.match(/organization `([^`]+)`/i);
         const retryMatch = message.match(/try again in ([0-9.]+)s/i);
+        const headers = error?.headers || {};
+        const retryAfterSeconds = retryMatch
+            ? Number(retryMatch[1])
+            : this.parseRetryAfterSeconds(headers['retry-after'] || headers['x-ratelimit-reset-tokens']);
 
         return {
             status,
             code: code || null,
             type: type || null,
             organization: orgMatch ? orgMatch[1] : null,
-            retryAfterSeconds: retryMatch ? Number(retryMatch[1]) : null
+            retryAfterSeconds,
+            remainingTokens: this.parseHeaderNumber(headers['x-ratelimit-remaining-tokens']),
+            resetTokensSeconds: this.parseRetryAfterSeconds(headers['x-ratelimit-reset-tokens'])
         };
     }
 
@@ -381,12 +494,170 @@ class PodcastGenerator {
         );
     }
 
+    isRateLimitError(error) {
+        return this.shouldRetryWithAlternateApiKey(error, { apiKey: 'rate-limit-check' });
+    }
+
+    isFreeKeyCoolingDown(now = Date.now()) {
+        return Number.isFinite(this.freeKeyCooldownUntil) && this.freeKeyCooldownUntil > now;
+    }
+
+    recordFreeKeyCooldown(error) {
+        const summary = error?.providerError || this.getApiErrorSummary(error);
+        const retryAfterSeconds = Number.isFinite(summary.retryAfterSeconds)
+            ? summary.retryAfterSeconds
+            : 60;
+        const cooldownMs = Math.max(1000, Math.ceil(retryAfterSeconds * 1000));
+        this.freeKeyCooldownUntil = Date.now() + cooldownMs;
+        console.warn(`[PodcastGenerator] Free Groq key cooling down for ${Math.ceil(cooldownMs / 1000)}s (until ${new Date(this.freeKeyCooldownUntil).toISOString()})`);
+    }
+
+    buildFreeKeyCooldownError() {
+        const retryAfterSeconds = Math.max(1, Math.ceil((this.freeKeyCooldownUntil - Date.now()) / 1000));
+        const error = new Error(`Free Groq key is cooling down; retry after ${retryAfterSeconds}s`);
+        error.status = 429;
+        error.body = {
+            error: {
+                message: `Free Groq key is cooling down. Please try again in ${retryAfterSeconds}s.`,
+                type: 'tokens',
+                code: 'rate_limit_exceeded'
+            }
+        };
+        return this.annotateApiError(
+            error,
+            this.groqRoleKeys.free?.source || 'PODCAST_GENERATOR_API_KEY_GROQ_FREE',
+            this.groqRoleKeys.free?.activeName || 'GROQ_FREE',
+            'free'
+        );
+    }
+
+    buildSilentCompletion(reason) {
+        console.warn(`[PodcastGenerator] Free-first routing chose silence (${reason})`);
+        return {
+            choices: [{
+                message: {
+                    content: JSON.stringify({
+                        shouldRespond: false,
+                        speech: '',
+                        bigBrain: { requested: false, reason: '' }
+                    })
+                }
+            }]
+        };
+    }
+
+    getPaidBudgetExceededReason() {
+        if (Number.isFinite(this.paidSessionSoftCapUsd) && this.paidSessionSoftCapUsd > 0 && this.paidSessionSpendUsd >= this.paidSessionSoftCapUsd) {
+            return `session paid spend cap reached ($${this.paidSessionSpendUsd.toFixed(4)} / $${this.paidSessionSoftCapUsd.toFixed(2)})`;
+        }
+
+        if (Number.isFinite(this.paidDailySoftCapUsd) && this.paidDailySoftCapUsd > 0 && this.paidDailySpendUsd >= this.paidDailySoftCapUsd) {
+            return `daily paid spend cap reached ($${this.paidDailySpendUsd.toFixed(4)} / $${this.paidDailySoftCapUsd.toFixed(2)})`;
+        }
+
+        return null;
+    }
+
+    parseDollarCap(value, fallback) {
+        if (value === undefined || value === null || value === '') {
+            return fallback;
+        }
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+    }
+
+    parseHeaderNumber(value) {
+        if (value === undefined || value === null || value === '') {
+            return null;
+        }
+        const parsed = Number(String(value).replace(/[^0-9.-]/g, ''));
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    parseRetryAfterSeconds(value) {
+        if (value === undefined || value === null || value === '') {
+            return null;
+        }
+
+        const raw = String(value).trim();
+        const numeric = Number(raw.replace(/s$/i, ''));
+        if (Number.isFinite(numeric)) {
+            return numeric;
+        }
+
+        const dateMs = Date.parse(raw);
+        if (!Number.isNaN(dateMs)) {
+            return Math.max(0, (dateMs - Date.now()) / 1000);
+        }
+
+        return null;
+    }
+
+    resolveKeyRouting(options = {}, env = process.env) {
+        const explicit = String(options.keyRouting || env.PODCAST_GENERATOR_KEY_ROUTING || '').trim();
+        if (explicit) {
+            return this.normalizeRoutingMode(explicit);
+        }
+
+        const hasActiveAlias = Boolean(String(env.PODCAST_GENERATOR_API_KEY_ACTIVE || '').trim());
+        const roleKeys = this.resolveGroqRoleKeys(options, env);
+        if (!hasActiveAlias && roleKeys.free?.apiKey && roleKeys.paid?.apiKey) {
+            return 'free-first-paid-fallback';
+        }
+
+        return 'legacy-failover';
+    }
+
+    normalizeRoutingMode(value) {
+        const normalized = String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/_/g, '-');
+        if (['free-first-paid-fallback', 'legacy-failover'].includes(normalized)) {
+            return normalized;
+        }
+        return 'legacy-failover';
+    }
+
+    resolveGroqRoleKeys(options = {}, env = process.env) {
+        const free = this.firstConfiguredKey([
+            ['options.freeApiKey', options.freeApiKey],
+            ['PODCAST_GENERATOR_API_KEY_GROQ_FREE', env.PODCAST_GENERATOR_API_KEY_GROQ_FREE],
+            ['OPENAI_API_KEY_GROQ_FREE', env.OPENAI_API_KEY_GROQ_FREE],
+            ['PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY', env.PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY],
+            ['OPENAI_API_KEY_GROQ_PRIMARY', env.OPENAI_API_KEY_GROQ_PRIMARY]
+        ], 'GROQ_FREE', 'free');
+
+        const paid = this.firstConfiguredKey([
+            ['options.paidApiKey', options.paidApiKey],
+            ['PODCAST_GENERATOR_API_KEY_GROQ_PAID', env.PODCAST_GENERATOR_API_KEY_GROQ_PAID],
+            ['OPENAI_API_KEY_GROQ_PAID', env.OPENAI_API_KEY_GROQ_PAID],
+            ['PODCAST_GENERATOR_API_KEY_GROQ_STANDBY', env.PODCAST_GENERATOR_API_KEY_GROQ_STANDBY],
+            ['OPENAI_API_KEY_GROQ_STANDBY', env.OPENAI_API_KEY_GROQ_STANDBY]
+        ], 'GROQ_PAID', 'paid');
+
+        return { free, paid };
+    }
+
+    firstConfiguredKey(candidates, activeName, role) {
+        for (const [source, apiKey] of candidates) {
+            if (apiKey) {
+                return { apiKey, source, activeName, role };
+            }
+        }
+        return null;
+    }
+
     resolveAlternateApiKey(env = process.env) {
         const alternates = {
             PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY: 'PODCAST_GENERATOR_API_KEY_GROQ_STANDBY',
             PODCAST_GENERATOR_API_KEY_GROQ_STANDBY: 'PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY',
+            PODCAST_GENERATOR_API_KEY_GROQ_FREE: 'PODCAST_GENERATOR_API_KEY_GROQ_PAID',
+            PODCAST_GENERATOR_API_KEY_GROQ_PAID: 'PODCAST_GENERATOR_API_KEY_GROQ_FREE',
             OPENAI_API_KEY_GROQ_PRIMARY: 'OPENAI_API_KEY_GROQ_STANDBY',
-            OPENAI_API_KEY_GROQ_STANDBY: 'OPENAI_API_KEY_GROQ_PRIMARY'
+            OPENAI_API_KEY_GROQ_STANDBY: 'OPENAI_API_KEY_GROQ_PRIMARY',
+            OPENAI_API_KEY_GROQ_FREE: 'OPENAI_API_KEY_GROQ_PAID',
+            OPENAI_API_KEY_GROQ_PAID: 'OPENAI_API_KEY_GROQ_FREE'
         };
 
         const alternateSource = alternates[this.apiKeySource];
@@ -397,21 +668,37 @@ class PodcastGenerator {
 
         const activeName = alternateSource.endsWith('_GROQ_STANDBY')
             ? 'GROQ_STANDBY'
-            : 'GROQ_PRIMARY';
+            : alternateSource.endsWith('_GROQ_PAID')
+                ? 'GROQ_PAID'
+                : alternateSource.endsWith('_GROQ_FREE')
+                    ? 'GROQ_FREE'
+                    : 'GROQ_PRIMARY';
 
         return {
             apiKey: alternateApiKey,
             source: alternateSource,
-            activeName
+            activeName,
+            role: this.resolveApiKeyRole(alternateSource)
         };
     }
 
-    resolveApiKey(options = {}, env = process.env) {
+    resolveApiKey(options = {}, env = process.env, keyRouting = 'legacy-failover') {
         if (options.apiKey) {
             return {
                 apiKey: options.apiKey,
-                source: 'options.apiKey'
+                source: 'options.apiKey',
+                role: 'single'
             };
+        }
+
+        if (keyRouting === 'free-first-paid-fallback') {
+            const roleKeys = this.resolveGroqRoleKeys(options, env);
+            if (roleKeys.free?.apiKey) {
+                return roleKeys.free;
+            }
+            if (roleKeys.paid?.apiKey) {
+                return roleKeys.paid;
+            }
         }
 
         const activeName = String(env.PODCAST_GENERATOR_API_KEY_ACTIVE || '').trim();
@@ -427,7 +714,8 @@ class PodcastGenerator {
                     return {
                         apiKey: env[source],
                         source,
-                        activeName
+                        activeName,
+                        role: this.resolveApiKeyRole(source)
                     };
                 }
             }
@@ -443,14 +731,16 @@ class PodcastGenerator {
         if (env.PODCAST_GENERATOR_API_KEY) {
             return {
                 apiKey: env.PODCAST_GENERATOR_API_KEY,
-                source: 'PODCAST_GENERATOR_API_KEY'
+                source: 'PODCAST_GENERATOR_API_KEY',
+                role: 'single'
             };
         }
 
         if (env.OPENAI_API_KEY) {
             return {
                 apiKey: env.OPENAI_API_KEY,
-                source: 'OPENAI_API_KEY'
+                source: 'OPENAI_API_KEY',
+                role: 'single'
             };
         }
 
@@ -467,6 +757,17 @@ class PodcastGenerator {
             .replace(/[^A-Za-z0-9]+/g, '_')
             .replace(/^_+|_+$/g, '')
             .toUpperCase();
+    }
+
+    resolveApiKeyRole(source) {
+        const normalized = String(source || '').toUpperCase();
+        if (normalized.includes('_GROQ_FREE') || normalized.includes('_GROQ_PRIMARY')) {
+            return 'free';
+        }
+        if (normalized.includes('_GROQ_PAID') || normalized.includes('_GROQ_STANDBY')) {
+            return 'paid';
+        }
+        return 'single';
     }
 
     getResponseSchema() {
@@ -751,6 +1052,79 @@ class PodcastGenerator {
         }
     }
 
+    logUsage(result, keyConfig = {}) {
+        const usage = result?.usage;
+        if (!usage) {
+            return;
+        }
+
+        const promptTokens = Number(usage.prompt_tokens || 0);
+        const completionTokens = Number(usage.completion_tokens || 0);
+        const cachedTokens = Number(
+            usage.prompt_tokens_details?.cached_tokens ||
+            usage.input_token_details?.cache_read ||
+            usage.cached_tokens ||
+            0
+        );
+        const role = keyConfig.role || this.resolveApiKeyRole(keyConfig.source);
+        const costUsd = this.estimateUsageCostUsd({ promptTokens, completionTokens, cachedTokens });
+
+        if (role === 'paid' && Number.isFinite(costUsd)) {
+            this.paidSessionSpendUsd += costUsd;
+            this.paidDailySpendUsd += costUsd;
+        }
+
+        const parts = [
+            `keyRole=${role}`,
+            `source=${keyConfig.source || 'unknown'}`,
+            `promptTokens=${promptTokens}`,
+            `completionTokens=${completionTokens}`,
+            `cachedTokens=${cachedTokens}`
+        ];
+
+        if (Number.isFinite(costUsd)) {
+            parts.push(`estimatedCost=$${costUsd.toFixed(6)}`);
+        }
+        if (role === 'paid') {
+            parts.push(`paidSession=$${this.paidSessionSpendUsd.toFixed(6)}`);
+            parts.push(`paidDaily=$${this.paidDailySpendUsd.toFixed(6)}`);
+        }
+
+        console.log(`[PodcastGenerator] Usage ${parts.join(', ')}`);
+    }
+
+    estimateUsageCostUsd({ promptTokens = 0, completionTokens = 0, cachedTokens = 0 } = {}) {
+        const uncachedPromptTokens = Math.max(0, promptTokens - cachedTokens);
+        const inputCost = uncachedPromptTokens * 0.15 / 1_000_000;
+        const cachedInputCost = cachedTokens * 0.075 / 1_000_000;
+        const outputCost = completionTokens * 0.60 / 1_000_000;
+        return inputCost + cachedInputCost + outputCost;
+    }
+
+    extractResponseHeaders(headers) {
+        if (!headers || typeof headers.get !== 'function') {
+            return {};
+        }
+
+        const names = [
+            'retry-after',
+            'x-ratelimit-limit-tokens',
+            'x-ratelimit-remaining-tokens',
+            'x-ratelimit-reset-tokens',
+            'x-ratelimit-limit-requests',
+            'x-ratelimit-remaining-requests',
+            'x-ratelimit-reset-requests'
+        ];
+
+        return names.reduce((acc, name) => {
+            const value = headers.get(name);
+            if (value !== null && value !== undefined) {
+                acc[name] = value;
+            }
+            return acc;
+        }, {});
+    }
+
     async fetchJson(path, body) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), this.timeout);
@@ -770,6 +1144,7 @@ class PodcastGenerator {
                 const errorText = await response.text();
                 const error = new Error(`OpenAI API error: ${response.status} - ${errorText}`);
                 error.status = response.status;
+                error.headers = this.extractResponseHeaders(response.headers);
                 error.bodyText = errorText;
                 try {
                     error.body = JSON.parse(errorText);
@@ -779,7 +1154,9 @@ class PodcastGenerator {
                 throw error;
             }
 
-            return response.json();
+            const json = await response.json();
+            json._responseHeaders = this.extractResponseHeaders(response.headers);
+            return json;
         } finally {
             clearTimeout(timeout);
         }
@@ -806,6 +1183,11 @@ class PodcastGenerator {
             provider: 'openai-direct',
             model: this.model,
             apiKeySource: this.apiKeySource,
+            apiKeyRole: this.apiKeyRole,
+            keyRouting: this.keyRouting,
+            freeKeyCoolingDown: this.isFreeKeyCoolingDown(),
+            paidSessionSpendUsd: this.paidSessionSpendUsd,
+            paidDailySpendUsd: this.paidDailySpendUsd,
             responseFormat: this.responseFormat,
             maxHistoryTurns: this.maxHistoryTurns,
             timeout: this.timeout
