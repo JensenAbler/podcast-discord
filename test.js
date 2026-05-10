@@ -1570,7 +1570,112 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7d: Generator fallback is honest and transcripted');
+    console.log('\nTest 7d: bigBrain ambient bed plays during a pending handoff and stops on cleanup');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-bigbrain-ambient';
+        let sentChat = null;
+        let ambientStarted = false;
+        let ambientStopped = false;
+        let finishAmbient = null;
+
+        bot.bigBrainEnabled = true;
+        bot.bigBrainAmbientEnabled = true;
+        bot.bigBrainAmbientStartDelayMs = 0;
+        bot.bigBrainAmbientChunkMs = 2000;
+        bot.bigBrainAmbientVolume = 0.2;
+        bot.bigBrainAmbientBeds = new Map();
+        bot.pendingBigBrainResponses = new Map();
+        bot.RecordingState = { RECORDING: 'RECORDING' };
+        bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
+        bot.wsClient = {
+            isAuthenticated: true,
+            sessionKey: 'agent:main:main',
+            sendChat: async (message, options) => {
+                sentChat = { message, options };
+                return { runId: options.idempotencyKey, status: 'started' };
+            },
+            abortChat: async () => ({ ok: true })
+        };
+        bot.podcastGenerator = {
+            formatUtterances: () => 'Jensen: Tell me the technical details.'
+        };
+        bot.hasCurrentParticipantFloor = () => false;
+        bot.getBigBrainAmbientBedBuffer = async () => Buffer.from('ambient-bed-audio');
+        bot.voiceManager = {
+            getPlaybackStatus: () => ({ isPlaying: false, queueLength: 0 }),
+            speakWithTiming: async (_guildId, audio, options) => {
+                if (audio.toString() !== 'ambient-bed-audio') {
+                    throw new Error(`Unexpected ambient audio buffer: ${audio.toString()}`);
+                }
+                ambientStarted = true;
+                options.onStart?.({ playbackStartedAt: '2026-05-09T00:00:01.000Z' });
+                const finished = new Promise((resolve) => {
+                    finishAmbient = () => resolve({
+                        playbackStartedAt: '2026-05-09T00:00:01.000Z',
+                        playbackEndedAt: '2026-05-09T00:00:02.000Z'
+                    });
+                });
+                return {
+                    timing: {
+                        playbackRequestedAt: '2026-05-09T00:00:00.900Z',
+                        playbackStartedAt: '2026-05-09T00:00:01.000Z',
+                        playbackEndedAt: null
+                    },
+                    finished
+                };
+            },
+            stopPlayback: () => {
+                ambientStopped = true;
+                finishAmbient?.();
+                return true;
+            },
+            addBotAudioToRecording: () => {
+                throw new Error('Stopped ambient chunks should not be mixed as complete bot audio');
+            }
+        };
+
+        const result = await bot.dispatchBigBrainTurn(
+            guildId,
+            {
+                bigBrain: {
+                    requested: true,
+                    reason: 'Need accurate technical specifications.'
+                }
+            },
+            { transcript: 'Jensen: Tell me the technical details.' }
+        );
+
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        if (!result.dispatched || !sentChat?.options?.idempotencyKey) {
+            throw new Error(`bigBrain dispatch did not start: ${JSON.stringify({ result, sentChat })}`);
+        }
+        if (!ambientStarted) {
+            throw new Error('Ambient bed did not start after bigBrain dispatch');
+        }
+        if (!bot.bigBrainAmbientBeds.has(guildId)) {
+            throw new Error('Ambient bed was not tracked while bigBrain was pending');
+        }
+
+        bot.cleanupPendingBigBrain(result.runId);
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        if (!ambientStopped) {
+            throw new Error('Ambient bed playback was not stopped when the run cleaned up');
+        }
+        if (bot.bigBrainAmbientBeds.has(guildId)) {
+            throw new Error('Ambient bed state was not cleared after cleanup');
+        }
+
+        console.log('  bigBrain ambient bed starts after dispatch and stops with the pending run');
+        passed++;
+    } catch (error) {
+        console.log(`  bigBrain ambient bed handling failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 7e: Generator fallback is honest and transcripted');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-fallback';
