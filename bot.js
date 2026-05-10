@@ -202,6 +202,7 @@ class AlphaClawdVoiceBot {
         // Set up WebSocket event handlers
         this.wsClient.on('response', (response) => this.handleWsResponse(response));
         this.wsClient.on('chatEvent', (event) => this.handleWsChatEvent(event));
+        this.wsClient.on('agentEvent', (event) => this.handleWsAgentEvent(event));
         this.wsClient.on('error', (error) => console.error('[Bot] WebSocket error:', error));
         this.wsClient.on('disconnected', () => console.log('[Bot] WebSocket disconnected'));
 
@@ -1930,6 +1931,32 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    stageBigBrainFailure(runId, rawError, source = 'gateway') {
+        const pending = runId ? this.pendingBigBrainResponses.get(runId) : null;
+        if (!pending) {
+            return false;
+        }
+
+        const errorText = String(rawError || 'Open Claw did not provide an error message.').trim();
+        const conciseError = errorText.length > 500
+            ? `${errorText.slice(0, 497)}...`
+            : errorText;
+
+        try {
+            if (this.recordingState.get(pending.guildId) === this.RecordingState.RECORDING) {
+                const stagedText = `Open Claw could not complete the bigBrain request. ${conciseError}`;
+                this.stageBigBrainResponse(pending.guildId, pending, stagedText);
+                console.warn(`[Bot] bigBrain ${source} failure staged runId=${runId}: ${conciseError}`);
+            } else {
+                console.warn(`[Bot] bigBrain ${source} failure for ${runId} after recording ended: ${conciseError}`);
+            }
+        } finally {
+            this.cleanupPendingBigBrain(runId);
+        }
+
+        return true;
+    }
+
     handleWsChatEvent(event) {
         if (this.useGatewayGenerator()) {
             return;
@@ -1940,7 +1967,36 @@ class AlphaClawdVoiceBot {
         }
 
         console.warn(`[Bot] bigBrain run ${event.runId} ended with state=${event.state}: ${event.errorMessage || event.stopReason || 'no details'}`);
-        this.cleanupPendingBigBrain(event.runId);
+        this.stageBigBrainFailure(
+            event.runId,
+            event.errorMessage || event.stopReason || `Gateway chat state ${event.state}`,
+            'chat'
+        );
+    }
+
+    handleWsAgentEvent(event) {
+        if (this.useGatewayGenerator()) {
+            return;
+        }
+
+        const runId = event?.runId;
+        if (!runId || !this.pendingBigBrainResponses.has(runId)) {
+            return;
+        }
+
+        const data = event.data && typeof event.data === 'object' ? event.data : {};
+        const lifecyclePhase = event.stream === 'lifecycle' && typeof data.phase === 'string'
+            ? data.phase
+            : null;
+        if (lifecyclePhase !== 'error') {
+            return;
+        }
+
+        this.stageBigBrainFailure(
+            runId,
+            data.error || data.reason || 'Gateway agent lifecycle error',
+            'agent'
+        );
     }
 
     async speakDirectGeneratorResponse(guildId, response, options = {}) {

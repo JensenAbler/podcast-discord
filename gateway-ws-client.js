@@ -254,6 +254,11 @@ class GatewayWsClient extends EventEmitter {
                 return;
             }
 
+            if (message.type === 'event' && message.event === 'agent') {
+                this.handleAgentEvent(message.payload);
+                return;
+            }
+
             // Handle responses to our requests
             if (message.type === 'res' && message.id) {
                 const pending = this.pendingRequests.get(message.id);
@@ -278,6 +283,28 @@ class GatewayWsClient extends EventEmitter {
         } catch (error) {
             console.error('[GatewayWsClient] Error parsing message:', error);
         }
+    }
+
+    /**
+     * Handle lower-level agent lifecycle events.
+     *
+     * Gateway normally projects chat.send runs into chat events, but some
+     * failure paths surface first as agent lifecycle events. Expose them so
+     * callers can clear pending handoffs promptly instead of waiting for a
+     * long safety timeout.
+     */
+    handleAgentEvent(payload) {
+        if (!payload) {
+            return;
+        }
+
+        this.emit('agentEvent', {
+            runId: payload.runId,
+            sessionKey: payload.sessionKey,
+            stream: payload.stream,
+            seq: payload.seq,
+            data: payload.data
+        });
     }
 
     /**

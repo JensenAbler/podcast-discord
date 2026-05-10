@@ -211,6 +211,29 @@ async function runTests() {
             throw new Error('chat.inject should be enabled when operator.admin is configured');
         }
 
+        let agentEvent = null;
+        wsClient.on('agentEvent', (event) => {
+            agentEvent = event;
+        });
+        wsClient.handleMessage(Buffer.from(JSON.stringify({
+            type: 'event',
+            event: 'agent',
+            payload: {
+                runId: 'run-agent-error',
+                sessionKey: 'agent:main:main',
+                stream: 'lifecycle',
+                seq: 4,
+                data: { phase: 'error', error: 'usage limit' }
+            }
+        })));
+        if (
+            agentEvent?.runId !== 'run-agent-error' ||
+            agentEvent?.stream !== 'lifecycle' ||
+            agentEvent?.data?.error !== 'usage limit'
+        ) {
+            throw new Error(`Gateway client did not emit agent lifecycle event: ${JSON.stringify(agentEvent)}`);
+        }
+
         fs.rmSync(identityDir, { recursive: true, force: true });
         console.log('  Gateway client signs device auth and gates admin-only injection');
         passed++;
@@ -1493,7 +1516,61 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7c: Generator fallback is honest and transcripted');
+    console.log('\nTest 7c: bigBrain agent errors stage a failure for generator integration');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-bigbrain-agent-error';
+        const runId = 'discord-bigbrain-agent-error';
+
+        bot.generatorMode = 'direct';
+        bot.pendingBigBrainResponses = new Map([[
+            runId,
+            {
+                guildId,
+                runId,
+                reason: 'Need the latest market price for GameStop stock.',
+                transcript: 'Jensen: Look up the price of GameStop stock.',
+                requestedAt: '2026-05-09T00:00:00.000Z',
+                sessionKey: 'agent:main:main'
+            }
+        ]]);
+        bot.stagedBigBrainResponses = new Map();
+        bot.RecordingState = { RECORDING: 'RECORDING' };
+        bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
+
+        bot.handleWsAgentEvent({
+            runId,
+            sessionKey: 'agent:main:main',
+            stream: 'lifecycle',
+            data: {
+                phase: 'error',
+                error: 'You have hit your ChatGPT usage limit. Try again later.'
+            }
+        });
+
+        if (bot.pendingBigBrainResponses.has(runId)) {
+            throw new Error('Failed bigBrain agent run was not cleared from pending state');
+        }
+
+        const staged = bot.stagedBigBrainResponses.get(guildId);
+        if (
+            !staged ||
+            staged.length !== 1 ||
+            staged[0].runId !== runId ||
+            !staged[0].answer.includes('Open Claw could not complete the bigBrain request') ||
+            !staged[0].answer.includes('ChatGPT usage limit')
+        ) {
+            throw new Error(`Agent error was not staged for generator integration: ${JSON.stringify(staged)}`);
+        }
+
+        console.log('  bigBrain agent lifecycle errors are staged instead of waiting for timeout');
+        passed++;
+    } catch (error) {
+        console.log(`  bigBrain agent error handling failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 7d: Generator fallback is honest and transcripted');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-fallback';
