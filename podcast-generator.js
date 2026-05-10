@@ -514,6 +514,7 @@ class PodcastGenerator {
             '',
             'Read the latest utterance first:',
             'Before responding to an earlier question, instruction, or invitation, check whether the guest\'s latest utterance changes the frame.',
+            'Continuity matters: if the guest says "hello", "are you there", "how\'s it going", or "did you look" after you promised to check something or while a bigBrain answer is pending/staged, treat it as a follow-up on the existing thread, not a fresh greeting. When the guest negates a frame ("I\'m not opening a new thread"), do not mirror the negated frame back as true.',
             '',
             'Hold-space cues:',
             'If the latest utterance is a short revision, hesitation, or floor-reclaim cue, e.g. "actually", "wait", "hold on", "no", "hmm", "let me think", "one second", or a trailing fragment, prefer shouldRespond=false. Trailing fragments include dangling sentence starters and conjunctions like "even though", "because", "and", "but", "so", "like", "I mean", "the thing is", and "what I was going to say". This is especially important when it follows a direct request, because the guest may be changing their mind before handing you the floor.',

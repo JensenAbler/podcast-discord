@@ -124,7 +124,7 @@ class AlphaClawdVoiceBot {
             : process.env.PODCAST_BIG_BRAIN_AMBIENT_ENABLED !== 'false';
         this.bigBrainAmbientStartDelayMs = Number(process.env.PODCAST_BIG_BRAIN_AMBIENT_START_DELAY_MS || 1200);
         this.bigBrainAmbientChunkMs = Number(process.env.PODCAST_BIG_BRAIN_AMBIENT_CHUNK_MS || 6000);
-        this.bigBrainAmbientVolume = Number(process.env.PODCAST_BIG_BRAIN_AMBIENT_VOLUME || 0.28);
+        this.bigBrainAmbientVolume = Number(process.env.PODCAST_BIG_BRAIN_AMBIENT_VOLUME || 0.56);
         this.bigBrainAmbientBeds = new Map(); // guildId -> cancellable pending ambience playback
         this.bigBrainAmbientBedBuffer = options.bigBrainAmbientBedBuffer || null;
         this.bigBrainAmbientBedPromise = null;
@@ -286,7 +286,6 @@ class AlphaClawdVoiceBot {
         // Set up speaking start/stop handlers to prevent buffer flush while user is speaking
         this.voiceManager.setSpeakingStartHandler((guildId, userId) => {
             this.stopBigBrainToolTone(guildId, 'participant started speaking');
-            this.stopBigBrainAmbientBed(guildId, 'participant started speaking');
             console.log(`[Bot] User ${userId} started speaking, pausing buffer flush`);
             this.markProvisionalParticipantActivity(guildId, userId, 'speaking start');
             this.conversationBuffer.setUserSpeaking(userId, true);
@@ -588,14 +587,16 @@ class AlphaClawdVoiceBot {
                 participantActivityBaseline
             });
             const finalResponse = playbackResult?.finalResponse || response;
-            if (playbackResult?.played && finalResponse.bigBrain?.requested) {
-                await this.dispatchBigBrainTurn(guildId, finalResponse, {
-                    source: 'idle',
-                    transcript: '',
-                    participantActivityBaseline: this.getParticipantActivityVersion(guildId)
-                });
+            if (playbackResult?.played) {
+                if (finalResponse.bigBrain?.requested) {
+                    await this.dispatchBigBrainTurn(guildId, finalResponse, {
+                        source: 'idle',
+                        transcript: '',
+                        participantActivityBaseline: this.getParticipantActivityVersion(guildId)
+                    });
+                }
+                this.consumeStagedBigBrainFromResponse(guildId, finalResponse);
             }
-            this.consumeStagedBigBrainFromResponse(guildId, finalResponse);
         } catch (error) {
             console.error('[Bot] Idle generator failed:', error);
         } finally {
@@ -1753,7 +1754,7 @@ class AlphaClawdVoiceBot {
         const volume = Number(this.bigBrainAmbientVolume);
         return Number.isFinite(volume)
             ? Math.max(0, Math.min(1, volume))
-            : 0.28;
+            : 0.56;
     }
 
     async getBigBrainAmbientBedBuffer() {
@@ -1852,7 +1853,7 @@ class AlphaClawdVoiceBot {
         );
     }
 
-    startBigBrainAmbientBed(guildId, pending) {
+    startBigBrainAmbientBed(guildId, pending, options = {}) {
         if (!this.bigBrainAmbientEnabled || !guildId || !pending?.runId) {
             return false;
         }
@@ -1872,7 +1873,10 @@ class AlphaClawdVoiceBot {
         };
         this.bigBrainAmbientBeds.set(guildId, bed);
 
-        const delayMs = this.getBigBrainAmbientStartDelayMs();
+        const overrideDelayMs = Number(options.delayMs);
+        const delayMs = Number.isFinite(overrideDelayMs)
+            ? Math.max(0, overrideDelayMs)
+            : this.getBigBrainAmbientStartDelayMs();
         const startPlayback = () => {
             bed.timer = null;
             this.playBigBrainAmbientChunk(guildId, bed).catch((error) => {
@@ -1900,10 +1904,6 @@ class AlphaClawdVoiceBot {
         }
         if (this.recordingState.get(guildId) !== this.RecordingState.RECORDING) {
             this.stopBigBrainAmbientBed(guildId, 'recording ended', { runId: bed.runId });
-            return;
-        }
-        if (this.hasCurrentParticipantFloor(guildId)) {
-            this.stopBigBrainAmbientBed(guildId, 'participant floor active', { runId: bed.runId });
             return;
         }
 
@@ -2269,8 +2269,17 @@ class AlphaClawdVoiceBot {
         }
 
         if (!state.stopped && this.pendingBigBrainResponses?.has?.(pending.runId)) {
-            this.startBigBrainAmbientBed(guildId, pending);
+            this.startBigBrainAmbientBed(guildId, pending, { delayMs: 0 });
         }
+    }
+
+    shouldResumeAmbientAfterToolToneStop(reason = 'stopped') {
+        return ![
+            'bigBrain response staged',
+            'bigBrain run cleaned up',
+            'host response starting',
+            'idle loop stopped'
+        ].includes(reason);
     }
 
     stopBigBrainToolTone(guildId, reason = 'stopped', options = {}) {
@@ -2289,6 +2298,12 @@ class AlphaClawdVoiceBot {
         }
 
         console.log(`[Bot] bigBrain tool tone stopped runId=${state.runId} (${reason})`);
+        if (this.shouldResumeAmbientAfterToolToneStop(reason)) {
+            const pending = this.pendingBigBrainResponses?.get?.(state.runId);
+            if (pending?.guildId === guildId) {
+                this.startBigBrainAmbientBed(guildId, pending, { delayMs: 0 });
+            }
+        }
         return true;
     }
 

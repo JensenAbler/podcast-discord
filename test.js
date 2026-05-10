@@ -1416,7 +1416,76 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7b: Stale host stall still dispatches bigBrain');
+    console.log('\nTest 7b: Staged bigBrain survives stale idle response');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-stale-idle-bigbrain';
+        const runId = 'discord-bigbrain-staged-stale-idle';
+        let generatedWithStaged = false;
+
+        bot.generatorMode = 'direct';
+        bot.RecordingState = { RECORDING: 'RECORDING' };
+        bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
+        bot.lastParticipantSpeechAt = new Map([[guildId, Date.now() - 15000]]);
+        bot.idleDecisionHandledSpeechAt = new Map();
+        bot.idleDecisionInFlight = new Set();
+        bot.directResponseInFlight = new Set();
+        bot.participantActivityVersion = new Map([[guildId, 0]]);
+        bot.stagedBigBrainResponses = new Map([[guildId, [{
+            runId,
+            reason: 'Need filesystem details.',
+            transcript: 'Jensen: Do you want to organize your filesystem?',
+            answer: 'A cleaner top-level project index would help.',
+            requestedAt: '2026-05-10T00:00:00.000Z',
+            answeredAt: '2026-05-10T00:00:05.000Z'
+        }]]]);
+        bot.conversationBuffer = {
+            getState: () => ({
+                state: BufferState.IDLE,
+                utteranceCount: 0,
+                activeSpeakerCount: 0,
+                endpointingSpeakerCount: 0,
+                pendingAsrCount: 0,
+                activeSpeakers: []
+            })
+        };
+        bot.voiceManager = {
+            getPlaybackStatus: () => ({ isPlaying: false, queueLength: 0 })
+        };
+        bot.podcastGenerator = {
+            generate: async (input) => {
+                generatedWithStaged = input.stagedBigBrain?.[0]?.runId === runId;
+                return {
+                    shouldRespond: true,
+                    speech: 'A cleaner top-level project index would help.',
+                    bigBrain: { requested: false, reason: '', consumedRunId: runId }
+                };
+            }
+        };
+        bot.speakDirectGeneratorResponse = async (_guildId, response) => ({
+            played: false,
+            stale: true,
+            finalResponse: response
+        });
+
+        await bot.handleIdleDecisionTick(guildId);
+
+        const staged = bot.stagedBigBrainResponses.get(guildId);
+        if (!generatedWithStaged) {
+            throw new Error('Idle generator did not receive staged bigBrain answer');
+        }
+        if (!staged || staged.length !== 1 || staged[0].runId !== runId) {
+            throw new Error(`Staged bigBrain was consumed by a stale idle response: ${JSON.stringify(staged)}`);
+        }
+
+        console.log('  Staged bigBrain remains on deck when idle playback goes stale');
+        passed++;
+    } catch (error) {
+        console.log(`  Stale idle bigBrain preservation failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 7c: Stale host stall still dispatches bigBrain');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-stale-bigbrain';
@@ -1522,7 +1591,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7c: Bare explicit bigBrain cues wait for the actual question');
+    console.log('\nTest 7d: Bare explicit bigBrain cues wait for the actual question');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-incomplete-bigbrain';
@@ -1604,7 +1673,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7d: bigBrain agent errors stage a failure for generator integration');
+    console.log('\nTest 7e: bigBrain agent errors stage a failure for generator integration');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-bigbrain-agent-error';
@@ -1658,7 +1727,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7e: bigBrain ambient bed plays during a pending handoff and stops on cleanup');
+    console.log('\nTest 7f: bigBrain ambient bed plays during a pending handoff and stops on cleanup');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-bigbrain-ambient';
@@ -1666,6 +1735,11 @@ async function runTests() {
         let ambientStarted = false;
         let ambientStopped = false;
         let finishAmbient = null;
+
+        const defaultVolumeBot = Object.create(AlphaClawdVoiceBot.prototype);
+        if (defaultVolumeBot.getBigBrainAmbientVolume() !== 0.56) {
+            throw new Error(`Default ambient bed volume should be 0.56: ${defaultVolumeBot.getBigBrainAmbientVolume()}`);
+        }
 
         bot.bigBrainEnabled = true;
         bot.bigBrainAmbientEnabled = true;
@@ -1688,7 +1762,7 @@ async function runTests() {
         bot.podcastGenerator = {
             formatUtterances: () => 'Jensen: Tell me the technical details.'
         };
-        bot.hasCurrentParticipantFloor = () => false;
+        bot.hasCurrentParticipantFloor = () => true;
         bot.getBigBrainAmbientBedBuffer = async () => Buffer.from('ambient-bed-audio');
         bot.voiceManager = {
             getPlaybackStatus: () => ({ isPlaying: false, queueLength: 0 }),
@@ -1740,7 +1814,7 @@ async function runTests() {
             throw new Error(`bigBrain dispatch did not start: ${JSON.stringify({ result, sentChat })}`);
         }
         if (!ambientStarted) {
-            throw new Error('Ambient bed did not start after bigBrain dispatch');
+            throw new Error('Ambient bed did not start after bigBrain dispatch, even with participant floor active');
         }
         if (!bot.bigBrainAmbientBeds.has(guildId)) {
             throw new Error('Ambient bed was not tracked while bigBrain was pending');
@@ -1763,13 +1837,13 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7f: bigBrain tool events play pentatonic cues and resume the ambient bed');
+    console.log('\nTest 7g: bigBrain tool events play pentatonic cues and resume the ambient bed');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-bigbrain-tools';
         const runId = 'discord-bigbrain-tool-tone';
         let stoppedAmbient = null;
-        let resumedAmbient = false;
+        let resumedAmbient = null;
         let toneRequest = null;
         let playedTone = null;
         let recordedTone = null;
@@ -1800,8 +1874,8 @@ async function runTests() {
             stoppedAmbient = { reason, runId: options.runId };
             return true;
         };
-        bot.startBigBrainAmbientBed = (_guildId, pending) => {
-            resumedAmbient = pending?.runId === runId;
+        bot.startBigBrainAmbientBed = (_guildId, pending, options = {}) => {
+            resumedAmbient = { runId: pending?.runId, delayMs: options.delayMs };
             return true;
         };
         bot.getBigBrainToolToneBuffer = async (tone) => {
@@ -1867,12 +1941,12 @@ async function runTests() {
         if (recordedTone?.audio !== 'tool-tone-audio' || recordedTone?.volume !== 0.33) {
             throw new Error(`Tool tone was not captured for the mix: ${JSON.stringify(recordedTone)}`);
         }
-        if (!resumedAmbient) {
-            throw new Error('Ambient bed did not resume while the bigBrain run remained pending');
+        if (resumedAmbient?.runId !== runId || resumedAmbient?.delayMs !== 0) {
+            throw new Error(`Ambient bed did not immediately resume while the bigBrain run remained pending: ${JSON.stringify(resumedAmbient)}`);
         }
 
         stoppedAmbient = null;
-        resumedAmbient = false;
+        resumedAmbient = null;
         toneRequest = null;
         playedTone = null;
         recordedTone = null;
@@ -1895,6 +1969,54 @@ async function runTests() {
             throw new Error(`Agent activity fallback tone was not played and recorded: ${JSON.stringify({ playedTone, recordedTone })}`);
         }
 
+        stoppedAmbient = null;
+        resumedAmbient = null;
+        toneRequest = null;
+        playedTone = null;
+        recordedTone = null;
+        let finishInterruptedTone = null;
+        bot.voiceManager.speakWithTiming = async (_guildId, audio, options) => {
+            playedTone = {
+                audio: audio.toString(),
+                volume: options.volume,
+                inputType: options.inputType
+            };
+            options.onStart?.({ playbackStartedAt: '2026-05-09T00:00:03.000Z' });
+            return {
+                timing: {
+                    playbackRequestedAt: '2026-05-09T00:00:02.900Z',
+                    playbackStartedAt: '2026-05-09T00:00:03.000Z',
+                    playbackEndedAt: null
+                },
+                finished: new Promise((resolve) => {
+                    finishInterruptedTone = () => resolve({
+                        playbackStartedAt: '2026-05-09T00:00:03.000Z',
+                        playbackEndedAt: '2026-05-09T00:00:03.050Z'
+                    });
+                })
+            };
+        };
+
+        bot.handleWsAgentEvent({
+            runId,
+            sessionKey: 'agent:main:main',
+            stream: 'tool',
+            data: {
+                phase: 'update',
+                name: 'file_read',
+                toolCallId: 'tool-2'
+            }
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 30));
+        bot.stopBigBrainToolTone(guildId, 'participant started speaking', { runId });
+        finishInterruptedTone?.();
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        if (resumedAmbient?.runId !== runId || resumedAmbient?.delayMs !== 0) {
+            throw new Error(`Ambient bed did not resume after participant interrupted a tool tone: ${JSON.stringify(resumedAmbient)}`);
+        }
+
         console.log('  bigBrain tool and agent activity events sonify as short pentatonic cues');
         passed++;
     } catch (error) {
@@ -1902,7 +2024,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7g: Generator fallback is honest and transcripted');
+    console.log('\nTest 7h: Generator fallback is honest and transcripted');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-fallback';
