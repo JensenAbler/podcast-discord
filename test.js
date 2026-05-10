@@ -1675,7 +1675,121 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7e: Generator fallback is honest and transcripted');
+    console.log('\nTest 7e: bigBrain tool events play pentatonic cues and resume the ambient bed');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-bigbrain-tools';
+        const runId = 'discord-bigbrain-tool-tone';
+        let stoppedAmbient = null;
+        let resumedAmbient = false;
+        let toneRequest = null;
+        let playedTone = null;
+        let recordedTone = null;
+
+        bot.bigBrainToolSonificationEnabled = true;
+        bot.bigBrainToolToneMs = 120;
+        bot.bigBrainToolToneVolume = 0.33;
+        bot.bigBrainToolToneCooldownMs = 0;
+        bot.bigBrainToolToneBuffers = new Map();
+        bot.bigBrainToolToneActive = new Map();
+        bot.bigBrainToolToneLastAt = new Map();
+        bot.pendingBigBrainResponses = new Map([[
+            runId,
+            {
+                guildId,
+                runId,
+                reason: 'Need tool help.',
+                transcript: 'Jensen: Look this up.',
+                requestedAt: '2026-05-09T00:00:00.000Z',
+                sessionKey: 'agent:main:main'
+            }
+        ]]);
+        bot.RecordingState = { RECORDING: 'RECORDING' };
+        bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
+        bot.hasCurrentParticipantFloor = () => false;
+        bot.stopBigBrainAmbientBed = (_guildId, reason, options = {}) => {
+            stoppedAmbient = { reason, runId: options.runId };
+            return true;
+        };
+        bot.startBigBrainAmbientBed = (_guildId, pending) => {
+            resumedAmbient = pending?.runId === runId;
+            return true;
+        };
+        bot.getBigBrainToolToneBuffer = async (tone) => {
+            toneRequest = tone;
+            return Buffer.from('tool-tone-audio');
+        };
+        bot.voiceManager = {
+            speakWithTiming: async (_guildId, audio, options) => {
+                playedTone = {
+                    audio: audio.toString(),
+                    volume: options.volume,
+                    inputType: options.inputType
+                };
+                options.onStart?.({ playbackStartedAt: '2026-05-09T00:00:02.000Z' });
+                return {
+                    timing: {
+                        playbackRequestedAt: '2026-05-09T00:00:01.900Z',
+                        playbackStartedAt: '2026-05-09T00:00:02.000Z',
+                        playbackEndedAt: null
+                    },
+                    finished: Promise.resolve({
+                        playbackStartedAt: '2026-05-09T00:00:02.000Z',
+                        playbackEndedAt: '2026-05-09T00:00:02.120Z'
+                    })
+                };
+            },
+            addBotAudioToRecording: (_guildId, audio, options) => {
+                recordedTone = {
+                    audio: audio.toString(),
+                    startTime: options.startTime,
+                    volume: options.volume
+                };
+            },
+            stopPlayback: () => true
+        };
+
+        bot.handleWsAgentEvent({
+            runId,
+            sessionKey: 'agent:main:main',
+            stream: 'tool',
+            data: {
+                phase: 'start',
+                name: 'web_fetch',
+                toolCallId: 'tool-1'
+            }
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 30));
+
+        const pentatonic = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25];
+        if (toneRequest?.toolName !== 'web_fetch' || toneRequest?.phase !== 'start') {
+            throw new Error(`Tool tone was not resolved from the Gateway event: ${JSON.stringify(toneRequest)}`);
+        }
+        if (!pentatonic.includes(toneRequest.frequency)) {
+            throw new Error(`Tool tone frequency is not pentatonic: ${toneRequest.frequency}`);
+        }
+        if (stoppedAmbient?.reason !== 'tool tone starting' || stoppedAmbient?.runId !== runId) {
+            throw new Error(`Ambient bed was not stopped for the tool cue: ${JSON.stringify(stoppedAmbient)}`);
+        }
+        if (playedTone?.audio !== 'tool-tone-audio' || playedTone?.volume !== 0.33) {
+            throw new Error(`Tool tone was not played with expected options: ${JSON.stringify(playedTone)}`);
+        }
+        if (recordedTone?.audio !== 'tool-tone-audio' || recordedTone?.volume !== 0.33) {
+            throw new Error(`Tool tone was not captured for the mix: ${JSON.stringify(recordedTone)}`);
+        }
+        if (!resumedAmbient) {
+            throw new Error('Ambient bed did not resume while the bigBrain run remained pending');
+        }
+
+        console.log('  bigBrain tool lifecycle events sonify as short pentatonic cues');
+        passed++;
+    } catch (error) {
+        console.log(`  bigBrain tool sonification failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 7f: Generator fallback is honest and transcripted');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-fallback';
