@@ -2340,9 +2340,61 @@ class AlphaClawdVoiceBot {
         return true;
     }
 
-    buildBigBrainPrompt(response, options = {}) {
+    resolveBigBrainTranscript(options = {}) {
         const transcript = String(options.transcript || '').trim()
             || this.podcastGenerator?.formatUtterances?.(options.utterances || [])
+            || '';
+        return String(transcript || '').trim();
+    }
+
+    normalizeBigBrainRequestText(value) {
+        return String(value || '')
+            .replace(/^\s*[^:\n]{1,40}:\s*/gm, ' ')
+            .replace(/\bhey\s+alpha\s+claude\b/gi, ' ')
+            .replace(/\balpha[-\s]?clawd\b/gi, ' ')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    getMeaningfulBigBrainRequestTokens(value) {
+        const normalized = this.normalizeBigBrainRequestText(value);
+        if (!normalized) {
+            return [];
+        }
+
+        const stopWords = new Set([
+            'a', 'about', 'ah', 'an', 'and', 'ask', 'asked', 'asking', 'big', 'bigbrain',
+            'brain', 'can', 'check', 'claw', 'clawd', 'could', 'do', 'er', 'for',
+            'from', 'get', 'give', 'guest', 'handoff', 'here', 'hey', 'i', 'in',
+            'info', 'information', 'it', 'just', 'kind', 'kinds', 'let', 'lets',
+            'like', 'look', 'lookup', 'me', 'my', 'need', 'needs', 'of', 'on',
+            'open', 'please', 'request', 'requested', 'said', 'says', 'should',
+            'sort', 'sorts', 'that', 'the', 'there', 'this', 'to', 'told', 'uh',
+            'um', 'up', 'use', 'using', 'verify', 'want', 'will', 'with', 'would',
+            'you', 'your'
+        ]);
+
+        return normalized
+            .split(/\s+/)
+            .filter((token) => token && !stopWords.has(token));
+    }
+
+    shouldDeferIncompleteBigBrainRequest(response, options = {}) {
+        const transcript = this.resolveBigBrainTranscript(options);
+        const normalizedTranscript = this.normalizeBigBrainRequestText(transcript);
+        if (!/\b(?:big\s+brain|bigbrain|open\s+claw)\b/.test(normalizedTranscript)) {
+            return false;
+        }
+
+        const transcriptTokens = this.getMeaningfulBigBrainRequestTokens(transcript);
+        const reasonTokens = this.getMeaningfulBigBrainRequestTokens(response?.bigBrain?.reason || '');
+        return transcriptTokens.length < 2 && reasonTokens.length < 2;
+    }
+
+    buildBigBrainPrompt(response, options = {}) {
+        const transcript = this.resolveBigBrainTranscript(options)
             || '(no transcript text captured)';
         const reason = String(response?.bigBrain?.reason || '').trim()
             || 'The small live host model requested deeper help.';
@@ -2408,6 +2460,13 @@ class AlphaClawdVoiceBot {
             return { dispatched: false, reason: 'gateway_unavailable' };
         }
 
+        const transcript = this.resolveBigBrainTranscript(options);
+        if (this.shouldDeferIncompleteBigBrainRequest(response, { ...options, transcript })) {
+            const preview = transcript.replace(/\s+/g, ' ').slice(0, 160);
+            console.log(`[Bot] bigBrain request deferred until the guest's specific question is clear. reason="${reason}", transcript="${preview}"`);
+            return { dispatched: false, reason: 'incomplete_request' };
+        }
+
         const existing = Array.from(this.pendingBigBrainResponses.values())
             .find((pending) => pending.guildId === guildId);
         if (existing) {
@@ -2419,12 +2478,12 @@ class AlphaClawdVoiceBot {
         const timeoutMs = Number.isFinite(this.bigBrainTimeoutMs)
             ? Math.max(1000, this.bigBrainTimeoutMs)
             : 180000;
-        const prompt = this.buildBigBrainGatewayMessage(this.buildBigBrainPrompt(response, options));
+        const prompt = this.buildBigBrainGatewayMessage(this.buildBigBrainPrompt(response, { ...options, transcript }));
         const pending = {
             guildId,
             runId,
             reason,
-            transcript: options.transcript || '',
+            transcript,
             requestedAt: new Date().toISOString(),
             participantActivityBaseline: Number.isFinite(options.participantActivityBaseline)
                 ? options.participantActivityBaseline

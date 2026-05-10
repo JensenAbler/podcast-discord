@@ -1522,7 +1522,89 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7c: bigBrain agent errors stage a failure for generator integration');
+    console.log('\nTest 7c: Bare explicit bigBrain cues wait for the actual question');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-incomplete-bigbrain';
+        const sentChats = [];
+
+        bot.bigBrainEnabled = true;
+        bot.bigBrainTimeoutMs = 1000;
+        bot.bigBrainThinking = 'high';
+        bot.pendingBigBrainResponses = new Map();
+        bot.participantActivityVersion = new Map([[guildId, 0]]);
+        bot.wsClient = {
+            isAuthenticated: true,
+            sessionKey: 'agent:main:main',
+            sendChat: async (message, options) => {
+                sentChats.push({ message, options });
+                return { runId: options.idempotencyKey, status: 'started' };
+            }
+        };
+        bot.podcastGenerator = {
+            formatUtterances: (utterances) => utterances
+                .map(u => `${u.speaker}: ${u.transcription}`)
+                .join('\n')
+        };
+
+        const vagueResult = await bot.dispatchBigBrainTurn(
+            guildId,
+            {
+                bigBrain: {
+                    requested: true,
+                    reason: 'Guest asked to ask Big Brain for information.'
+                }
+            },
+            {
+                source: 'buffer-stale',
+                utterances: [
+                    { speaker: 'Jensen', transcription: 'Can you please?' },
+                    { speaker: 'Jensen', transcription: 'Ask Big Brain.' }
+                ]
+            }
+        );
+
+        if (vagueResult.dispatched || vagueResult.reason !== 'incomplete_request') {
+            throw new Error(`Bare cue should be deferred, got ${JSON.stringify(vagueResult)}`);
+        }
+        if (sentChats.length !== 0 || bot.pendingBigBrainResponses.size !== 0) {
+            throw new Error(`Bare cue dispatched or created pending state: ${JSON.stringify({ sentChats, pending: bot.pendingBigBrainResponses.size })}`);
+        }
+
+        const specificResult = await bot.dispatchBigBrainTurn(
+            guildId,
+            {
+                bigBrain: {
+                    requested: true,
+                    reason: 'Guest asked to ask Big Brain for information.'
+                }
+            },
+            {
+                source: 'buffer',
+                transcript: 'Jensen: Ask Big Brain what the NVIDIA stock price is.'
+            }
+        );
+
+        if (!specificResult.dispatched || sentChats.length !== 1) {
+            throw new Error(`Specific explicit cue should dispatch once, got ${JSON.stringify({ specificResult, sentChats })}`);
+        }
+        if (!sentChats[0].message.includes('Jensen: Ask Big Brain what the NVIDIA stock price is.')) {
+            throw new Error(`Specific dispatch prompt lost the actual question: ${sentChats[0].message}`);
+        }
+        if (!bot.pendingBigBrainResponses.has(specificResult.runId)) {
+            throw new Error(`Specific bigBrain run was not tracked: ${specificResult.runId}`);
+        }
+
+        bot.cleanupPendingBigBrain(specificResult.runId);
+
+        console.log('  Bare handoff cues are deferred, while specific Big Brain questions still dispatch');
+        passed++;
+    } catch (error) {
+        console.log(`  Incomplete bigBrain cue guard failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 7d: bigBrain agent errors stage a failure for generator integration');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-bigbrain-agent-error';
@@ -1576,7 +1658,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7d: bigBrain ambient bed plays during a pending handoff and stops on cleanup');
+    console.log('\nTest 7e: bigBrain ambient bed plays during a pending handoff and stops on cleanup');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-bigbrain-ambient';
@@ -1681,7 +1763,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7e: bigBrain tool events play pentatonic cues and resume the ambient bed');
+    console.log('\nTest 7f: bigBrain tool events play pentatonic cues and resume the ambient bed');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-bigbrain-tools';
@@ -1820,7 +1902,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7f: Generator fallback is honest and transcripted');
+    console.log('\nTest 7g: Generator fallback is honest and transcripted');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-fallback';
