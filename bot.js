@@ -131,8 +131,11 @@ class AlphaClawdVoiceBot {
         this.bigBrainToolSonificationEnabled = options.bigBrainToolSonificationEnabled !== undefined
             ? Boolean(options.bigBrainToolSonificationEnabled)
             : process.env.PODCAST_BIG_BRAIN_TOOL_SONIFICATION_ENABLED !== 'false';
-        this.bigBrainToolToneMs = Number(process.env.PODCAST_BIG_BRAIN_TOOL_TONE_MS || 240);
-        this.bigBrainToolToneVolume = Number(process.env.PODCAST_BIG_BRAIN_TOOL_TONE_VOLUME || 0.42);
+        this.bigBrainAgentActivitySonificationEnabled = options.bigBrainAgentActivitySonificationEnabled !== undefined
+            ? Boolean(options.bigBrainAgentActivitySonificationEnabled)
+            : process.env.PODCAST_BIG_BRAIN_AGENT_ACTIVITY_SONIFICATION_ENABLED !== 'false';
+        this.bigBrainToolToneMs = Number(process.env.PODCAST_BIG_BRAIN_TOOL_TONE_MS || 420);
+        this.bigBrainToolToneVolume = Number(process.env.PODCAST_BIG_BRAIN_TOOL_TONE_VOLUME || 0.72);
         this.bigBrainToolToneCooldownMs = Number(process.env.PODCAST_BIG_BRAIN_TOOL_TONE_COOLDOWN_MS || 450);
         this.bigBrainToolToneBuffers = new Map(); // tone key -> generated MP3
         this.bigBrainToolToneActive = new Map(); // guildId -> active cue playback
@@ -2035,24 +2038,65 @@ class AlphaClawdVoiceBot {
 
         const data = event.data && typeof event.data === 'object' ? event.data : {};
         const phase = String(data.phase || '').trim().toLowerCase();
-        if (!['start', 'result', 'end', 'error'].includes(phase)) {
+        if (!['start', 'update', 'result', 'end', 'error'].includes(phase)) {
             return null;
         }
 
         const toolName = String(data.name || data.toolName || data.tool || 'tool').trim() || 'tool';
         const isError = phase === 'error' || data.isError === true;
         const baseIndex = this.hashToolToneName(toolName) % 5;
-        const phaseOffset = phase === 'start' ? 0 : 2;
+        const phaseOffset = phase === 'start' ? 0 : phase === 'update' ? 1 : 2;
         const scaleIndex = isError ? 1 : baseIndex + phaseOffset;
 
         return {
-            key: `${phase}:${isError ? 'error' : 'ok'}:${scaleIndex}`,
+            key: `tool:${phase}:${isError ? 'error' : 'ok'}:${scaleIndex}`,
             frequency: this.getPentatonicFrequency(scaleIndex),
             phase,
             isError,
             toolName,
-            toolCallId: String(data.toolCallId || data.id || '')
+            toolCallId: String(data.toolCallId || data.id || ''),
+            toneType: 'tool',
+            sourceStream: 'tool'
         };
+    }
+
+    resolveBigBrainAgentActivityTone(event) {
+        if (
+            !this.bigBrainToolSonificationEnabled ||
+            !this.bigBrainAgentActivitySonificationEnabled ||
+            event?.stream === 'tool'
+        ) {
+            return null;
+        }
+
+        const sourceStream = String(event?.stream || '').trim().toLowerCase();
+        if (!sourceStream || sourceStream === 'lifecycle') {
+            return null;
+        }
+
+        const data = event.data && typeof event.data === 'object' ? event.data : {};
+        const isError = sourceStream === 'error' || data.isError === true || data.phase === 'error';
+        const phase = isError ? 'error' : 'activity';
+        const toolName = String(data.name || data.toolName || data.tool || sourceStream || 'agent')
+            .trim() || 'agent';
+        const baseIndex = this.hashToolToneName(`${sourceStream}:${toolName}`) % 5;
+        const streamOffset = sourceStream === 'assistant' ? 3 : 1;
+        const scaleIndex = isError ? 1 : baseIndex + streamOffset;
+
+        return {
+            key: `agent:${sourceStream}:${phase}:${isError ? 'error' : 'ok'}:${scaleIndex}`,
+            frequency: this.getPentatonicFrequency(scaleIndex),
+            phase,
+            isError,
+            toolName,
+            toolCallId: '',
+            toneType: 'agent',
+            sourceStream
+        };
+    }
+
+    resolveBigBrainSonificationTone(event) {
+        return this.resolveBigBrainToolTone(event) || this.resolveBigBrainAgentActivityTone(event);
     }
 
     async getBigBrainToolToneBuffer(tone) {
@@ -2132,7 +2176,7 @@ class AlphaClawdVoiceBot {
     }
 
     sonifyBigBrainToolEvent(guildId, pending, event) {
-        const tone = this.resolveBigBrainToolTone(event);
+        const tone = this.resolveBigBrainSonificationTone(event);
         if (!tone || !pending?.runId) {
             return false;
         }
@@ -2197,7 +2241,11 @@ class AlphaClawdVoiceBot {
                 onStart: (timing) => {
                     const parsed = Date.parse(timing.playbackStartedAt);
                     playbackStartedMs = Number.isNaN(parsed) ? null : parsed;
-                    console.log(`[Bot] bigBrain tool tone ${tone.phase} runId=${pending.runId}, tool=${tone.toolName}`);
+                    const label = tone.toneType === 'tool' ? 'tool tone' : 'agent tone';
+                    const stream = tone.sourceStream && tone.sourceStream !== tone.toneType
+                        ? `, stream=${tone.sourceStream}`
+                        : '';
+                    console.log(`[Bot] bigBrain ${label} ${tone.phase} runId=${pending.runId}, tool=${tone.toolName}${stream}`);
                 }
             });
             await playback.finished;
@@ -2541,8 +2589,9 @@ class AlphaClawdVoiceBot {
             return;
         }
 
+        this.sonifyBigBrainToolEvent(pending.guildId, pending, event);
+
         if (event.stream === 'tool') {
-            this.sonifyBigBrainToolEvent(pending.guildId, pending, event);
             return;
         }
 

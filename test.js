@@ -1693,6 +1693,7 @@ async function runTests() {
         let recordedTone = null;
 
         bot.bigBrainToolSonificationEnabled = true;
+        bot.bigBrainAgentActivitySonificationEnabled = true;
         bot.bigBrainToolToneMs = 120;
         bot.bigBrainToolToneVolume = 0.33;
         bot.bigBrainToolToneCooldownMs = 0;
@@ -1788,7 +1789,31 @@ async function runTests() {
             throw new Error('Ambient bed did not resume while the bigBrain run remained pending');
         }
 
-        console.log('  bigBrain tool lifecycle events sonify as short pentatonic cues');
+        stoppedAmbient = null;
+        resumedAmbient = false;
+        toneRequest = null;
+        playedTone = null;
+        recordedTone = null;
+
+        bot.handleWsAgentEvent({
+            runId,
+            sessionKey: 'agent:main:main',
+            stream: 'assistant',
+            data: {
+                text: 'Working through the tool result.'
+            }
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 30));
+
+        if (toneRequest?.toneType !== 'agent' || toneRequest?.sourceStream !== 'assistant') {
+            throw new Error(`Assistant agent activity did not fall back to a tone: ${JSON.stringify(toneRequest)}`);
+        }
+        if (playedTone?.audio !== 'tool-tone-audio' || recordedTone?.audio !== 'tool-tone-audio') {
+            throw new Error(`Agent activity fallback tone was not played and recorded: ${JSON.stringify({ playedTone, recordedTone })}`);
+        }
+
+        console.log('  bigBrain tool and agent activity events sonify as short pentatonic cues');
         passed++;
     } catch (error) {
         console.log(`  bigBrain tool sonification failed: ${error.message}`);
