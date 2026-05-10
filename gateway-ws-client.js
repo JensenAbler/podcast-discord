@@ -298,6 +298,21 @@ class GatewayWsClient extends EventEmitter {
             return;
         }
 
+        if (payload.stream === 'tool' || payload.stream === 'lifecycle') {
+            const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
+            const details = [];
+            if (payload.stream) {
+                details.push(`stream=${payload.stream}`);
+            }
+            if (data.phase) {
+                details.push(`phase=${data.phase}`);
+            }
+            if (data.name || data.toolName || data.tool) {
+                details.push(`tool=${data.name || data.toolName || data.tool}`);
+            }
+            console.log(`[GatewayWsClient] Agent event payload: runId=${payload.runId || 'unknown'}${details.length ? `, ${details.join(', ')}` : ''}`);
+        }
+
         this.emit('agentEvent', {
             runId: payload.runId,
             sessionKey: payload.sessionKey,

@@ -2326,6 +2326,24 @@ class AlphaClawdVoiceBot {
         return lines.join('\n');
     }
 
+    buildBigBrainGatewayMessage(prompt) {
+        const message = String(prompt || '').trim();
+        const directives = [];
+        const thinking = String(this.bigBrainThinking || '').trim();
+
+        if (thinking) {
+            directives.push(`/think ${thinking}`);
+        }
+        if (this.bigBrainToolSonificationEnabled !== false) {
+            directives.push('/verbose on');
+        }
+
+        if (!message || directives.length === 0) {
+            return message;
+        }
+        return `${directives.join(' ')}\n\n${message}`;
+    }
+
     async dispatchBigBrainTurn(guildId, response, options = {}) {
         if (!response?.bigBrain?.requested) {
             return { dispatched: false, reason: 'not_requested' };
@@ -2353,7 +2371,7 @@ class AlphaClawdVoiceBot {
         const timeoutMs = Number.isFinite(this.bigBrainTimeoutMs)
             ? Math.max(1000, this.bigBrainTimeoutMs)
             : 180000;
-        const prompt = this.buildBigBrainPrompt(response, options);
+        const prompt = this.buildBigBrainGatewayMessage(this.buildBigBrainPrompt(response, options));
         const pending = {
             guildId,
             runId,

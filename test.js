@@ -1352,6 +1352,9 @@ async function runTests() {
         if (sentChats.length !== 1) {
             throw new Error(`Expected one bigBrain chat dispatch, got ${sentChats.length}`);
         }
+        if (!sentChats[0].message.startsWith('/think high /verbose on\n\n[Podcast bigBrain request]')) {
+            throw new Error(`bigBrain prompt did not request Gateway verbose tool events: ${sentChats[0].message}`);
+        }
         if (!sentChats[0].message.includes('[Podcast bigBrain request]') ||
             !sentChats[0].message.includes('Need to verify prior episode details.') ||
             !sentChats[0].message.includes('Jensen: What was the first episode about?')) {
@@ -1491,6 +1494,9 @@ async function runTests() {
 
         if (sentChats.length !== 1) {
             throw new Error(`Expected stale bigBrain request to dispatch once, got ${sentChats.length}`);
+        }
+        if (!sentChats[0].message.startsWith('/think high /verbose on\n\n[Podcast bigBrain request]')) {
+            throw new Error(`Stale bigBrain prompt did not request Gateway verbose tool events: ${sentChats[0].message}`);
         }
         if (!sentChats[0].message.includes('Need the current price of GameStop stock.') ||
             !sentChats[0].message.includes('tried to speak a brief stall, but it was discarded')) {
