@@ -605,6 +605,17 @@ class PodcastGenerator {
             );
         }
 
+        const awarenessInjections = this.formatAwarenessInjections(options.awarenessInjections || []);
+        if (awarenessInjections) {
+            lines.push(
+                '',
+                'Active awareness injection(s):',
+                awarenessInjections,
+                '',
+                'These are private host awareness notes. Let them inform attention, continuity, and question choice only when they fit the live turn. Do not quote them or mention that you received an awareness injection.'
+            );
+        }
+
         if (wordData) {
             lines.push('', 'STT confidence hints:', wordData);
         }
@@ -635,6 +646,37 @@ class PodcastGenerator {
             .filter(Boolean);
 
         return staged.join('\n\n');
+    }
+
+    formatAwarenessInjections(items = []) {
+        const injections = (Array.isArray(items) ? items : [])
+            .map((item, index) => {
+                const awarenessInjection = typeof item === 'string'
+                    ? item.trim()
+                    : String(item?.awarenessInjection || '').trim();
+                if (!awarenessInjection) return null;
+
+                if (typeof item === 'string') {
+                    return [
+                        `id: awareness-${index + 1}`,
+                        `awarenessInjection: ${awarenessInjection}`
+                    ].join('\n');
+                }
+
+                const id = String(item?.id || `awareness-${index + 1}`).trim();
+                const reason = String(item?.reason || '').trim();
+                const remainingTurns = Number(item?.remainingTurns);
+
+                return [
+                    id ? `id: ${id}` : null,
+                    reason ? `reason: ${reason}` : null,
+                    Number.isFinite(remainingTurns) ? `remaining participant turns: ${Math.max(0, Math.floor(remainingTurns))}` : null,
+                    `awarenessInjection: ${awarenessInjection}`
+                ].filter(Boolean).join('\n');
+            })
+            .filter(Boolean);
+
+        return injections.join('\n\n');
     }
 
     buildRequestBody(messages, options = {}) {

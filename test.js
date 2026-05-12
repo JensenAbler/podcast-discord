@@ -391,6 +391,33 @@ async function runTests() {
             throw new Error(`Inline pause prompt missing expected timing hints: ${cadencePrompt}`);
         }
 
+        const awarenessMessages = generator.buildMessages({
+            transcript: 'Jensen: I want Alpha-Clawd to feel more alive.',
+            awarenessInjections: [{
+                id: 'awareness-internal-packet-1',
+                reason: 'This tracks the current design intent.',
+                awarenessInjection: 'Jensen is designing internal thought as private host awareness, not asking for a generic implementation lecture.',
+                remainingTurns: 2
+            }]
+        });
+        const awarenessPrompt = awarenessMessages[awarenessMessages.length - 2].content;
+
+        if (
+            awarenessPrompt.includes('Active awareness injection(s):') &&
+            awarenessPrompt.includes('id: awareness-internal-packet-1') &&
+            awarenessPrompt.includes('reason: This tracks the current design intent.') &&
+            awarenessPrompt.includes('remaining participant turns: 2') &&
+            awarenessPrompt.includes('awarenessInjection: Jensen is designing internal thought as private host awareness') &&
+            awarenessPrompt.includes('These are private host awareness notes') &&
+            !awarenessPrompt.includes('contextText') &&
+            !awarenessPrompt.includes('priority')
+        ) {
+            console.log('  Generator user prompt includes private awareness injections');
+            passed++;
+        } else {
+            throw new Error(`Awareness injection prompt was not formatted correctly: ${awarenessPrompt}`);
+        }
+
         const savedEnv = {
             PODCAST_GENERATOR_API_KEY_ACTIVE: process.env.PODCAST_GENERATOR_API_KEY_ACTIVE,
             PODCAST_GENERATOR_KEY_ROUTING: process.env.PODCAST_GENERATOR_KEY_ROUTING,
