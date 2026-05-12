@@ -20,6 +20,8 @@ const { ElevenLabsIntegration } = require('./elevenlabs-integration');
 const { GatewayBridge } = require('./gateway-bridge');
 const { AlphaClawdVoiceBot } = require('./bot');
 const { PodcastGenerator } = require('./podcast-generator');
+const { InternalThoughtGenerator } = require('./internal-thought-generator');
+const { DiscernmentGenerator } = require('./discernment-generator');
 
 module.exports = {
     // Core voice components
@@ -34,6 +36,8 @@ module.exports = {
     ElevenLabsIntegration,
     GatewayBridge,
     PodcastGenerator,
+    InternalThoughtGenerator,
+    DiscernmentGenerator,
     
     // Main bot class
     AlphaClawdVoiceBot

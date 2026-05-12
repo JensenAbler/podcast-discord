@@ -29,6 +29,7 @@ class AudioTransmitter {
         this.isPlaying = false;
         this.currentResource = null;
         this.currentPlayback = null;
+        this.suppressNextPlayerError = false;
 
         if (this.player) {
             this.setupPlayerEvents();
@@ -75,6 +76,15 @@ class AudioTransmitter {
         });
 
         this.player.on('error', (error) => {
+            if (this.suppressNextPlayerError) {
+                this.suppressNextPlayerError = false;
+                console.log(`[AudioTransmitter] Suppressed player error after intentional stop: ${error.message}`);
+                this.isPlaying = false;
+                this.currentResource = null;
+                this.currentPlayback = null;
+                return;
+            }
+
             console.error('[AudioTransmitter] Player error:', error);
             const failedPlayback = this.currentPlayback;
             this.isPlaying = false;
@@ -208,6 +218,9 @@ class AudioTransmitter {
         this.queue = [];
 
         if (this.player) {
+            if (stoppedPlayback || this.currentResource || this.isPlaying) {
+                this.suppressNextPlayerError = true;
+            }
             this.player.stop();
         }
 

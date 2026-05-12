@@ -12,6 +12,8 @@ const {
     FishAudioProvider,
     GatewayBridge,
     PodcastGenerator,
+    InternalThoughtGenerator,
+    DiscernmentGenerator,
     AlphaClawdVoiceBot
 } = require('./index');
 const { EndBehaviorType } = require('@discordjs/voice');
@@ -751,6 +753,136 @@ async function runTests() {
         console.log('  bigBrain field defaults safely and passes valid payloads through');
     } catch (error) {
         console.log(`  Podcast generator failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 5b: Internal thought and discernment generators');
+    try {
+        const thoughtGenerator = new InternalThoughtGenerator({
+            apiKey: 'thought-test-key',
+            maxCompletionTokens: 300
+        });
+        let thoughtCall = null;
+        thoughtGenerator.fetchJson = async (requestPath, body) => {
+            thoughtCall = { requestPath, body };
+            return {
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            packetId: '',
+                            internalThought: ' Jensen is trying to give Alpha-Clawd a private reflective layer. ',
+                            noticings: [' The goal is personality coming through. ', '', 'Packets should batch meaning.'],
+                            undercurrents: ['There is excitement about originality.'],
+                            hostAwareness: 'Stay oriented toward Jensen designing a mind, not asking for a quick implementation answer.',
+                            candidateAwarenessNote: 'Jensen is most interested in internal thought as a way for Alpha-Clawd personality to become more alive.'
+                        })
+                    }
+                }],
+                usage: { prompt_tokens: 10, completion_tokens: 10 }
+            };
+        };
+
+        const thought = await thoughtGenerator.generate({
+            packetId: 'packet-voice-1',
+            transcript: 'Jensen: The most important thing is how your personality comes out.',
+            recentInternalThoughts: [{ internalThought: 'A prior thought.' }],
+            activeAwarenessInjections: [{ awarenessInjection: 'Already active.' }]
+        });
+
+        if (
+            thoughtCall?.requestPath !== '/chat/completions' ||
+            thoughtCall.body.response_format?.json_schema?.name !== 'podcast_internal_thought' ||
+            thoughtCall.body.response_format?.json_schema?.schema?.required?.join(',') !== 'packetId,internalThought,noticings,undercurrents,hostAwareness,candidateAwarenessNote'
+        ) {
+            throw new Error(`Internal thought schema was not used: ${JSON.stringify(thoughtCall)}`);
+        }
+        if (
+            thought.packetId !== 'packet-voice-1' ||
+            thought.noticings.length !== 2 ||
+            !thought.hostAwareness.includes('designing a mind') ||
+            !thought.candidateAwarenessNote.includes('personality')
+        ) {
+            throw new Error(`Internal thought output was not normalized: ${JSON.stringify(thought)}`);
+        }
+        const thoughtPrompt = thoughtGenerator.buildUserPrompt({
+            packetId: 'packet-prompt',
+            transcript: 'Jensen: Test prompt.',
+            activeAwarenessInjections: ['One active injection.']
+        });
+        if (!thoughtPrompt.includes('packetId: packet-prompt') || !thoughtPrompt.includes('Active awareness injections already visible')) {
+            throw new Error(`Internal thought prompt is missing packet context: ${thoughtPrompt}`);
+        }
+
+        const discernmentGenerator = new DiscernmentGenerator({
+            apiKey: 'discernment-test-key',
+            maxCompletionTokens: 200
+        });
+        const discernmentSchema = discernmentGenerator.getResponseSchema();
+        if (
+            discernmentSchema.required.join(',') !== 'injectIntoPodcastGenerator,reason,awarenessInjection,expiresAfterTurns' ||
+            discernmentSchema.properties.priority ||
+            discernmentSchema.properties.risk ||
+            discernmentSchema.properties.participantRelevance
+        ) {
+            throw new Error(`Discernment schema includes stale fields: ${JSON.stringify(discernmentSchema)}`);
+        }
+
+        const rejected = discernmentGenerator.normalizeOutput({
+            injectIntoPodcastGenerator: true,
+            reason: 'Interesting, but not usable yet.',
+            awarenessInjection: '',
+            expiresAfterTurns: 4
+        });
+        if (rejected.injectIntoPodcastGenerator || rejected.awarenessInjection !== '' || rejected.expiresAfterTurns !== 0) {
+            throw new Error(`Discernment should reject empty injections: ${JSON.stringify(rejected)}`);
+        }
+
+        let discernmentCall = null;
+        discernmentGenerator.fetchJson = async (requestPath, body) => {
+            discernmentCall = { requestPath, body };
+            return {
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            injectIntoPodcastGenerator: true,
+                            reason: 'This would help Alpha-Clawd stay with Jensen\'s stated aim.',
+                            awarenessInjection: 'Jensen is designing internal thought to let Alpha-Clawd personality come through, not asking for a generic implementation lecture.',
+                            expiresAfterTurns: 4
+                        })
+                    }
+                }]
+            };
+        };
+
+        const approved = await discernmentGenerator.generate({
+            candidateAwarenessNote: thought.candidateAwarenessNote,
+            internalThought: thought.internalThought,
+            transcript: 'Jensen: I want your personality to come out.'
+        });
+
+        if (
+            discernmentCall?.requestPath !== '/chat/completions' ||
+            discernmentCall.body.response_format?.json_schema?.name !== 'podcast_awareness_discernment' ||
+            !approved.injectIntoPodcastGenerator ||
+            approved.expiresAfterTurns !== 4 ||
+            !approved.awarenessInjection.includes('personality come through')
+        ) {
+            throw new Error(`Discernment generator did not approve the injection as expected: ${JSON.stringify({ discernmentCall, approved })}`);
+        }
+
+        const discernmentPrompt = discernmentGenerator.buildSystemPrompt();
+        if (
+            !discernmentPrompt.includes('relevant enough to the interests of the podcast participants') ||
+            !discernmentPrompt.includes('awarenessInjection') ||
+            discernmentPrompt.includes('priority')
+        ) {
+            throw new Error(`Discernment prompt does not match the revised framing: ${discernmentPrompt}`);
+        }
+
+        console.log('  Internal thoughts and discernment use structured JSON contracts with awareness injections');
+        passed++;
+    } catch (error) {
+        console.log(`  Internal thought/discernment generator failed: ${error.message}`);
         failed++;
     }
 
@@ -2814,6 +2946,7 @@ async function runTests() {
         const { AudioTransmitter } = require('./audio-transmitter');
         const { StreamType } = require('@discordjs/voice');
         const { Readable } = require('stream');
+        const { EventEmitter } = require('events');
 
         const probe = new AudioTransmitter({});
         const cases = [
@@ -2854,7 +2987,36 @@ async function runTests() {
             throw new Error('Expected VolumeTransformer at v=0.5');
         }
 
-        console.log('  Inline volume skipped at unity, applied otherwise');
+        class StopErrorPlayer extends EventEmitter {
+            play(resource) {
+                captured = resource;
+            }
+
+            stop() {
+                this.emit('error', new Error('Premature close'));
+            }
+        }
+
+        let globalErrorCalled = false;
+        let finishCalled = false;
+        const stopErrorPlayer = new StopErrorPlayer();
+        const stopT = new AudioTransmitter({
+            player: stopErrorPlayer,
+            onError: () => { globalErrorCalled = true; }
+        });
+        await stopT.play(Readable.from([Buffer.alloc(0)]), {
+            inputType: StreamType.Raw,
+            onFinish: () => { finishCalled = true; }
+        });
+        stopT.stop();
+        if (globalErrorCalled) {
+            throw new Error('Intentional stop should suppress the follow-up player error');
+        }
+        if (!finishCalled) {
+            throw new Error('Intentional stop should still finish the stopped playback');
+        }
+
+        console.log('  Inline volume skipped at unity, applied otherwise, and intentional stop errors are suppressed');
         passed++;
     } catch (error) {
         console.log(`  Audio Transmitter inline volume failed: ${error.message}`);
