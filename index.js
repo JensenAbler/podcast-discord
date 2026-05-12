@@ -23,6 +23,7 @@ const { PodcastGenerator } = require('./podcast-generator');
 const { InternalThoughtGenerator } = require('./internal-thought-generator');
 const { DiscernmentGenerator } = require('./discernment-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
+const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
 
 module.exports = {
     // Core voice components
@@ -40,6 +41,7 @@ module.exports = {
     InternalThoughtGenerator,
     DiscernmentGenerator,
     InternalThoughtManager,
+    BigBrainAwarenessSelector,
     
     // Main bot class
     AlphaClawdVoiceBot

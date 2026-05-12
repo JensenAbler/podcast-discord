@@ -77,6 +77,7 @@ const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { getRecordingDir } = require('./paths');
 const { PodcastGenerator } = require('./podcast-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
+const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
 
 // Map a Fish TTS format string to the @discordjs/voice StreamType that lets
 // Discord play the bytes without an FFmpeg transcode. Returning undefined
@@ -149,6 +150,10 @@ class AlphaClawdVoiceBot {
         this.internalThoughtManager = options.internalThoughtManager || new InternalThoughtManager({
             enabled: this.internalThoughtsEnabled
         });
+        this.bigBrainAwarenessSelectionEnabled = options.bigBrainAwarenessSelectionEnabled !== undefined
+            ? Boolean(options.bigBrainAwarenessSelectionEnabled)
+            : process.env.PODCAST_BIG_BRAIN_AWARENESS_SELECTION_ENABLED === 'true';
+        this.bigBrainAwarenessSelector = options.bigBrainAwarenessSelector || new BigBrainAwarenessSelector();
 
         // Recording states
         this.RecordingState = {
@@ -403,6 +408,32 @@ class AlphaClawdVoiceBot {
             return this.internalThoughtManager.getActiveAwarenessInjections(guildId);
         } catch (error) {
             console.warn(`[Bot] Failed to read active awareness injections: ${error.message}`);
+            return [];
+        }
+    }
+
+    async selectAwarenessInjectionsForBigBrain(guildId, response, options = {}) {
+        const activeAwarenessInjections = this.getAwarenessInjectionsForGenerator(guildId);
+        if (
+            !this.bigBrainAwarenessSelectionEnabled ||
+            activeAwarenessInjections.length === 0 ||
+            !this.bigBrainAwarenessSelector?.generate
+        ) {
+            return [];
+        }
+
+        try {
+            const selection = await this.bigBrainAwarenessSelector.generate({
+                requestReason: response?.bigBrain?.reason || '',
+                transcript: this.resolveBigBrainTranscript(options),
+                source: options.source || 'buffer',
+                activeAwarenessInjections
+            });
+            const selected = selection?.selectedAwarenessInjections || [];
+            console.log(`[Bot] bigBrain awareness selection include=${Boolean(selection?.includeAwareness)}, selected=${selected.length}`);
+            return selected;
+        } catch (error) {
+            console.warn(`[Bot] bigBrain awareness selection failed: ${error.message}`);
             return [];
         }
     }
@@ -2493,6 +2524,21 @@ class AlphaClawdVoiceBot {
         return transcriptTokens.length < 2 && reasonTokens.length < 2;
     }
 
+    formatBigBrainAwarenessInjections(items = []) {
+        return (Array.isArray(items) ? items : [])
+            .map((item, index) => {
+                const awarenessInjection = String(item?.awarenessInjection || item?.text || item || '').trim();
+                if (!awarenessInjection) return null;
+                const id = String(item?.id || `awareness-${index + 1}`).trim();
+                return [
+                    `id: ${id}`,
+                    `awarenessInjection: ${awarenessInjection}`
+                ].join('\n');
+            })
+            .filter(Boolean)
+            .join('\n\n');
+    }
+
     buildBigBrainPrompt(response, options = {}) {
         const transcript = this.resolveBigBrainTranscript(options)
             || '(no transcript text captured)';
@@ -2517,6 +2563,17 @@ class AlphaClawdVoiceBot {
             'Live transcript that triggered the handoff:',
             transcript
         ];
+
+        const awarenessInjections = this.formatBigBrainAwarenessInjections(options.awarenessInjections || []);
+        if (awarenessInjections) {
+            lines.push(
+                '',
+                'Selected awareness injection(s) for this Big Brain request:',
+                awarenessInjections,
+                '',
+                'These are private context notes selected at request time. Use them only if they help answer the guest request; do not mention awareness injections.'
+            );
+        }
 
         const wordData = String(options.wordData || '').trim();
         if (wordData) {
@@ -2574,16 +2631,32 @@ class AlphaClawdVoiceBot {
             return { dispatched: false, reason: 'already_pending', runId: existing.runId };
         }
 
+        const awarenessInjections = await this.selectAwarenessInjectionsForBigBrain(guildId, response, {
+            ...options,
+            transcript
+        });
+        const existingAfterSelection = Array.from(this.pendingBigBrainResponses.values())
+            .find((pending) => pending.guildId === guildId);
+        if (existingAfterSelection) {
+            console.warn(`[Bot] bigBrain request skipped because run ${existingAfterSelection.runId} started during awareness selection`);
+            return { dispatched: false, reason: 'already_pending', runId: existingAfterSelection.runId };
+        }
+
         const runId = `discord-bigbrain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const timeoutMs = Number.isFinite(this.bigBrainTimeoutMs)
             ? Math.max(1000, this.bigBrainTimeoutMs)
             : 180000;
-        const prompt = this.buildBigBrainGatewayMessage(this.buildBigBrainPrompt(response, { ...options, transcript }));
+        const prompt = this.buildBigBrainGatewayMessage(this.buildBigBrainPrompt(response, {
+            ...options,
+            transcript,
+            awarenessInjections
+        }));
         const pending = {
             guildId,
             runId,
             reason,
             transcript,
+            awarenessInjections,
             requestedAt: new Date().toISOString(),
             participantActivityBaseline: Number.isFinite(options.participantActivityBaseline)
                 ? options.participantActivityBaseline

@@ -15,6 +15,7 @@ const {
     InternalThoughtGenerator,
     DiscernmentGenerator,
     InternalThoughtManager,
+    BigBrainAwarenessSelector,
     AlphaClawdVoiceBot
 } = require('./index');
 const { EndBehaviorType } = require('@discordjs/voice');
@@ -1030,6 +1031,97 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 5d: BigBrain awareness selector');
+    try {
+        const selector = new BigBrainAwarenessSelector({
+            apiKey: 'selector-test-key',
+            maxCompletionTokens: 200
+        });
+        const selectorSchema = selector.getResponseSchema();
+        if (
+            selectorSchema.required.join(',') !== 'includeAwareness,reason,selectedAwarenessInjections' ||
+            selectorSchema.properties.priority ||
+            selectorSchema.properties.risk ||
+            selectorSchema.properties.participantRelevance ||
+            selectorSchema.properties.contextText
+        ) {
+            throw new Error(`BigBrain selector schema includes stale fields: ${JSON.stringify(selectorSchema)}`);
+        }
+
+        const activeAwarenessInjections = [
+            {
+                id: 'awareness-one',
+                awarenessInjection: 'Jensen is asking about this repo while designing Alpha-Clawd introspection.'
+            },
+            {
+                id: 'awareness-two',
+                awarenessInjection: 'The guest is emotionally tired and may need gentler pacing.'
+            }
+        ];
+        let selectorCall = null;
+        selector.fetchJson = async (requestPath, body) => {
+            selectorCall = { requestPath, body };
+            return {
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            includeAwareness: true,
+                            reason: 'The first note directly frames the filesystem question.',
+                            selectedAwarenessInjections: [{
+                                id: 'awareness-one',
+                                awarenessInjection: 'Jensen is asking about this repo while designing Alpha-Clawd introspection.'
+                            }]
+                        })
+                    }
+                }]
+            };
+        };
+
+        const selection = await selector.generate({
+            requestReason: 'Need to inspect project files accurately.',
+            transcript: 'Jensen: What files implement the internal thought system?',
+            activeAwarenessInjections
+        });
+
+        if (
+            selectorCall?.requestPath !== '/chat/completions' ||
+            selectorCall.body.response_format?.json_schema?.name !== 'podcast_bigbrain_awareness_selection' ||
+            !selection.includeAwareness ||
+            selection.selectedAwarenessInjections.length !== 1 ||
+            selection.selectedAwarenessInjections[0].id !== 'awareness-one'
+        ) {
+            throw new Error(`BigBrain selector did not select the relevant awareness injection: ${JSON.stringify({ selectorCall, selection })}`);
+        }
+
+        const fabricated = selector.normalizeOutput({
+            includeAwareness: true,
+            reason: 'Made up.',
+            selectedAwarenessInjections: [{
+                id: 'fabricated',
+                awarenessInjection: 'A new note that was never active.'
+            }]
+        }, { activeAwarenessInjections });
+
+        if (fabricated.includeAwareness || fabricated.selectedAwarenessInjections.length !== 0) {
+            throw new Error(`BigBrain selector accepted fabricated awareness: ${JSON.stringify(fabricated)}`);
+        }
+
+        const selectorPrompt = selector.buildSystemPrompt();
+        if (
+            !selectorPrompt.includes('request-time judgment') ||
+            !selectorPrompt.includes('should be included as private context for Open Claw') ||
+            selectorPrompt.includes('priority')
+        ) {
+            throw new Error(`BigBrain selector prompt does not match request-time framing: ${selectorPrompt}`);
+        }
+
+        console.log('  BigBrain awareness selector chooses active injections only at request time');
+        passed++;
+    } catch (error) {
+        console.log(`  BigBrain awareness selector failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\nTest 6: Conversation Buffer ASR-aware state machine');
     try {
         const dynamicGraceProbe = new ConversationBuffer();
@@ -1545,10 +1637,13 @@ async function runTests() {
         const savedEntries = [];
         const remembered = [];
         const stagedInputs = [];
+        const selectorInputs = [];
         let generateCount = 0;
 
         bot.generatorMode = 'direct';
         bot.bigBrainEnabled = true;
+        bot.internalThoughtsEnabled = true;
+        bot.bigBrainAwarenessSelectionEnabled = true;
         bot.bigBrainTimeoutMs = 1000;
         bot.bigBrainThinking = 'high';
         bot.pendingBigBrainResponses = new Map();
@@ -1561,6 +1656,22 @@ async function runTests() {
         bot.participantActivityConfirmDelayMs = 0;
         bot.RecordingState = { RECORDING: 'RECORDING' };
         bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
+        bot.internalThoughtManager = {
+            getActiveAwarenessInjections: () => [{
+                id: 'awareness-bigbrain-test',
+                awarenessInjection: 'Jensen is asking about prior episode details while testing the introspective branch.'
+            }]
+        };
+        bot.bigBrainAwarenessSelector = {
+            generate: async (input) => {
+                selectorInputs.push(input);
+                return {
+                    includeAwareness: true,
+                    reason: 'The awareness note frames the request as an introspective-branch test.',
+                    selectedAwarenessInjections: [input.activeAwarenessInjections[0]]
+                };
+            }
+        };
         bot.voiceId = 'voice-test';
         bot.conversationBuffer = {
             getState: () => ({
@@ -1649,6 +1760,13 @@ async function runTests() {
             !sentChats[0].message.includes('Need to verify prior episode details.') ||
             !sentChats[0].message.includes('Jensen: What was the first episode about?')) {
             throw new Error(`bigBrain prompt missing request context: ${sentChats[0].message}`);
+        }
+        if (
+            selectorInputs[0]?.activeAwarenessInjections?.[0]?.id !== 'awareness-bigbrain-test' ||
+            !sentChats[0].message.includes('Selected awareness injection(s) for this Big Brain request:') ||
+            !sentChats[0].message.includes('awarenessInjection: Jensen is asking about prior episode details while testing the introspective branch.')
+        ) {
+            throw new Error(`bigBrain prompt missing request-time awareness selection: ${JSON.stringify({ selectorInputs, message: sentChats[0].message })}`);
         }
         const runId = sentChats[0].options.idempotencyKey;
         if (!runId.startsWith('discord-bigbrain-') || !bot.pendingBigBrainResponses.has(runId)) {
