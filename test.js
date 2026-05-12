@@ -14,6 +14,7 @@ const {
     PodcastGenerator,
     InternalThoughtGenerator,
     DiscernmentGenerator,
+    InternalThoughtManager,
     AlphaClawdVoiceBot
 } = require('./index');
 const { EndBehaviorType } = require('@discordjs/voice');
@@ -883,6 +884,122 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Internal thought/discernment generator failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 5c: Internal thought manager packets, persists, and expires awareness injections');
+    try {
+        const thoughtCalls = [];
+        const discernmentCalls = [];
+        let thoughtCount = 0;
+        const managerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-manager-'));
+        const manager = new InternalThoughtManager({
+            packetTurnCount: 2,
+            maxActiveAwarenessInjections: 2,
+            now: () => '2026-05-12T21:00:00.000Z',
+            thoughtGenerator: {
+                generate: async (input) => {
+                    thoughtCalls.push(input);
+                    thoughtCount += 1;
+                    return {
+                        packetId: input.packetId,
+                        internalThought: `Private thought ${thoughtCount}`,
+                        noticings: [`noticing ${thoughtCount}`],
+                        undercurrents: [],
+                        hostAwareness: `host awareness ${thoughtCount}`,
+                        candidateAwarenessNote: thoughtCount === 1
+                            ? 'Jensen wants internal thought to make Alpha-Clawd feel more alive.'
+                            : ''
+                    };
+                }
+            },
+            discernmentGenerator: {
+                generate: async (input) => {
+                    discernmentCalls.push(input);
+                    return {
+                        injectIntoPodcastGenerator: true,
+                        reason: 'This tracks Jensen\'s stated interest.',
+                        awarenessInjection: 'Jensen is using this episode to design Alpha-Clawd internal awareness, not asking for generic advice.',
+                        expiresAfterTurns: 2
+                    };
+                }
+            }
+        });
+
+        const session = manager.startSession('guild-thoughts', { recordingPath: managerDir });
+        if (!session.outputPath.endsWith('internal-thoughts.jsonl') || !fs.existsSync(session.outputPath)) {
+            throw new Error(`Manager did not create JSONL output: ${JSON.stringify(session)}`);
+        }
+
+        const firstResult = await manager.handleTranscriptEntry('guild-thoughts', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'I want your personality to come out.'
+        });
+        if (firstResult !== null || thoughtCalls.length !== 0) {
+            throw new Error('Manager flushed before packet threshold');
+        }
+
+        const firstRecord = await manager.handleTranscriptEntry('guild-thoughts', {
+            speaker: 'Alpha-Clawd',
+            speakerRole: 'host',
+            text: 'I hear that.'
+        });
+
+        if (
+            firstRecord?.packetId !== 'internal-packet-1' ||
+            firstRecord.awarenessInjection?.remainingTurns !== 2 ||
+            thoughtCalls[0]?.transcript !== 'Jensen: I want your personality to come out.\nAlpha-Clawd: I hear that.' ||
+            discernmentCalls.length !== 1
+        ) {
+            throw new Error(`Manager did not process first packet correctly: ${JSON.stringify({ firstRecord, thoughtCalls, discernmentCalls })}`);
+        }
+
+        let active = manager.getActiveAwarenessInjections('guild-thoughts');
+        if (active.length !== 1 || !active[0].awarenessInjection.includes('internal awareness')) {
+            throw new Error(`Awareness injection was not activated: ${JSON.stringify(active)}`);
+        }
+
+        await manager.handleTranscriptEntry('guild-thoughts', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'Each packet should get reflected on.'
+        });
+        active = manager.getActiveAwarenessInjections('guild-thoughts');
+        if (active[0]?.remainingTurns !== 1) {
+            throw new Error(`Awareness injection did not count down on participant turn: ${JSON.stringify(active)}`);
+        }
+
+        const secondRecord = await manager.handleTranscriptEntry('guild-thoughts', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'Then milestone thoughts can connect them.'
+        });
+        active = manager.getActiveAwarenessInjections('guild-thoughts');
+        if (
+            secondRecord?.packetId !== 'internal-packet-2' ||
+            active.length !== 0 ||
+            thoughtCalls[1]?.recentInternalThoughts?.length !== 1 ||
+            discernmentCalls.length !== 1
+        ) {
+            throw new Error(`Second packet did not preserve recent thoughts or expire injection: ${JSON.stringify({ secondRecord, active, thoughtCalls, discernmentCalls })}`);
+        }
+
+        const lines = fs.readFileSync(session.outputPath, 'utf8').trim().split(/\n+/);
+        if (lines.length !== 2 || JSON.parse(lines[0]).type !== 'internal_thought' || JSON.parse(lines[0]).awarenessInjection?.id !== 'awareness-internal-packet-1') {
+            throw new Error(`Internal thought JSONL was not persisted correctly: ${fs.readFileSync(session.outputPath, 'utf8')}`);
+        }
+
+        const ended = await manager.endSession('guild-thoughts');
+        if (ended.thoughtCount !== 2 || manager.getActiveAwarenessInjections('guild-thoughts').length !== 0) {
+            throw new Error(`Manager did not end cleanly: ${JSON.stringify(ended)}`);
+        }
+
+        fs.rmSync(managerDir, { recursive: true, force: true });
+        console.log('  Internal thought manager packets transcript entries and manages awareness injection lifecycle');
+        passed++;
+    } catch (error) {
+        console.log(`  Internal thought manager failed: ${error.message}`);
         failed++;
     }
 

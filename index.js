@@ -22,6 +22,7 @@ const { AlphaClawdVoiceBot } = require('./bot');
 const { PodcastGenerator } = require('./podcast-generator');
 const { InternalThoughtGenerator } = require('./internal-thought-generator');
 const { DiscernmentGenerator } = require('./discernment-generator');
+const { InternalThoughtManager } = require('./internal-thought-manager');
 
 module.exports = {
     // Core voice components
@@ -38,6 +39,7 @@ module.exports = {
     PodcastGenerator,
     InternalThoughtGenerator,
     DiscernmentGenerator,
+    InternalThoughtManager,
     
     // Main bot class
     AlphaClawdVoiceBot
