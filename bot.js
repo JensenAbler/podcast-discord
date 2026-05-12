@@ -76,6 +76,7 @@ const { GatewayWsClient } = require('./gateway-ws-client');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { getRecordingDir } = require('./paths');
 const { PodcastGenerator } = require('./podcast-generator');
+const { InternalThoughtManager } = require('./internal-thought-manager');
 
 // Map a Fish TTS format string to the @discordjs/voice StreamType that lets
 // Discord play the bytes without an FFmpeg transcode. Returning undefined
@@ -142,6 +143,12 @@ class AlphaClawdVoiceBot {
         this.bigBrainToolToneLastAt = new Map(); // guildId -> ms timestamp
         this.pendingBigBrainResponses = new Map(); // runId -> pending handoff
         this.stagedBigBrainResponses = new Map(); // guildId -> completed handoffs awaiting host integration
+        this.internalThoughtsEnabled = options.internalThoughtsEnabled !== undefined
+            ? Boolean(options.internalThoughtsEnabled)
+            : process.env.PODCAST_INTERNAL_THOUGHTS_ENABLED === 'true';
+        this.internalThoughtManager = options.internalThoughtManager || new InternalThoughtManager({
+            enabled: this.internalThoughtsEnabled
+        });
 
         // Recording states
         this.RecordingState = {
@@ -261,6 +268,11 @@ class AlphaClawdVoiceBot {
             if (transcription) {
                 this.lastParticipantSpeechAt.set(guildId, Date.now());
                 this.confirmParticipantActivity(guildId, utterance.userId, 'transcript');
+                this.observeInternalThoughtTranscriptEntry(guildId, {
+                    ...utterance,
+                    speakerRole: utterance.speakerRole || 'guest',
+                    source: 'participant'
+                });
             }
 
             this.conversationBuffer.addUtterance({
@@ -328,6 +340,71 @@ class AlphaClawdVoiceBot {
 
     shouldConnectGatewayWs() {
         return this.useGatewayGenerator() || this.gatewayMirror || this.bigBrainEnabled;
+    }
+
+    startInternalThoughtSession(guildId, recordingInfo = {}) {
+        if (!this.internalThoughtsEnabled || !this.internalThoughtManager?.startSession) {
+            return null;
+        }
+
+        try {
+            return this.internalThoughtManager.startSession(guildId, {
+                recordingPath: recordingInfo.recordingPath,
+                startedAt: recordingInfo.startedAt
+            });
+        } catch (error) {
+            console.warn(`[Bot] Failed to start internal thought session: ${error.message}`);
+            return null;
+        }
+    }
+
+    async endInternalThoughtSession(guildId) {
+        if (!this.internalThoughtsEnabled || !this.internalThoughtManager?.endSession) {
+            return null;
+        }
+
+        try {
+            return await this.internalThoughtManager.endSession(guildId);
+        } catch (error) {
+            console.warn(`[Bot] Failed to end internal thought session: ${error.message}`);
+            return null;
+        }
+    }
+
+    observeInternalThoughtTranscriptEntry(guildId, entry = {}) {
+        if (
+            !this.internalThoughtsEnabled ||
+            this.recordingState?.get?.(guildId) !== this.RecordingState?.RECORDING ||
+            !this.internalThoughtManager?.handleTranscriptEntry
+        ) {
+            return null;
+        }
+
+        try {
+            const result = this.internalThoughtManager.handleTranscriptEntry(guildId, entry);
+            if (result && typeof result.catch === 'function') {
+                result.catch((error) => {
+                    console.warn(`[Bot] Internal thought transcript entry failed: ${error.message}`);
+                });
+            }
+            return result;
+        } catch (error) {
+            console.warn(`[Bot] Internal thought transcript entry failed: ${error.message}`);
+            return null;
+        }
+    }
+
+    getAwarenessInjectionsForGenerator(guildId) {
+        if (!this.internalThoughtsEnabled || !this.internalThoughtManager?.getActiveAwarenessInjections) {
+            return [];
+        }
+
+        try {
+            return this.internalThoughtManager.getActiveAwarenessInjections(guildId);
+        } catch (error) {
+            console.warn(`[Bot] Failed to read active awareness injections: ${error.message}`);
+            return [];
+        }
     }
 
     startIdleDecisionLoop(guildId) {
@@ -567,6 +644,7 @@ class AlphaClawdVoiceBot {
                 idleCheck: true,
                 idleSeconds,
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
+                awarenessInjections: this.getAwarenessInjectionsForGenerator(guildId),
                 remember: false
             });
 
@@ -1212,6 +1290,7 @@ class AlphaClawdVoiceBot {
             consentGiven: true,
             consentTimestamp: consentTimestamp
         });
+        this.startInternalThoughtSession(guildId, recordingInfo);
 
         // Announce start (use cached audio to save API credits)
         try {
@@ -1346,8 +1425,13 @@ class AlphaClawdVoiceBot {
 
             // Stop recording if active
             if (wasRecording) {
-                const result = await this.voiceManager.stopRecording(guildId);
-                recordingPath = result?.recordingPath;
+                let result = null;
+                try {
+                    result = await this.voiceManager.stopRecording(guildId);
+                    recordingPath = result?.recordingPath;
+                } finally {
+                    await this.endInternalThoughtSession(guildId);
+                }
             }
 
             // Clean up recording state
@@ -1565,6 +1649,7 @@ class AlphaClawdVoiceBot {
                 transcript,
                 wordData,
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
+                awarenessInjections: this.getAwarenessInjectionsForGenerator(guildId),
                 remember: false
             });
 
@@ -2795,6 +2880,7 @@ class AlphaClawdVoiceBot {
                 transcriptEntry.bigBrainRunId = options.bigBrainRunId || consumedBigBrainRunId;
             }
             this.voiceManager.saveTranscriptEntry(guildId, transcriptEntry);
+            this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);
 
             if (typeof options.rememberTranscript === 'string') {
                 this.podcastGenerator.rememberTurn?.(options.rememberTranscript, finalResponse);
@@ -2902,7 +2988,7 @@ class AlphaClawdVoiceBot {
                 ? Math.max(0, playbackEndedMs - playbackStartedMs)
                 : 0;
 
-            this.voiceManager.saveTranscriptEntry(guildId, {
+            const transcriptEntry = {
                 speaker: 'Alpha-Clawd',
                 speakerRole: 'host',
                 transcription: text,
@@ -2918,7 +3004,9 @@ class AlphaClawdVoiceBot {
                 fallbackReason: 'generator_error',
                 providerError,
                 audioEvents: ['fallback_response']
-            });
+            };
+            this.voiceManager.saveTranscriptEntry(guildId, transcriptEntry);
+            this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);
 
             if (typeof options.rememberTranscript === 'string') {
                 this.podcastGenerator?.rememberTurn?.(options.rememberTranscript, {

@@ -1266,6 +1266,15 @@ async function runTests() {
         bot.generatorMode = 'direct';
         bot.RecordingState = { RECORDING: 'RECORDING' };
         bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
+        bot.internalThoughtsEnabled = true;
+        bot.internalThoughtManager = {
+            getActiveAwarenessInjections: (activeGuildId) => activeGuildId === guildId
+                ? [{
+                    id: 'awareness-direct-test',
+                    awarenessInjection: 'Jensen is testing whether private awareness reaches direct turns.'
+                }]
+                : []
+        };
         bot.lastParticipantSpeechAt = new Map([[guildId, firstSpeechAt]]);
         bot.idleDecisionHandledSpeechAt = new Map();
         bot.directResponseInFlight = new Set();
@@ -1309,12 +1318,14 @@ async function runTests() {
 
         const holdEvents = [];
         let directGenerateCalled = false;
+        let directAwarenessInjections = null;
         bot.conversationBuffer.setFlushHold = (reason, active) => {
             holdEvents.push({ reason, active });
         };
         bot.podcastGenerator = {
-            generate: async () => {
+            generate: async (input) => {
                 directGenerateCalled = true;
+                directAwarenessInjections = input.awarenessInjections || [];
                 if (!bot.directResponseInFlight.has(guildId)) {
                     throw new Error('Direct response was not marked in-flight during generation');
                 }
@@ -1334,6 +1345,9 @@ async function runTests() {
         }
         if (holdEvents.map(event => event.active).join(',') !== 'true,false') {
             throw new Error(`Direct response did not hold and release buffer flushing: ${JSON.stringify(holdEvents)}`);
+        }
+        if (directAwarenessInjections?.[0]?.id !== 'awareness-direct-test') {
+            throw new Error(`Direct generator did not receive active awareness injections: ${JSON.stringify(directAwarenessInjections)}`);
         }
 
         directGenerateCalled = false;
