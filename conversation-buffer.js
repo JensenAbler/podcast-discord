@@ -24,7 +24,7 @@ const BufferState = Object.freeze({
 
 const DEFAULT_USER_ID = '__default_user__';
 const DEFAULT_PENDING_ASR_TIMEOUT = 8000;
-const DEFAULT_GRACE_PERIOD = 200;       // fallback post-ASR hold when speech timing is missing
+const DEFAULT_GRACE_PERIOD = 50;        // fallback post-ASR hold when speech timing is missing
 const DEFAULT_COOLDOWN_PERIOD = 2000;   // hold after a host turn before another response
 const DYNAMIC_GRACE_POINTS = Object.freeze([
     { speechMs: 100, graceMs: 50 },

@@ -786,8 +786,8 @@ async function runTests() {
                 transcription: 'timing unavailable'
             }
         ]);
-        if (unknownDurationGrace !== 200) {
-            throw new Error(`Missing speech timing should use 200ms fallback grace, got ${unknownDurationGrace}ms`);
+        if (unknownDurationGrace !== 50) {
+            throw new Error(`Missing speech timing should use 50ms fallback grace, got ${unknownDurationGrace}ms`);
         }
 
         const spanGrace = dynamicGraceProbe.calculateGracePeriod([
