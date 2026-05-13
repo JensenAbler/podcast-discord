@@ -15,6 +15,7 @@ const {
     InternalThoughtGenerator,
     DiscernmentGenerator,
     InternalThoughtManager,
+    PacketizationBuffer,
     BigBrainAwarenessSelector,
     AlphaClawdVoiceBot
 } = require('./index');
@@ -1033,6 +1034,58 @@ async function runTests() {
 
     console.log('\nTest 5c.1: Internal thought packetization buffer waits through monologues and flushes on alternation');
     try {
+        const defaultPacketizationBuffer = new PacketizationBuffer();
+        if (defaultPacketizationBuffer.config.minAlternations !== 1) {
+            throw new Error(`Packetization default alternation threshold drifted: ${defaultPacketizationBuffer.config.minAlternations}`);
+        }
+
+        const hostOnlyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-host-only-'));
+        const hostOnlyCalls = [];
+        const hostOnlyManager = new InternalThoughtManager({
+            packetMode: 'packetization-buffer',
+            packetGraceMs: 15,
+            packetMaxAgeMs: 1000,
+            packetMaxEntries: 4,
+            packetMaxChars: 1000,
+            now: () => '2026-05-12T21:29:00.000Z',
+            thoughtGenerator: {
+                generate: async (input) => {
+                    hostOnlyCalls.push(input);
+                    return {
+                        packetId: input.packetId,
+                        internalThought: 'This should not run for a lone host turn.',
+                        noticings: [],
+                        undercurrents: [],
+                        hostAwareness: '',
+                        candidateAwarenessNote: ''
+                    };
+                }
+            },
+            discernmentGenerator: {
+                generate: async () => ({
+                    injectIntoPodcastGenerator: false,
+                    reason: '',
+                    awarenessInjection: '',
+                    expiresAfterTurns: 0
+                })
+            }
+        });
+        const hostOnlySession = hostOnlyManager.startSession('guild-host-only', { recordingPath: hostOnlyDir });
+        await hostOnlyManager.handleTranscriptEntry('guild-host-only', {
+            speaker: 'Alpha-Clawd',
+            speakerRole: 'host',
+            text: 'What other moments stand out?',
+            generatedAt: '2026-05-12T21:29:01.000Z'
+        });
+        await sleep(35);
+        await hostOnlySession.processing;
+        if (hostOnlyCalls.length !== 0) {
+            throw new Error(`Packetization flushed a host-only packet on grace: ${JSON.stringify(hostOnlyCalls)}`);
+        }
+        hostOnlySession.packetizationBuffer.clear();
+        await hostOnlyManager.endSession('guild-host-only', { flush: false });
+        fs.rmSync(hostOnlyDir, { recursive: true, force: true });
+
         const managerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-packetization-'));
         const thoughtCalls = [];
         const manager = new InternalThoughtManager({
@@ -1182,7 +1235,7 @@ async function runTests() {
         await cappedManager.endSession('guild-packet-cap');
         fs.rmSync(capDir, { recursive: true, force: true });
 
-        console.log('  Packetization waits on single speaker runs, flushes settled alternations, and preserves hard caps');
+        console.log('  Packetization waits on single speaker runs, avoids host-only grace packets, flushes settled alternations, and preserves hard caps');
         passed++;
     } catch (error) {
         console.log(`  Internal thought packetization buffer failed: ${error.message}`);

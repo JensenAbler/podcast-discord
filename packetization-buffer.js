@@ -18,6 +18,9 @@ function positiveNumber(value, fallback) {
 }
 
 function nonNegativeInteger(value, fallback) {
+    if (value === undefined || value === null || value === '') {
+        return fallback;
+    }
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
 }
