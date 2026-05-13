@@ -23,6 +23,7 @@ const { PodcastGenerator } = require('./podcast-generator');
 const { InternalThoughtGenerator } = require('./internal-thought-generator');
 const { DiscernmentGenerator } = require('./discernment-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
+const { PacketizationBuffer } = require('./packetization-buffer');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
 
 module.exports = {
@@ -41,6 +42,7 @@ module.exports = {
     InternalThoughtGenerator,
     DiscernmentGenerator,
     InternalThoughtManager,
+    PacketizationBuffer,
     BigBrainAwarenessSelector,
     
     // Main bot class

@@ -305,12 +305,14 @@ class AlphaClawdVoiceBot {
             this.stopBigBrainToolTone(guildId, 'participant started speaking');
             console.log(`[Bot] User ${userId} started speaking, pausing buffer flush`);
             this.markProvisionalParticipantActivity(guildId, userId, 'speaking start');
+            this.setInternalThoughtUserSpeaking(guildId, userId, true);
             this.conversationBuffer.setUserSpeaking(userId, true);
         });
 
         this.voiceManager.setSpeakingStopHandler((guildId, userId) => {
             console.log(`[Bot] User ${userId} stopped speaking`);
             this.clearProvisionalParticipantActivity(guildId, userId, 'speaking stop before confirmation');
+            this.setInternalThoughtUserSpeaking(guildId, userId, false);
             this.conversationBuffer.setUserSpeaking(userId, false);
         });
 
@@ -318,8 +320,10 @@ class AlphaClawdVoiceBot {
             if (metadata.active) {
                 console.log(`[Bot] Endpoint debounce armed for ${userId} (${metadata.reason}, ${metadata.debounceMs}ms)`);
                 this.confirmParticipantActivity(guildId, userId, 'endpointing');
+                this.markInternalThoughtEndpointing(guildId, userId, true);
                 this.conversationBuffer.markEndpointing(userId, true);
             } else {
+                this.markInternalThoughtEndpointing(guildId, userId, false);
                 this.conversationBuffer.markEndpointing(userId, false);
             }
         });
@@ -327,6 +331,7 @@ class AlphaClawdVoiceBot {
         this.voiceManager.setAsrDispatchedHandler((guildId, userId, metadata = {}) => {
             console.log(`[Bot] ASR dispatched to Fish for ${userId} (${metadata.audioBytes} bytes, ${metadata.reason})`);
             this.confirmParticipantActivity(guildId, userId, 'ASR dispatched');
+            this.markInternalThoughtAsrPending(guildId, userId, metadata);
             this.conversationBuffer.markAsrPending(userId, metadata);
         });
     }
@@ -395,6 +400,45 @@ class AlphaClawdVoiceBot {
             return result;
         } catch (error) {
             console.warn(`[Bot] Internal thought transcript entry failed: ${error.message}`);
+            return null;
+        }
+    }
+
+    setInternalThoughtUserSpeaking(guildId, userId, speaking) {
+        if (!this.internalThoughtsEnabled || !this.internalThoughtManager?.setUserSpeaking) {
+            return null;
+        }
+
+        try {
+            return this.internalThoughtManager.setUserSpeaking(guildId, userId, speaking);
+        } catch (error) {
+            console.warn(`[Bot] Internal thought packetization speaking update failed: ${error.message}`);
+            return null;
+        }
+    }
+
+    markInternalThoughtEndpointing(guildId, userId, active) {
+        if (!this.internalThoughtsEnabled || !this.internalThoughtManager?.markEndpointing) {
+            return null;
+        }
+
+        try {
+            return this.internalThoughtManager.markEndpointing(guildId, userId, active);
+        } catch (error) {
+            console.warn(`[Bot] Internal thought packetization endpointing update failed: ${error.message}`);
+            return null;
+        }
+    }
+
+    markInternalThoughtAsrPending(guildId, userId, metadata = {}) {
+        if (!this.internalThoughtsEnabled || !this.internalThoughtManager?.markAsrPending) {
+            return null;
+        }
+
+        try {
+            return this.internalThoughtManager.markAsrPending(guildId, userId, metadata);
+        } catch (error) {
+            console.warn(`[Bot] Internal thought packetization ASR update failed: ${error.message}`);
             return null;
         }
     }

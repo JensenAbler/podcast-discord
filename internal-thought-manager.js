@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { InternalThoughtGenerator } = require('./internal-thought-generator');
 const { DiscernmentGenerator } = require('./discernment-generator');
+const { PacketizationBuffer } = require('./packetization-buffer');
 
 class InternalThoughtManager {
     constructor(options = {}) {
@@ -12,6 +13,20 @@ class InternalThoughtManager {
             options.packetTurnCount ?? process.env.PODCAST_INTERNAL_THOUGHT_PACKET_TURNS,
             6
         );
+        const explicitPacketMode = options.packetMode ?? process.env.PODCAST_INTERNAL_THOUGHT_PACKET_MODE;
+        const legacyCountOverride = options.packetTurnCount !== undefined ||
+            Boolean(process.env.PODCAST_INTERNAL_THOUGHT_PACKET_TURNS);
+        this.packetMode = this.normalizePacketMode(
+            explicitPacketMode ?? (legacyCountOverride ? 'count' : 'packetization-buffer')
+        );
+        this.packetizationOptions = {
+            graceMs: options.packetGraceMs ?? options.packetizationOptions?.graceMs,
+            maxAgeMs: options.packetMaxAgeMs ?? options.packetizationOptions?.maxAgeMs,
+            maxEntries: options.packetMaxEntries ?? options.packetizationOptions?.maxEntries,
+            maxChars: options.packetMaxChars ?? options.packetizationOptions?.maxChars,
+            minAlternations: options.packetMinAlternations ?? options.packetizationOptions?.minAlternations,
+            pendingAsrTimeout: options.packetPendingAsrTimeout ?? options.packetizationOptions?.pendingAsrTimeout
+        };
         this.maxRecentThoughts = this.parsePositiveInt(
             options.maxRecentThoughts ?? process.env.PODCAST_INTERNAL_THOUGHT_RECENT_COUNT,
             4
@@ -46,10 +61,18 @@ class InternalThoughtManager {
             startedAt: options.startedAt || this.now(),
             packetSeq: 0,
             packetBuffer: [],
+            packetizationBuffer: null,
             thoughts: [],
             activeAwarenessInjections: [],
             processing: Promise.resolve()
         };
+
+        if (this.packetMode === 'packetization-buffer') {
+            session.packetizationBuffer = new PacketizationBuffer(this.packetizationOptions);
+            session.packetizationBuffer.onFlush((entries, meta = {}) => {
+                return this.enqueuePacketProcessing(session, entries, meta.reason || 'packetization-buffer');
+            });
+        }
 
         this.sessions.set(guildId, session);
         console.log(`[InternalThoughtManager] Session started for guild ${guildId}${outputPath ? `, output=${outputPath}` : ''}`);
@@ -91,6 +114,12 @@ class InternalThoughtManager {
         }
 
         this.advanceAwarenessExpirations(session, normalized);
+
+        if (this.packetMode === 'packetization-buffer' && session.packetizationBuffer) {
+            const result = session.packetizationBuffer.addEntry(normalized);
+            return result || Promise.resolve(null);
+        }
+
         session.packetBuffer.push(normalized);
 
         if (session.packetBuffer.length >= this.packetTurnCount) {
@@ -102,15 +131,46 @@ class InternalThoughtManager {
 
     async flushPacket(guildId, reason = 'manual') {
         const session = this.sessions.get(guildId);
-        if (!this.enabled || !session || session.packetBuffer.length === 0) {
+        if (!this.enabled || !session) {
+            return null;
+        }
+
+        if (this.packetMode === 'packetization-buffer' && session.packetizationBuffer) {
+            return session.packetizationBuffer.forceFlush(reason);
+        }
+
+        if (session.packetBuffer.length === 0) {
             return null;
         }
 
         const entries = session.packetBuffer.splice(0, session.packetBuffer.length);
+        return this.enqueuePacketProcessing(session, entries, reason);
+    }
+
+    enqueuePacketProcessing(session, entries, reason = 'manual') {
+        if (!session || !Array.isArray(entries) || entries.length === 0) {
+            return null;
+        }
+
         const packet = this.buildPacket(session, entries, reason);
         const work = session.processing.then(() => this.processPacket(session, packet));
         session.processing = work.catch(() => {});
         return work;
+    }
+
+    setUserSpeaking(guildId, userId, speaking) {
+        const session = this.sessions.get(guildId);
+        return session?.packetizationBuffer?.setUserSpeaking(userId, speaking) || null;
+    }
+
+    markEndpointing(guildId, userId, active) {
+        const session = this.sessions.get(guildId);
+        return session?.packetizationBuffer?.markEndpointing(userId, active) || null;
+    }
+
+    markAsrPending(guildId, userId, metadata = {}) {
+        const session = this.sessions.get(guildId);
+        return session?.packetizationBuffer?.markAsrPending(userId, metadata) || null;
     }
 
     buildPacket(session, entries, reason) {
@@ -244,10 +304,14 @@ class InternalThoughtManager {
         return {
             speaker: entry.speaker || 'Unknown',
             speakerRole: entry.speakerRole || 'guest',
+            userId: entry.userId || entry.speakerId || null,
+            speakerId: entry.speakerId || entry.userId || null,
             text,
             timestamp: entry.timestamp || entry.generatedAt || entry.speechStartedAt || this.now(),
             speechStartedAt: entry.speechStartedAt || null,
             speechEndedAt: entry.speechEndedAt || null,
+            asrCompletedAt: entry.asrCompletedAt || null,
+            generatedAt: entry.generatedAt || null,
             playbackStartedAt: entry.playbackStartedAt || null,
             playbackEndedAt: entry.playbackEndedAt || null,
             source: entry.source || null
@@ -267,6 +331,17 @@ class InternalThoughtManager {
             return fallback;
         }
         return Math.floor(parsed);
+    }
+
+    normalizePacketMode(value) {
+        const normalized = String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/_/g, '-');
+        if (['count', 'turn-count', 'legacy-count'].includes(normalized)) {
+            return 'count';
+        }
+        return 'packetization-buffer';
     }
 }
 

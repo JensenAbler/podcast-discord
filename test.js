@@ -1031,6 +1031,164 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 5c.1: Internal thought packetization buffer waits through monologues and flushes on alternation');
+    try {
+        const managerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-packetization-'));
+        const thoughtCalls = [];
+        const manager = new InternalThoughtManager({
+            packetMode: 'packetization-buffer',
+            packetGraceMs: 15,
+            packetMaxAgeMs: 200,
+            packetMaxEntries: 4,
+            packetMaxChars: 1000,
+            packetMinAlternations: 1,
+            now: () => '2026-05-12T21:30:00.000Z',
+            thoughtGenerator: {
+                generate: async (input) => {
+                    thoughtCalls.push(input);
+                    return {
+                        packetId: input.packetId,
+                        internalThought: 'The packet is ready after a settled alternation.',
+                        noticings: [],
+                        undercurrents: [],
+                        hostAwareness: '',
+                        candidateAwarenessNote: ''
+                    };
+                }
+            },
+            discernmentGenerator: {
+                generate: async () => ({
+                    injectIntoPodcastGenerator: false,
+                    reason: '',
+                    awarenessInjection: '',
+                    expiresAfterTurns: 0
+                })
+            }
+        });
+
+        const session = manager.startSession('guild-packetization', { recordingPath: managerDir });
+
+        manager.setUserSpeaking('guild-packetization', 'jensen', true);
+        manager.markAsrPending('guild-packetization', 'jensen');
+        await manager.handleTranscriptEntry('guild-packetization', {
+            userId: 'jensen',
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'This is the first part of a longer thought.',
+            speechStartedAt: '2026-05-12T21:30:01.000Z',
+            speechEndedAt: '2026-05-12T21:30:03.000Z'
+        });
+        manager.setUserSpeaking('guild-packetization', 'jensen', false);
+        await sleep(35);
+        await session.processing;
+        if (thoughtCalls.length !== 0) {
+            throw new Error(`Packetization flushed a single speaker run too early: ${JSON.stringify(thoughtCalls)}`);
+        }
+
+        manager.setUserSpeaking('guild-packetization', 'jensen', true);
+        manager.markAsrPending('guild-packetization', 'jensen');
+        await manager.handleTranscriptEntry('guild-packetization', {
+            userId: 'jensen',
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'This is still the same speaker run.',
+            speechStartedAt: '2026-05-12T21:30:04.000Z',
+            speechEndedAt: '2026-05-12T21:30:06.000Z'
+        });
+        manager.setUserSpeaking('guild-packetization', 'jensen', false);
+        await sleep(35);
+        await session.processing;
+        if (thoughtCalls.length !== 0) {
+            throw new Error(`Packetization split a monologue before a cap or alternation: ${JSON.stringify(thoughtCalls)}`);
+        }
+
+        await manager.handleTranscriptEntry('guild-packetization', {
+            speaker: 'Alpha-Clawd',
+            speakerRole: 'host',
+            text: 'I am with you.',
+            generatedAt: '2026-05-12T21:30:07.000Z'
+        });
+        await sleep(35);
+        await session.processing;
+        if (
+            thoughtCalls.length !== 1 ||
+            thoughtCalls[0].transcript !== [
+                'Jensen: This is the first part of a longer thought.',
+                'Jensen: This is still the same speaker run.',
+                'Alpha-Clawd: I am with you.'
+            ].join('\n')
+        ) {
+            throw new Error(`Packetization did not flush the settled alternation: ${JSON.stringify(thoughtCalls)}`);
+        }
+
+        const packetRecord = JSON.parse(fs.readFileSync(session.outputPath, 'utf8').trim());
+        if (packetRecord.packetReason !== 'packet-grace') {
+            throw new Error(`Alternation packet used unexpected reason: ${packetRecord.packetReason}`);
+        }
+        await manager.endSession('guild-packetization');
+        fs.rmSync(managerDir, { recursive: true, force: true });
+
+        const capDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-packet-cap-'));
+        const capCalls = [];
+        const cappedManager = new InternalThoughtManager({
+            packetMode: 'packetization-buffer',
+            packetGraceMs: 1000,
+            packetMaxAgeMs: 1000,
+            packetMaxEntries: 2,
+            packetMaxChars: 1000,
+            packetMinAlternations: 1,
+            now: () => '2026-05-12T21:31:00.000Z',
+            thoughtGenerator: {
+                generate: async (input) => {
+                    capCalls.push(input);
+                    return {
+                        packetId: input.packetId,
+                        internalThought: 'The monologue hit a deterministic hard cap.',
+                        noticings: [],
+                        undercurrents: [],
+                        hostAwareness: '',
+                        candidateAwarenessNote: ''
+                    };
+                }
+            },
+            discernmentGenerator: {
+                generate: async () => ({
+                    injectIntoPodcastGenerator: false,
+                    reason: '',
+                    awarenessInjection: '',
+                    expiresAfterTurns: 0
+                })
+            }
+        });
+        const capSession = cappedManager.startSession('guild-packet-cap', { recordingPath: capDir });
+        const firstCapResult = await cappedManager.handleTranscriptEntry('guild-packet-cap', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'First monologue packet entry.'
+        });
+        const capRecord = await cappedManager.handleTranscriptEntry('guild-packet-cap', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'Second monologue packet entry.'
+        });
+        if (
+            firstCapResult !== null ||
+            capRecord?.packetId !== 'internal-packet-1' ||
+            !capRecord.packetReason.startsWith('packet-hard-cap') ||
+            capCalls.length !== 1
+        ) {
+            throw new Error(`Monologue hard cap did not flush deterministically: ${JSON.stringify({ firstCapResult, capRecord, capCalls })}`);
+        }
+        await cappedManager.endSession('guild-packet-cap');
+        fs.rmSync(capDir, { recursive: true, force: true });
+
+        console.log('  Packetization waits on single speaker runs, flushes settled alternations, and preserves hard caps');
+        passed++;
+    } catch (error) {
+        console.log(`  Internal thought packetization buffer failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\nTest 5d: BigBrain awareness selector');
     try {
         const selector = new BigBrainAwarenessSelector({
