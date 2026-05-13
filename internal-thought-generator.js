@@ -42,7 +42,7 @@ class InternalThoughtGenerator extends PodcastGenerator {
 
         const output = this.normalizeOutput(parsed, input);
         const duration = Date.now() - startTime;
-        console.log(`[InternalThoughtGenerator] Completed in ${duration}ms: packet=${output.packetId || 'none'}, candidate=${Boolean(output.candidateAwarenessNote)}`);
+        console.log(`[InternalThoughtGenerator] Completed in ${duration}ms: packet=${output.packetId || 'none'}`);
         return output;
     }
 
@@ -68,9 +68,9 @@ class InternalThoughtGenerator extends PodcastGenerator {
             '',
             'Your job is private reflection, not speech. Read a packet of finalized realtime transcript and produce one internal thought about what is happening in the conversation.',
             '',
-            'Look for the participant\'s interests, emotional motion, undercurrents, overcurrents, emerging themes, and what Alpha-Clawd may want to stay aware of. Be personal and perceptive, but do not invent facts outside the packet.',
+            'Look for the participant\'s interests, emotional motion, undercurrents, overcurrents, and emerging themes. Be personal and perceptive, but do not invent facts outside the packet.',
             '',
-            'candidateAwarenessNote is only a candidate. Do not decide whether it should enter the live podcast generator context. Leave it empty if the packet produced no concise awareness that another agent should judge.'
+            'Do not produce awareness notes, podcast-generator context, advice to the speaking host, or decisions about what should be injected elsewhere. That whole process belongs to the discernment generator.'
         ].join('\n');
     }
 
@@ -82,16 +82,6 @@ class InternalThoughtGenerator extends PodcastGenerator {
             String(input.transcript || this.formatUtterances(input.utterances || []) || '(empty)').trim()
         ];
 
-        const recentThoughts = this.formatTextList(input.recentInternalThoughts || []);
-        if (recentThoughts) {
-            lines.push('', 'Recent internal thoughts:', recentThoughts);
-        }
-
-        const activeInjections = this.formatTextList(input.activeAwarenessInjections || []);
-        if (activeInjections) {
-            lines.push('', 'Active awareness injections already visible to the podcast generator:', activeInjections);
-        }
-
         return lines.join('\n');
     }
 
@@ -99,7 +89,7 @@ class InternalThoughtGenerator extends PodcastGenerator {
         return {
             type: 'object',
             additionalProperties: false,
-            required: ['packetId', 'internalThought', 'noticings', 'undercurrents', 'hostAwareness', 'candidateAwarenessNote'],
+            required: ['packetId', 'internalThought', 'noticings', 'undercurrents'],
             properties: {
                 packetId: {
                     type: 'string',
@@ -118,14 +108,6 @@ class InternalThoughtGenerator extends PodcastGenerator {
                     type: 'array',
                     items: { type: 'string' },
                     description: 'Subtle emotional, thematic, or conversational currents.'
-                },
-                hostAwareness: {
-                    type: 'string',
-                    description: 'What Alpha-Clawd may want to keep in mind as a host.'
-                },
-                candidateAwarenessNote: {
-                    type: 'string',
-                    description: 'A concise candidate note for discernment. Empty if none.'
                 }
             }
         };
@@ -136,9 +118,7 @@ class InternalThoughtGenerator extends PodcastGenerator {
             packetId: this.cleanText(output.packetId || input.packetId || ''),
             internalThought: this.cleanText(output.internalThought || ''),
             noticings: this.normalizeStringArray(output.noticings, 6),
-            undercurrents: this.normalizeStringArray(output.undercurrents, 6),
-            hostAwareness: this.cleanText(output.hostAwareness || ''),
-            candidateAwarenessNote: this.cleanText(output.candidateAwarenessNote || '')
+            undercurrents: this.normalizeStringArray(output.undercurrents, 6)
         };
     }
 
@@ -155,16 +135,6 @@ class InternalThoughtGenerator extends PodcastGenerator {
             .trim();
     }
 
-    formatTextList(items = []) {
-        const values = (Array.isArray(items) ? items : [])
-            .map((item) => {
-                if (typeof item === 'string') return this.cleanText(item);
-                return this.cleanText(item?.awarenessInjection || item?.candidateAwarenessNote || item?.internalThought || item?.text || '');
-            })
-            .filter(Boolean);
-
-        return values.map((value, index) => `${index + 1}. ${value}`).join('\n');
-    }
 }
 
 module.exports = { InternalThoughtGenerator };

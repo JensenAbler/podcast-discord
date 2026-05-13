@@ -31,7 +31,7 @@ class InternalThoughtManager {
         };
         this.maxRecentThoughts = this.parsePositiveInt(
             options.maxRecentThoughts ?? process.env.PODCAST_INTERNAL_THOUGHT_RECENT_COUNT,
-            4
+            3
         );
         this.maxActiveAwarenessInjections = this.parsePositiveInt(
             options.maxActiveAwarenessInjections ?? process.env.PODCAST_AWARENESS_MAX_ACTIVE,
@@ -64,6 +64,7 @@ class InternalThoughtManager {
             packetSeq: 0,
             packetBuffer: [],
             packetizationBuffer: null,
+            transcriptEntries: [],
             thoughts: [],
             activeAwarenessInjections: [],
             processing: Promise.resolve()
@@ -115,6 +116,7 @@ class InternalThoughtManager {
             return Promise.resolve(null);
         }
 
+        session.transcriptEntries.push(normalized);
         this.advanceAwarenessExpirations(session, normalized);
 
         if (this.packetMode === 'packetization-buffer' && session.packetizationBuffer) {
@@ -183,7 +185,8 @@ class InternalThoughtManager {
             reason,
             createdAt: this.now(),
             entries,
-            transcript: this.formatTranscript(entries)
+            transcript: this.formatTranscript(entries),
+            completeTranscript: this.formatTranscript(session.transcriptEntries)
         };
     }
 
@@ -203,14 +206,13 @@ class InternalThoughtManager {
             const thought = await this.thoughtGenerator.generate({
                 packetId: packet.packetId,
                 transcript: packet.transcript,
-                utterances: packet.entries,
-                recentInternalThoughts: session.thoughts.slice(-this.maxRecentThoughts),
-                activeAwarenessInjections: session.activeAwarenessInjections
+                utterances: packet.entries
             });
 
             const record = {
                 ...baseRecord,
                 thought,
+                awarenessCandidate: null,
                 discernment: null,
                 awarenessInjection: null
             };
@@ -218,16 +220,23 @@ class InternalThoughtManager {
             session.thoughts.push({
                 packetId: packet.packetId,
                 internalThought: thought.internalThought,
-                hostAwareness: thought.hostAwareness,
-                candidateAwarenessNote: thought.candidateAwarenessNote,
                 createdAt: record.processedAt
             });
 
-            if (thought.candidateAwarenessNote) {
-                const discernment = await this.discernmentGenerator.generate({
-                    candidateAwarenessNote: thought.candidateAwarenessNote,
-                    internalThought: thought.internalThought,
-                    transcript: packet.transcript,
+            const recentInternalThoughts = session.thoughts.slice(-this.maxRecentThoughts);
+            const awarenessCandidate = await this.generateAwarenessCandidate({
+                recentInternalThoughts,
+                completeTranscript: packet.completeTranscript,
+                packetId: packet.packetId
+            });
+            record.awarenessCandidate = awarenessCandidate;
+
+            if (awarenessCandidate.candidateAwarenessNote) {
+                const discernment = await this.judgeAwarenessCandidate({
+                    candidateAwarenessNote: awarenessCandidate.candidateAwarenessNote,
+                    candidateReason: awarenessCandidate.reason,
+                    recentInternalThoughts,
+                    completeTranscript: packet.completeTranscript,
                     activeAwarenessInjections: session.activeAwarenessInjections
                 });
                 record.discernment = discernment;
@@ -249,6 +258,20 @@ class InternalThoughtManager {
             console.warn(`[InternalThoughtManager] Failed ${packet.packetId}: ${error.message}`);
             return errorRecord;
         }
+    }
+
+    async generateAwarenessCandidate(input) {
+        if (typeof this.discernmentGenerator.generateCandidate === 'function') {
+            return this.discernmentGenerator.generateCandidate(input);
+        }
+        return this.discernmentGenerator.generate({ ...input, mode: 'candidate' });
+    }
+
+    async judgeAwarenessCandidate(input) {
+        if (typeof this.discernmentGenerator.judgeCandidate === 'function') {
+            return this.discernmentGenerator.judgeCandidate(input);
+        }
+        return this.discernmentGenerator.generate({ ...input, mode: 'judgment' });
     }
 
     activateAwarenessInjection(session, packet, discernment) {

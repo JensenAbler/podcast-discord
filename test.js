@@ -802,9 +802,7 @@ async function runTests() {
                             packetId: '',
                             internalThought: ' Jensen is trying to give Alpha-Clawd a private reflective layer. ',
                             noticings: [' The goal is personality coming through. ', '', 'Packets should batch meaning.'],
-                            undercurrents: ['There is excitement about originality.'],
-                            hostAwareness: 'Stay oriented toward Jensen designing a mind, not asking for a quick implementation answer.',
-                            candidateAwarenessNote: 'Jensen is most interested in internal thought as a way for Alpha-Clawd personality to become more alive.'
+                            undercurrents: ['There is excitement about originality.']
                         })
                     }
                 }],
@@ -822,15 +820,16 @@ async function runTests() {
         if (
             thoughtCall?.requestPath !== '/chat/completions' ||
             thoughtCall.body.response_format?.json_schema?.name !== 'podcast_internal_thought' ||
-            thoughtCall.body.response_format?.json_schema?.schema?.required?.join(',') !== 'packetId,internalThought,noticings,undercurrents,hostAwareness,candidateAwarenessNote'
+            thoughtCall.body.response_format?.json_schema?.schema?.required?.join(',') !== 'packetId,internalThought,noticings,undercurrents'
         ) {
             throw new Error(`Internal thought schema was not used: ${JSON.stringify(thoughtCall)}`);
         }
         if (
             thought.packetId !== 'packet-voice-1' ||
             thought.noticings.length !== 2 ||
-            !thought.hostAwareness.includes('designing a mind') ||
-            !thought.candidateAwarenessNote.includes('personality')
+            thought.undercurrents.length !== 1 ||
+            thought.hostAwareness !== undefined ||
+            thought.candidateAwarenessNote !== undefined
         ) {
             throw new Error(`Internal thought output was not normalized: ${JSON.stringify(thought)}`);
         }
@@ -839,15 +838,23 @@ async function runTests() {
             transcript: 'Jensen: Test prompt.',
             activeAwarenessInjections: ['One active injection.']
         });
-        if (!thoughtPrompt.includes('packetId: packet-prompt') || !thoughtPrompt.includes('Active awareness injections already visible')) {
-            throw new Error(`Internal thought prompt is missing packet context: ${thoughtPrompt}`);
+        if (
+            !thoughtPrompt.includes('packetId: packet-prompt') ||
+            thoughtPrompt.includes('Active awareness injections') ||
+            thoughtPrompt.includes('Recent internal thoughts')
+        ) {
+            throw new Error(`Internal thought prompt should stay packet-only: ${thoughtPrompt}`);
         }
 
         const discernmentGenerator = new DiscernmentGenerator({
             apiKey: 'discernment-test-key',
             maxCompletionTokens: 200
         });
-        const discernmentSchema = discernmentGenerator.getResponseSchema();
+        const candidateSchema = discernmentGenerator.getResponseSchema('candidate');
+        if (candidateSchema.required.join(',') !== 'candidateAwarenessNote,reason') {
+            throw new Error(`Discernment candidate schema is wrong: ${JSON.stringify(candidateSchema)}`);
+        }
+        const discernmentSchema = discernmentGenerator.getResponseSchema('judgment');
         if (
             discernmentSchema.required.join(',') !== 'injectIntoPodcastGenerator,reason,awarenessInjection,expiresAfterTurns' ||
             discernmentSchema.properties.priority ||
@@ -867,40 +874,67 @@ async function runTests() {
             throw new Error(`Discernment should reject empty injections: ${JSON.stringify(rejected)}`);
         }
 
-        let discernmentCall = null;
+        const discernmentCalls = [];
         discernmentGenerator.fetchJson = async (requestPath, body) => {
-            discernmentCall = { requestPath, body };
+            discernmentCalls.push({ requestPath, body });
+            const schemaName = body.response_format?.json_schema?.name;
+            const content = schemaName === 'podcast_awareness_candidate'
+                ? {
+                    candidateAwarenessNote: 'Jensen is most interested in internal thought as a way for Alpha-Clawd personality to become more alive.',
+                    reason: 'The recent private thoughts and transcript share the same design aim.'
+                }
+                : {
+                    injectIntoPodcastGenerator: true,
+                    reason: 'This would help Alpha-Clawd stay with Jensen\'s stated aim.',
+                    awarenessInjection: 'Jensen is designing internal thought to let Alpha-Clawd personality come through, not asking for a generic implementation lecture.',
+                    expiresAfterTurns: 4
+                };
             return {
                 choices: [{
                     message: {
-                        content: JSON.stringify({
-                            injectIntoPodcastGenerator: true,
-                            reason: 'This would help Alpha-Clawd stay with Jensen\'s stated aim.',
-                            awarenessInjection: 'Jensen is designing internal thought to let Alpha-Clawd personality come through, not asking for a generic implementation lecture.',
-                            expiresAfterTurns: 4
-                        })
+                        content: JSON.stringify(content)
                     }
                 }]
             };
         };
 
-        const approved = await discernmentGenerator.generate({
-            candidateAwarenessNote: thought.candidateAwarenessNote,
-            internalThought: thought.internalThought,
-            transcript: 'Jensen: I want your personality to come out.'
+        const candidate = await discernmentGenerator.generateCandidate({
+            recentInternalThoughts: [thought],
+            completeTranscript: 'Jensen: I want your personality to come out.'
+        });
+        const approved = await discernmentGenerator.judgeCandidate({
+            candidateAwarenessNote: candidate.candidateAwarenessNote,
+            candidateReason: candidate.reason,
+            recentInternalThoughts: [thought],
+            completeTranscript: 'Jensen: I want your personality to come out.'
         });
 
         if (
-            discernmentCall?.requestPath !== '/chat/completions' ||
-            discernmentCall.body.response_format?.json_schema?.name !== 'podcast_awareness_discernment' ||
+            discernmentCalls[0]?.requestPath !== '/chat/completions' ||
+            discernmentCalls[0].body.response_format?.json_schema?.name !== 'podcast_awareness_candidate' ||
+            !candidate.candidateAwarenessNote.includes('personality') ||
+            discernmentCalls[1]?.body.response_format?.json_schema?.name !== 'podcast_awareness_discernment' ||
             !approved.injectIntoPodcastGenerator ||
             approved.expiresAfterTurns !== 4 ||
             !approved.awarenessInjection.includes('personality come through')
         ) {
-            throw new Error(`Discernment generator did not approve the injection as expected: ${JSON.stringify({ discernmentCall, approved })}`);
+            throw new Error(`Discernment generator did not run candidate and judgment passes as expected: ${JSON.stringify({ discernmentCalls, candidate, approved })}`);
         }
 
-        const discernmentPrompt = discernmentGenerator.buildSystemPrompt();
+        const candidatePrompt = discernmentGenerator.buildUserPrompt({
+            mode: 'candidate',
+            recentInternalThoughts: [thought],
+            completeTranscript: 'Jensen: I want your personality to come out.'
+        });
+        if (
+            !candidatePrompt.includes('Complete transcript so far') ||
+            !candidatePrompt.includes('Three most recent internal thoughts') ||
+            candidatePrompt.includes('Awareness injections already active')
+        ) {
+            throw new Error(`Discernment candidate prompt is wrong: ${candidatePrompt}`);
+        }
+
+        const discernmentPrompt = discernmentGenerator.buildSystemPrompt('judgment');
         if (
             !discernmentPrompt.includes('relevant enough to the interests of the podcast participants') ||
             !discernmentPrompt.includes('awarenessInjection') ||
@@ -909,7 +943,7 @@ async function runTests() {
             throw new Error(`Discernment prompt does not match the revised framing: ${discernmentPrompt}`);
         }
 
-        console.log('  Internal thoughts and discernment use structured JSON contracts with awareness injections');
+        console.log('  Internal thoughts stay packet-only; discernment produces candidates and judges awareness injections');
         passed++;
     } catch (error) {
         console.log(`  Internal thought/discernment generator failed: ${error.message}`);
@@ -934,17 +968,25 @@ async function runTests() {
                         packetId: input.packetId,
                         internalThought: `Private thought ${thoughtCount}`,
                         noticings: [`noticing ${thoughtCount}`],
-                        undercurrents: [],
-                        hostAwareness: `host awareness ${thoughtCount}`,
-                        candidateAwarenessNote: thoughtCount === 1
-                            ? 'Jensen wants internal thought to make Alpha-Clawd feel more alive.'
-                            : ''
+                        undercurrents: []
                     };
                 }
             },
             discernmentGenerator: {
-                generate: async (input) => {
-                    discernmentCalls.push(input);
+                generateCandidate: async (input) => {
+                    discernmentCalls.push({ mode: 'candidate', input });
+                    const candidateCount = discernmentCalls.filter((call) => call.mode === 'candidate').length;
+                    return {
+                        candidateAwarenessNote: candidateCount === 1
+                            ? 'Jensen wants internal thought to make Alpha-Clawd feel more alive.'
+                            : '',
+                        reason: candidateCount === 1
+                            ? 'The transcript and recent thought share a clear design aim.'
+                            : 'No fresh awareness candidate.'
+                    };
+                },
+                judgeCandidate: async (input) => {
+                    discernmentCalls.push({ mode: 'judgment', input });
                     return {
                         injectIntoPodcastGenerator: true,
                         reason: 'This tracks Jensen\'s stated interest.',
@@ -979,7 +1021,14 @@ async function runTests() {
             firstRecord?.packetId !== 'internal-packet-1' ||
             firstRecord.awarenessInjection?.remainingTurns !== 2 ||
             thoughtCalls[0]?.transcript !== 'Jensen: I want your personality to come out.\nAlpha-Clawd: I hear that.' ||
-            discernmentCalls.length !== 1
+            thoughtCalls[0]?.recentInternalThoughts !== undefined ||
+            thoughtCalls[0]?.activeAwarenessInjections !== undefined ||
+            firstRecord.awarenessCandidate?.candidateAwarenessNote !== 'Jensen wants internal thought to make Alpha-Clawd feel more alive.' ||
+            discernmentCalls.length !== 2 ||
+            discernmentCalls[0].mode !== 'candidate' ||
+            discernmentCalls[0].input.recentInternalThoughts?.length !== 1 ||
+            !discernmentCalls[0].input.completeTranscript.includes('Alpha-Clawd: I hear that.') ||
+            discernmentCalls[1].mode !== 'judgment'
         ) {
             throw new Error(`Manager did not process first packet correctly: ${JSON.stringify({ firstRecord, thoughtCalls, discernmentCalls })}`);
         }
@@ -1008,8 +1057,11 @@ async function runTests() {
         if (
             secondRecord?.packetId !== 'internal-packet-2' ||
             active.length !== 0 ||
-            thoughtCalls[1]?.recentInternalThoughts?.length !== 1 ||
-            discernmentCalls.length !== 1
+            thoughtCalls[1]?.recentInternalThoughts !== undefined ||
+            discernmentCalls.length !== 3 ||
+            discernmentCalls[2].mode !== 'candidate' ||
+            discernmentCalls[2].input.recentInternalThoughts?.length !== 2 ||
+            !discernmentCalls[2].input.completeTranscript.includes('Then milestone thoughts can connect them.')
         ) {
             throw new Error(`Second packet did not preserve recent thoughts or expire injection: ${JSON.stringify({ secondRecord, active, thoughtCalls, discernmentCalls })}`);
         }
@@ -1115,9 +1167,7 @@ async function runTests() {
                         packetId: input.packetId,
                         internalThought: 'This should not run for a lone host turn.',
                         noticings: [],
-                        undercurrents: [],
-                        hostAwareness: '',
-                        candidateAwarenessNote: ''
+                        undercurrents: []
                     };
                 }
             },
@@ -1164,9 +1214,7 @@ async function runTests() {
                         packetId: input.packetId,
                         internalThought: 'The packet is ready after a settled alternation.',
                         noticings: [],
-                        undercurrents: [],
-                        hostAwareness: '',
-                        candidateAwarenessNote: ''
+                        undercurrents: []
                     };
                 }
             },
@@ -1259,9 +1307,7 @@ async function runTests() {
                         packetId: input.packetId,
                         internalThought: 'The monologue hit a deterministic hard cap.',
                         noticings: [],
-                        undercurrents: [],
-                        hostAwareness: '',
-                        candidateAwarenessNote: ''
+                        undercurrents: []
                     };
                 }
             },
