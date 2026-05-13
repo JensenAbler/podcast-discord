@@ -3,7 +3,9 @@ const DEFAULT_PACKET_GRACE_MS = 2500;
 const DEFAULT_MAX_AGE_MS = 45000;
 const DEFAULT_MAX_ENTRIES = 12;
 const DEFAULT_MAX_CHARS = 2500;
-const DEFAULT_MIN_ALTERNATIONS = 1;
+const DEFAULT_MIN_ALTERNATIONS = 0;
+const DEFAULT_LOW_TOKEN_MIN_ALTERNATIONS = 4;
+const DEFAULT_SPEAKER_TOKEN_THRESHOLD = 40;
 const DEFAULT_PENDING_ASR_TIMEOUT = 8000;
 
 function parseFiniteEnv(raw) {
@@ -47,6 +49,14 @@ class PacketizationBuffer {
             minAlternations: nonNegativeInteger(
                 config.minAlternations ?? parseFiniteEnv(process.env.PODCAST_PACKETIZATION_MIN_ALTERNATIONS),
                 DEFAULT_MIN_ALTERNATIONS
+            ),
+            lowTokenMinAlternations: nonNegativeInteger(
+                config.lowTokenMinAlternations ?? parseFiniteEnv(process.env.PODCAST_PACKETIZATION_LOW_TOKEN_MIN_ALTERNATIONS),
+                DEFAULT_LOW_TOKEN_MIN_ALTERNATIONS
+            ),
+            speakerTokenThreshold: positiveNumber(
+                config.speakerTokenThreshold ?? parseFiniteEnv(process.env.PODCAST_PACKETIZATION_SPEAKER_TOKEN_THRESHOLD),
+                DEFAULT_SPEAKER_TOKEN_THRESHOLD
             ),
             pendingAsrTimeout: positiveNumber(
                 config.pendingAsrTimeout ?? parseFiniteEnv(process.env.PODCAST_PACKETIZATION_PENDING_ASR_TIMEOUT_MS),
@@ -229,7 +239,15 @@ class PacketizationBuffer {
     }
 
     hasMeaningfulSpeakerAlternation() {
-        return this.getSpeakerAlternationCount() >= this.config.minAlternations;
+        return this.getSpeakerAlternationCount() >= this.getRequiredAlternationCount();
+    }
+
+    getRequiredAlternationCount() {
+        if (this.hasContentfulParticipantRun()) {
+            return this.config.minAlternations;
+        }
+
+        return Math.max(this.config.minAlternations, this.config.lowTokenMinAlternations);
     }
 
     getSpeakerAlternationCount() {
@@ -247,6 +265,45 @@ class PacketizationBuffer {
             }
         }
         return runs;
+    }
+
+    hasContentfulParticipantRun() {
+        return this.getSpeakerRunStats().some((run) => {
+            return run.hasParticipant && run.tokenCount >= this.config.speakerTokenThreshold;
+        });
+    }
+
+    getSpeakerRunStats() {
+        const runs = [];
+        for (const entry of this.getOrderedEntries()) {
+            const speaker = this.getSpeakerKey(entry);
+            if (!speaker) continue;
+
+            const last = runs[runs.length - 1];
+            const tokenCount = this.countEntryTokens(entry);
+            if (last && last.speaker === speaker) {
+                last.tokenCount += tokenCount;
+                last.hasParticipant = last.hasParticipant || this.isParticipantEntry(entry);
+            } else {
+                runs.push({
+                    speaker,
+                    tokenCount,
+                    hasParticipant: this.isParticipantEntry(entry)
+                });
+            }
+        }
+        return runs;
+    }
+
+    isParticipantEntry(entry = {}) {
+        return entry.speakerRole !== 'host';
+    }
+
+    countEntryTokens(entry = {}) {
+        const text = String(entry.text || entry.transcription || '').trim();
+        if (!text) return 0;
+        const matches = text.match(/[A-Za-z0-9]+(?:['.-][A-Za-z0-9]+)*/g);
+        return matches ? matches.length : text.split(/\s+/).filter(Boolean).length;
     }
 
     getSpeakerKey(entry = {}) {

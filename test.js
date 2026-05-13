@@ -1035,8 +1035,68 @@ async function runTests() {
     console.log('\nTest 5c.1: Internal thought packetization buffer waits through monologues and flushes on alternation');
     try {
         const defaultPacketizationBuffer = new PacketizationBuffer();
-        if (defaultPacketizationBuffer.config.minAlternations !== 1) {
-            throw new Error(`Packetization default alternation threshold drifted: ${defaultPacketizationBuffer.config.minAlternations}`);
+        if (
+            defaultPacketizationBuffer.config.minAlternations !== 0 ||
+            defaultPacketizationBuffer.config.lowTokenMinAlternations !== 4 ||
+            defaultPacketizationBuffer.config.speakerTokenThreshold !== 40
+        ) {
+            throw new Error(`Packetization default thresholds drifted: ${JSON.stringify(defaultPacketizationBuffer.config)}`);
+        }
+
+        const lowTokenFlushes = [];
+        const lowTokenBuffer = new PacketizationBuffer({
+            graceMs: 15,
+            maxAgeMs: 1000,
+            maxEntries: 20,
+            maxChars: 1000,
+            minAlternations: 0,
+            lowTokenMinAlternations: 4,
+            speakerTokenThreshold: 10
+        });
+        lowTokenBuffer.onFlush((entries, meta) => {
+            lowTokenFlushes.push({ entries, reason: meta.reason });
+            return entries;
+        });
+        for (const entry of [
+            { speaker: 'Alpha-Clawd', speakerRole: 'host', text: 'One?' },
+            { speaker: 'Jensen', speakerRole: 'guest', text: 'Two.' },
+            { speaker: 'Alpha-Clawd', speakerRole: 'host', text: 'Three?' },
+            { speaker: 'Jensen', speakerRole: 'guest', text: 'Four.' }
+        ]) {
+            lowTokenBuffer.addEntry(entry);
+        }
+        await sleep(35);
+        if (lowTokenFlushes.length !== 0) {
+            throw new Error(`Packetization flushed low-token exchange before four alternations: ${JSON.stringify(lowTokenFlushes)}`);
+        }
+        lowTokenBuffer.addEntry({ speaker: 'Alpha-Clawd', speakerRole: 'host', text: 'Five?' });
+        await sleep(35);
+        if (lowTokenFlushes.length !== 1 || lowTokenFlushes[0].entries.length !== 5 || lowTokenFlushes[0].reason !== 'packet-grace') {
+            throw new Error(`Packetization did not flush after four low-token alternations: ${JSON.stringify(lowTokenFlushes)}`);
+        }
+
+        const monologueFlushes = [];
+        const monologueBuffer = new PacketizationBuffer({
+            graceMs: 15,
+            maxAgeMs: 1000,
+            maxEntries: 20,
+            maxChars: 1000,
+            minAlternations: 0,
+            lowTokenMinAlternations: 4,
+            speakerTokenThreshold: 6
+        });
+        monologueBuffer.onFlush((entries, meta) => {
+            monologueFlushes.push({ entries, reason: meta.reason });
+            return entries;
+        });
+        monologueBuffer.addEntry({
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'One two three four five six.'
+        });
+        await sleep(35);
+        if (monologueFlushes.length !== 1 || monologueFlushes[0].entries.length !== 1 || monologueFlushes[0].reason !== 'packet-grace') {
+            throw new Error(`Packetization did not flush a contentful participant monologue: ${JSON.stringify(monologueFlushes)}`);
         }
 
         const hostOnlyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-host-only-'));
@@ -1095,6 +1155,7 @@ async function runTests() {
             packetMaxEntries: 4,
             packetMaxChars: 1000,
             packetMinAlternations: 1,
+            packetSpeakerTokenThreshold: 10,
             now: () => '2026-05-12T21:30:00.000Z',
             thoughtGenerator: {
                 generate: async (input) => {
@@ -1235,7 +1296,7 @@ async function runTests() {
         await cappedManager.endSession('guild-packet-cap');
         fs.rmSync(capDir, { recursive: true, force: true });
 
-        console.log('  Packetization waits on single speaker runs, avoids host-only grace packets, flushes settled alternations, and preserves hard caps');
+        console.log('  Packetization requires richer alternation for low-token exchanges, flushes contentful monologues, and preserves hard caps');
         passed++;
     } catch (error) {
         console.log(`  Internal thought packetization buffer failed: ${error.message}`);

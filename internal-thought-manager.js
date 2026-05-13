@@ -25,6 +25,8 @@ class InternalThoughtManager {
             maxEntries: options.packetMaxEntries ?? options.packetizationOptions?.maxEntries,
             maxChars: options.packetMaxChars ?? options.packetizationOptions?.maxChars,
             minAlternations: options.packetMinAlternations ?? options.packetizationOptions?.minAlternations,
+            lowTokenMinAlternations: options.packetLowTokenMinAlternations ?? options.packetizationOptions?.lowTokenMinAlternations,
+            speakerTokenThreshold: options.packetSpeakerTokenThreshold ?? options.packetizationOptions?.speakerTokenThreshold,
             pendingAsrTimeout: options.packetPendingAsrTimeout ?? options.packetizationOptions?.pendingAsrTimeout
         };
         this.maxRecentThoughts = this.parsePositiveInt(
