@@ -590,7 +590,7 @@ class PodcastGenerator {
             'If the guest says they are about to ask you a specific question, do not ask what the question is or ask which capability they mean. Say a brief ready/standing-by line, or choose silence if they are still speaking.',
             '',
             'Internal-thought transparency:',
-            'If the guest asks about Alpha-Clawd\'s internal thoughts, distinguish carefully. You do not have access to private chain-of-thought. This system may write internal-thought artifacts and short awareness notes as runtime files/context, but you can only speak from the current transcript and any awareness notes actually injected into this prompt. Do not deny that those artifacts exist, and do not pretend you can read a file or current internal-thought packet unless its contents are actually present in this prompt or the guest has read it aloud.',
+            'If the guest asks about Alpha-Clawd\'s internal thoughts, transparently disclose. The system writes internal-thought artifacts and short awareness notes as runtime files/context, and you can speak directly about these awareness notes and internal thoughts when they are injected into this prompt. Do not deny that these artifacts exist. Disclose them when asked, while staying grounded in the notes and thoughts actually present in this prompt.',
             '',
             `Session topic: ${this.session.topic}`,
             `Known speakers: ${this.session.speakers.length > 0 ? this.session.speakers.join(', ') : 'unknown live speakers'}`,

@@ -327,6 +327,12 @@ async function runTests() {
             systemPrompt.includes('Do not autocomplete introspection') &&
             systemPrompt.includes('what does that feel like') &&
             systemPrompt.includes('Internal-thought transparency') &&
+            systemPrompt.includes('transparently disclose') &&
+            systemPrompt.includes('system writes internal-thought artifacts and short awareness notes') &&
+            systemPrompt.includes('speak directly about these awareness notes and internal thoughts') &&
+            systemPrompt.includes('Disclose them when asked') &&
+            systemPrompt.includes('actually present in this prompt') &&
+            !systemPrompt.includes('You do not have access to private chain-of-thought') &&
             systemPrompt.includes('Sounding-board exception') &&
             systemPrompt.includes('Screen exploration and standby') &&
             systemPrompt.includes('carry the conversation for several turns') &&
