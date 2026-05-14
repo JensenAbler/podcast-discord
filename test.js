@@ -327,11 +327,10 @@ async function runTests() {
             systemPrompt.includes('Do not autocomplete introspection') &&
             systemPrompt.includes('what does that feel like') &&
             systemPrompt.includes('Internal-thought transparency') &&
-            systemPrompt.includes('transparently disclose') &&
+            systemPrompt.includes('you should transparently disclose') &&
             systemPrompt.includes('system writes internal-thought artifacts and short awareness notes') &&
-            systemPrompt.includes('speak directly about these awareness notes and internal thoughts') &&
+            systemPrompt.includes('awareness notes and internal thoughts which are injected as system messages') &&
             systemPrompt.includes('Disclose them when asked') &&
-            systemPrompt.includes('actually present in this prompt') &&
             !systemPrompt.includes('You do not have access to private chain-of-thought') &&
             systemPrompt.includes('Sounding-board exception') &&
             systemPrompt.includes('Screen exploration and standby') &&
@@ -1115,21 +1114,32 @@ async function runTests() {
             throw new Error(`Discernment candidate prompt is wrong: ${candidatePrompt}`);
         }
 
+        const candidateSystemPrompt = discernmentGenerator.buildSystemPrompt('candidate');
         const discernmentPrompt = discernmentGenerator.buildSystemPrompt('judgment');
         if (
             !discernmentPrompt.includes('relevant enough to the interests of the podcast participants') ||
             !discernmentPrompt.includes('awarenessInjection') ||
+            !candidateSystemPrompt.includes('CANDIDATE PRODUCTION/AWARENESS INJECTION process') ||
+            !discernmentPrompt.includes('You own the awareness injection process') ||
+            !discernmentPrompt.includes('JUDGMENT MODE') ||
+            !discernmentPrompt.includes('INJECTION JUDGEMENT') ||
             !discernmentPrompt.includes('immediate, present-tense') ||
             !discernmentPrompt.includes('later in this same episode') ||
-            !discernmentPrompt.includes('Preserve good rejections') ||
-            !discernmentPrompt.includes('Reject awareness candidates that would push step-by-step troubleshooting') ||
-            !discernmentPrompt.includes('Reject stale closing candidates') ||
+            !discernmentPrompt.includes('Reject stale candidates when the complete transcript has moved into a new topic') ||
+            !discernmentPrompt.includes('most recent user message indicates a PIVOT') ||
             !discernmentPrompt.includes('prevention of generic question-autocomplete') ||
-            !discernmentPrompt.includes('another generic question') ||
-            !discernmentGenerator.buildSystemPrompt('candidate').includes('Prefer attention and pacing notes') ||
-            !discernmentGenerator.buildSystemPrompt('candidate').includes('latest transcript beats older mood') ||
-            !discernmentGenerator.buildSystemPrompt('candidate').includes('guarding the podcast generator against generic question-autocomplete') ||
-            !discernmentGenerator.buildSystemPrompt('candidate').includes('synthesize, contribute, bridge, or hold space') ||
+            !candidateSystemPrompt.includes('CANDIDATE PRODUCTION MODE') ||
+            !candidateSystemPrompt.includes('reflexively asks the guest how something feels') ||
+            !candidateSystemPrompt.includes('asks what the guest wants next') ||
+            !candidateSystemPrompt.includes('suggest the possibility of synthesis, contribution, bridging, or holding space') ||
+            !candidateSystemPrompt.includes('Be very attentive especially to the most recent message') ||
+            !candidateSystemPrompt.includes('Prefer attention and pacing notes over suggested content') ||
+            candidateSystemPrompt.includes('INJECTION JUDGEMENT') ||
+            candidateSystemPrompt.includes('JUDGMENT MODE') ||
+            discernmentPrompt.includes('CANDIDATE PRODUCTION MODE') ||
+            discernmentPrompt.includes('CANDIDATE PRODUCTION/AWARENESS INJECTION process') ||
+            candidateSystemPrompt.includes('reflexively asks Jensen') ||
+            candidateSystemPrompt.includes('tell the host to synthesize') ||
             discernmentPrompt.includes('priority')
         ) {
             throw new Error(`Discernment prompt does not match the revised framing: ${discernmentPrompt}`);
