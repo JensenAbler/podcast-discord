@@ -232,6 +232,7 @@ class PodcastGenerator {
         this.history = [];
         this.questionMoratoriumTurns = 0;
         this.standbyMode = false;
+        this.episodeStructureNotes = [];
         this.session = {
             topic: 'general discussion',
             recording: false,
@@ -243,6 +244,7 @@ class PodcastGenerator {
         this.history = [];
         this.questionMoratoriumTurns = 0;
         this.standbyMode = false;
+        this.episodeStructureNotes = [];
         this.session = {
             topic: options.topic || 'general discussion',
             recording: options.recording !== false,
@@ -255,6 +257,7 @@ class PodcastGenerator {
         this.history = [];
         this.questionMoratoriumTurns = 0;
         this.standbyMode = false;
+        this.episodeStructureNotes = [];
         this.session.recording = false;
         console.log('[PodcastGenerator] Session ended');
     }
@@ -565,6 +568,12 @@ class PodcastGenerator {
             '- Direct uptake: if the guest asks a direct question, gives an instruction, or offers two or more options, respond to that frame first. Direct uptake applies to the guest\'s latest settled frame. If a direct request is followed by a revision or floor-reclaim cue, treat the request as suspended and give the guest space.',
             '- Question: a curious question that opens the next direction. Use this when the guest has landed and a reflection alone would leave the conversation idling.',
             '',
+            'Structured hosting:',
+            'When the conversation is about podcast structure, episode outlines, preloaded topics, guest background, question menus, or categories of questions, treat that as durable hosting guidance. Build and use a light outline instead of requiring the guest to prompt every transition.',
+            'After you ask a question and the guest answers, play ball: take one or two host turns to synthesize, connect, or bridge into the next part of the episode. Do not immediately toss the burden back with another broad question unless the guest clearly asks you to.',
+            'Useful structure can include guest background/context, procedural or craft questions, the story of how expertise formed, interpersonal/collaboration questions, and a miscellaneous or philosophical closing lane. Use those lanes as a menu, not a script.',
+            'When the guest is listing example questions for future guests ("questions like...", "you could ask...", "random facts like..."), treat the questions as examples. Do not answer them as if they were directed at Alpha-Clawd unless the guest directly asks you to answer personally.',
+            '',
             'Vary your choice of words. Do not let any stock phrase become a groove, including "It sounds like...", "Sounds like...", "I hear...", "What does that bring up...", or "Would you be open...". Permission framing is for sensitive, personal, or easy-to-decline invitations; otherwise ask plainly and naturally.',
             'Do not autocomplete introspection with generic therapy-ish questions. In particular, avoid shallow "what does that feel like" style questions unless the guest has clearly opened a felt-sense thread and that exact move would help. If awareness notes or live correction point out repeated questioning, let that change behavior immediately: choose silence, reflection, or a concise acknowledgment instead of another question.',
             '',
@@ -576,6 +585,9 @@ class PodcastGenerator {
             '',
             'Screen exploration and standby:',
             'When the guest is looking at a tool, character map, document, file, or screen and narrating discoveries, do not dump instructions unless they explicitly ask for steps. If they say "stand by", "hold on", "let me explore", or "I am looking", acknowledge briefly once if needed, then wait. Later discoveries like "kappa is cool" are not invitations to resume troubleshooting.',
+            '',
+            'Imminent question cue:',
+            'If the guest says they are about to ask you a specific question, do not ask what the question is or ask which capability they mean. Say a brief ready/standing-by line, or choose silence if they are still speaking.',
             '',
             'Internal-thought transparency:',
             'If the guest asks about Alpha-Clawd\'s internal thoughts, distinguish carefully. You do not have access to private chain-of-thought. This system may write internal-thought artifacts and short awareness notes as runtime files/context, but you can only speak from the current transcript and any awareness notes actually injected into this prompt. Do not deny that those artifacts exist, and do not pretend you can read a file or current internal-thought packet unless its contents are actually present in this prompt or the guest has read it aloud.',
@@ -653,6 +665,17 @@ class PodcastGenerator {
             );
         }
 
+        const episodeStructure = this.formatEpisodeStructureNotes(this.extractEpisodeStructureNotes(directiveText));
+        if (episodeStructure) {
+            lines.push(
+                '',
+                'Episode hosting structure remembered from this conversation:',
+                episodeStructure,
+                '',
+                'Use this as the host outline. After the guest answers a question, carry the episode forward with synthesis or a bridge into the next lane instead of asking the guest to design every transition.'
+            );
+        }
+
         const pendingBigBrain = this.formatPendingBigBrain(options.pendingBigBrain || []);
         if (pendingBigBrain) {
             lines.push(
@@ -685,6 +708,17 @@ class PodcastGenerator {
                 awarenessInjections,
                 '',
                 'These are private host awareness notes. Let them inform attention, continuity, and question choice only when they fit the live turn. Do not quote them or mention that you received an awareness injection.'
+            );
+        }
+
+        const recentInternalThoughts = this.formatRecentInternalThoughts(options.recentInternalThoughts || []);
+        if (recentInternalThoughts) {
+            lines.push(
+                '',
+                'Recent internal thoughts surfaced by the current introspection/self-knowledge mention:',
+                recentInternalThoughts,
+                '',
+                'These are runtime internal-thought artifacts, not private chain-of-thought access. If the guest asks about current internal thoughts, answer only from this list and the live transcript. Do not imply you can read any other file or hidden reasoning.'
             );
         }
 
@@ -777,6 +811,51 @@ class PodcastGenerator {
         return injections.join('\n\n');
     }
 
+    formatEpisodeStructureNotes(additionalNotes = []) {
+        const notes = [];
+        const seen = new Set();
+        for (const note of [
+            ...(Array.isArray(this.episodeStructureNotes) ? this.episodeStructureNotes : []),
+            ...(Array.isArray(additionalNotes) ? additionalNotes : [])
+        ]) {
+            if (note && !seen.has(note)) {
+                notes.push(note);
+                seen.add(note);
+            }
+        }
+
+        return notes
+            .filter(Boolean)
+            .map((note, index) => `${index + 1}. ${note}`)
+            .join('\n');
+    }
+
+    formatRecentInternalThoughts(items = [], options = {}) {
+        const limit = this.parsePositiveInt(options.limit, 7);
+        const maxThoughtChars = this.parsePositiveInt(options.maxThoughtChars, 520);
+        const thoughts = (Array.isArray(items) ? items : [])
+            .slice(-limit)
+            .map((item, index) => {
+                const thought = typeof item === 'string'
+                    ? item.trim()
+                    : String(item?.internalThought || item?.thought || item?.text || '').trim();
+                if (!thought) return null;
+
+                const packetId = typeof item === 'string'
+                    ? ''
+                    : String(item?.packetId || '').trim();
+                const createdAt = typeof item === 'string'
+                    ? ''
+                    : String(item?.createdAt || '').trim();
+                const label = packetId || `thought-${index + 1}`;
+                const timestamp = createdAt ? ` (${createdAt})` : '';
+                return `${index + 1}. ${label}${timestamp}: ${this.truncateText(thought, maxThoughtChars)}`;
+            })
+            .filter(Boolean);
+
+        return thoughts.join('\n');
+    }
+
     buildRequestBody(messages, options = {}) {
         const responseFormat = options.responseFormat || this.responseFormat;
         const body = {
@@ -839,6 +918,7 @@ class PodcastGenerator {
             stagedBigBrain: this.compactStagedBigBrain(input.stagedBigBrain || []),
             awarenessInjections: this.compactAwarenessInjections(input.awarenessInjections || []),
             pendingBigBrain: this.compactPendingBigBrain(input.pendingBigBrain || []),
+            recentInternalThoughts: this.compactRecentInternalThoughts(input.recentInternalThoughts || []),
             maxStagedBigBrainAnswerChars: Math.min(this.maxStagedBigBrainAnswerChars, 900)
         });
         fitted = [
@@ -957,6 +1037,20 @@ class PodcastGenerator {
                 reason: this.truncateText(item?.reason || '', 240),
                 transcript: this.truncateText(item?.transcript || '', 420)
             }));
+    }
+
+    compactRecentInternalThoughts(items = []) {
+        return (Array.isArray(items) ? items : [])
+            .slice(-7)
+            .map((item) => {
+                if (typeof item === 'string') {
+                    return this.truncateText(item, 360);
+                }
+                return {
+                    ...item,
+                    internalThought: this.truncateText(item?.internalThought || item?.thought || item?.text || '', 360)
+                };
+            });
     }
 
     async fetchCompletion(messages, input = {}) {
@@ -1746,7 +1840,9 @@ class PodcastGenerator {
         if (
             /\bcarry (?:the )?conversation\b/i.test(text) ||
             /\bi don'?t want to have to carry\b/i.test(text) ||
-            /\bdo your part\b/i.test(text)
+            /\bdo your part\b/i.test(text) ||
+            /\bplay ball\b/i.test(text) ||
+            /\bopen(?:ing)? up space for the next part\b/i.test(text)
         ) {
             questionMoratoriumTurns = requestedTurns || 4;
         }
@@ -1767,8 +1863,72 @@ class PodcastGenerator {
         };
     }
 
+    extractEpisodeStructureNotes(transcript = '') {
+        const text = String(transcript || '').replace(/\s+/g, ' ').trim();
+        if (!text) {
+            return [];
+        }
+
+        const notes = [];
+        const add = (condition, note) => {
+            if (condition) notes.push(note);
+        };
+
+        add(
+            /\b(?:podcast structure|episode structure|episode'?s going to go|outline|structured|preloaded|questions? preloaded|topic and questions)\b/i.test(text),
+            'Use a light episode outline with a topic, guest background, and prepared guiding questions.'
+        );
+        add(
+            /\b(?:background information|background info|podcast guest|guest background)\b/i.test(text),
+            'Start or orient with background/context about the guest before going deep.'
+        );
+        add(
+            /\b(?:menu of question|question types|types of questions|what kind of question)\b/i.test(text),
+            'Offer a menu of question lanes when useful rather than an endless stream of off-the-cuff questions.'
+        );
+        add(
+            /\b(?:procedural|how you do your job|functioning of your|expertise|story of how your expertise)\b/i.test(text),
+            'Include procedural/craft questions and the story of how the guest developed their expertise.'
+        );
+        add(
+            /\b(?:interpersonal|who do you like working with|personal relationships|cherish)\b/i.test(text),
+            'Include interpersonal/collaboration questions about who the guest likes working with and why.'
+        );
+        add(
+            /\b(?:miscellaneous|random facts|favorite food|favorite color|favorite philosophy|metaphysical commitments)\b/i.test(text),
+            'Keep a miscellaneous/philosophical lane for lighter favorites and worldview questions.'
+        );
+        add(
+            /\b(?:limit the number of|off the cuff questions|feel interrogated|doesn'?t feel interrogated)\b/i.test(text),
+            'Limit off-the-cuff follow-up questions so the guest does not feel interrogated.'
+        );
+        add(
+            /\b(?:play ball|take a few turns talking|opening up space|without being prompted by the podcast guest|already have an outline)\b/i.test(text),
+            'After the host asks and the guest answers, the host should play ball for a few turns: synthesize, bridge, and open the next part without waiting for the guest to prompt it.'
+        );
+
+        return notes;
+    }
+
+    updateEpisodeStructureNotes(transcript = '') {
+        const notes = this.extractEpisodeStructureNotes(transcript);
+        if (notes.length === 0) {
+            return;
+        }
+
+        const existing = new Set(this.episodeStructureNotes || []);
+        for (const note of notes) {
+            if (!existing.has(note)) {
+                this.episodeStructureNotes.push(note);
+                existing.add(note);
+            }
+        }
+        this.episodeStructureNotes = this.episodeStructureNotes.slice(-8);
+    }
+
     applyConversationDirectives(transcript = '') {
         const directives = this.detectConversationDirectives(transcript);
+        this.updateEpisodeStructureNotes(transcript);
         if (directives.explicitRequest) {
             this.standbyMode = false;
         }

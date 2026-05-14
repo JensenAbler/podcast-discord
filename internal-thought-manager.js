@@ -296,11 +296,34 @@ class InternalThoughtManager {
         }
 
         session.activeAwarenessInjections = session.activeAwarenessInjections
+            .filter((item) => !this.isAwarenessInvalidatedByEntry(item, entry))
             .map((item) => ({
                 ...item,
                 remainingTurns: Math.max(0, Number(item.remainingTurns || 0) - 1)
             }))
             .filter((item) => item.remainingTurns > 0);
+    }
+
+    isAwarenessInvalidatedByEntry(item = {}, entry = {}) {
+        const text = String(entry.text || '').toLowerCase();
+        const awareness = [
+            item.awarenessInjection,
+            item.reason
+        ].filter(Boolean).join(' ').toLowerCase();
+        if (!text || !awareness) {
+            return false;
+        }
+
+        const topicPivot = /\b(?:not quite done|not done|we'?re not done|before i tell you|speaking of which|like i was saying|the reason i started|i started this podcast|new capabilities|new capability|i want to (?:check|test|try)|very specific question)\b/i.test(text);
+        const closingAwareness = /\b(?:wrap[-\s]?up|winding down|good night|rest|sleep|bed|sign off|catch you|farewell|close the|closing)\b/i.test(awareness);
+        if (topicPivot && closingAwareness) {
+            return true;
+        }
+
+        const imminentQuestion = /\b(?:i'?m going to ask|i am going to ask|i will ask|i'?ll ask)\b.*\b(?:specific )?question\b/i.test(text);
+        const solicitsQuestionObject = /\b(?:ask|prompt|invite)\b.*\b(?:which|what)\b.*\b(?:capability|feature|question|aspect)\b/i.test(awareness) ||
+            /\bwhich\b.*\b(?:capability|feature|question|aspect)\b/i.test(awareness);
+        return imminentQuestion && solicitsQuestionObject;
     }
 
     getActiveAwarenessInjections(guildId) {
@@ -310,6 +333,18 @@ class InternalThoughtManager {
         }
 
         return session.activeAwarenessInjections.map((item) => ({ ...item }));
+    }
+
+    getRecentInternalThoughts(guildId, limit = 7) {
+        const session = this.sessions.get(guildId);
+        if (!session) {
+            return [];
+        }
+
+        const count = this.parsePositiveInt(limit, 7);
+        return session.thoughts
+            .slice(-count)
+            .map((item) => ({ ...item }));
     }
 
     appendRecord(session, record) {

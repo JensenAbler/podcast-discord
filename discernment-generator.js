@@ -120,6 +120,8 @@ class DiscernmentGenerator extends PodcastGenerator {
                 '',
                 'Prefer attention and pacing notes over suggested content. Do not propose step-by-step instructions while Jensen is actively exploring a screen/tool or has asked Alpha-Clawd to stand by. Do not propose another question when Jensen has objected to repeated questions or asked Alpha-Clawd to carry the conversation.',
                 '',
+                'The latest transcript beats older mood. Do not propose a wrap-up/rest/closing note if Jensen has pivoted into a new objective, says the reason he started the episode, or says he is about to ask a specific question. In that case, prefer a readiness/listening note or no candidate.',
+                '',
                 'Do not decide whether the note should be injected. If there is no candidate useful enough for a separate judgment pass, leave candidateAwarenessNote empty.'
             ].join('\n');
         }
@@ -138,6 +140,8 @@ class DiscernmentGenerator extends PodcastGenerator {
             'Preserve good rejections: do not inject impulses to fill silence, dispatch a helper, or retrieve files unless that would directly improve the host\'s next live move.',
             '',
             'Reject awareness candidates that would push step-by-step troubleshooting after Jensen asked to explore on his own. Reject candidates that end by inviting Jensen to react when he has just asked Alpha-Clawd to stop throwing the conversation back to him.',
+            '',
+            'Reject stale closing candidates when the complete transcript has moved from rest/sign-off into a new topic. Reject candidates that ask Jensen which question/capability he means when the latest transcript says he is about to ask a specific question.',
             '',
             'If approved, awarenessInjection is the exact private context text to show the podcast generator. It is not speech. If rejected, awarenessInjection must be empty.'
         ].join('\n');

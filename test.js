@@ -329,6 +329,10 @@ async function runTests() {
             systemPrompt.includes('Screen exploration and standby') &&
             systemPrompt.includes('carry the conversation for several turns') &&
             systemPrompt.includes('fictional universes, canon') &&
+            systemPrompt.includes('Structured hosting:') &&
+            systemPrompt.includes('play ball') &&
+            systemPrompt.includes('listing example questions') &&
+            systemPrompt.includes('Imminent question cue') &&
             systemPrompt.includes('Permission framing is for sensitive, personal, or easy-to-decline invitations') &&
             systemPrompt.includes('Do not ask a question every turn') &&
             systemPrompt.includes('Minimal backchannel is allowed but should be rare') &&
@@ -428,6 +432,23 @@ async function runTests() {
             throw new Error(`Awareness injection prompt was not formatted correctly: ${awarenessPrompt}`);
         }
 
+        const recentThoughtPrompt = generator.buildUserPrompt('Jensen: What are your internal thoughts right now?', null, {
+            recentInternalThoughts: Array.from({ length: 8 }, (_, index) => ({
+                packetId: `internal-packet-${index + 1}`,
+                createdAt: `2026-05-13T00:0${index}:00.000Z`,
+                internalThought: `Private runtime thought ${index + 1}`
+            }))
+        });
+        if (
+            !recentThoughtPrompt.includes('Recent internal thoughts surfaced by the current introspection/self-knowledge mention') ||
+            !recentThoughtPrompt.includes('runtime internal-thought artifacts') ||
+            !recentThoughtPrompt.includes('internal-packet-2') ||
+            !recentThoughtPrompt.includes('internal-packet-8') ||
+            recentThoughtPrompt.includes('internal-packet-1')
+        ) {
+            throw new Error(`Recent internal thoughts prompt was not formatted/capped correctly: ${recentThoughtPrompt}`);
+        }
+
         const defaultSpeechCapGenerator = new PodcastGenerator({ apiKey: 'sk-test-placeholder' });
         if (defaultSpeechCapGenerator.maxSpeechChars !== 420) {
             throw new Error(`Default live speech cap should be 420 chars, got ${defaultSpeechCapGenerator.maxSpeechChars}`);
@@ -481,7 +502,42 @@ async function runTests() {
         ) {
             throw new Error(`Question moratorium did not persist after carry request: ${JSON.stringify({ turns: standbyGenerator.questionMoratoriumTurns, moratoriumPrompt })}`);
         }
-        console.log('  Generator tracks standby and no-question pacing directives');
+
+        const structureGenerator = new PodcastGenerator({ apiKey: 'sk-test-placeholder' });
+        const structurePrompt = structureGenerator.buildUserPrompt(
+            [
+                'Jensen: I want podcast structure with a topic and questions preloaded.',
+                'Jensen: We should limit off the cuff questions so the guest does not feel interrogated.',
+                'Jensen: Add background information, procedural expertise questions, interpersonal questions, and miscellaneous questions like favorite philosophy.',
+                'Jensen: After the host asks and I answer, they should play ball and take a few turns talking.'
+            ].join('\n'),
+            null,
+            {}
+        );
+        if (
+            !structurePrompt.includes('Episode hosting structure remembered from this conversation') ||
+            !structurePrompt.includes('prepared guiding questions') ||
+            !structurePrompt.includes('procedural/craft') ||
+            !structurePrompt.includes('interpersonal/collaboration') ||
+            !structurePrompt.includes('miscellaneous/philosophical') ||
+            !structurePrompt.includes('play ball for a few turns')
+        ) {
+            throw new Error(`Current-turn episode structure was not surfaced: ${structurePrompt}`);
+        }
+        structureGenerator.rememberTurn('Jensen: The host should play ball and take a few turns talking after I answer.', {
+            shouldRespond: true,
+            speech: 'I will carry the next beat.',
+            bigBrain: { requested: false, reason: '', consumedRunId: '' }
+        });
+        const rememberedStructurePrompt = structureGenerator.buildUserPrompt('Jensen: Continue the episode.', null, {});
+        if (
+            !rememberedStructurePrompt.includes('Episode hosting structure remembered from this conversation') ||
+            !rememberedStructurePrompt.includes('Question moratorium') ||
+            !rememberedStructurePrompt.includes('synthesize, bridge')
+        ) {
+            throw new Error(`Remembered episode structure did not persist: ${rememberedStructurePrompt}`);
+        }
+        console.log('  Generator tracks standby, no-question pacing, and episode structure directives');
         passed++;
 
         const budgetGenerator = new PodcastGenerator({
@@ -1054,7 +1110,9 @@ async function runTests() {
             !discernmentPrompt.includes('later in this same episode') ||
             !discernmentPrompt.includes('Preserve good rejections') ||
             !discernmentPrompt.includes('Reject awareness candidates that would push step-by-step troubleshooting') ||
+            !discernmentPrompt.includes('Reject stale closing candidates') ||
             !discernmentGenerator.buildSystemPrompt('candidate').includes('Prefer attention and pacing notes') ||
+            !discernmentGenerator.buildSystemPrompt('candidate').includes('latest transcript beats older mood') ||
             discernmentPrompt.includes('priority')
         ) {
             throw new Error(`Discernment prompt does not match the revised framing: ${discernmentPrompt}`);
@@ -1187,6 +1245,49 @@ async function runTests() {
         if (lines.length !== 2 || JSON.parse(lines[0]).type !== 'internal_thought' || JSON.parse(lines[0]).awarenessInjection?.id !== 'awareness-internal-packet-1') {
             throw new Error(`Internal thought JSONL was not persisted correctly: ${fs.readFileSync(session.outputPath, 'utf8')}`);
         }
+
+        const recentThoughts = manager.getRecentInternalThoughts('guild-thoughts', 7);
+        recentThoughts[0].internalThought = 'mutated outside manager';
+        const recentThoughtsAgain = manager.getRecentInternalThoughts('guild-thoughts', 7);
+        if (
+            recentThoughtsAgain.length !== 2 ||
+            recentThoughtsAgain[0].packetId !== 'internal-packet-1' ||
+            recentThoughtsAgain[1].packetId !== 'internal-packet-2' ||
+            recentThoughtsAgain[0].internalThought !== 'Private thought 1'
+        ) {
+            throw new Error(`Recent internal thoughts were not exposed as safe copies: ${JSON.stringify(recentThoughtsAgain)}`);
+        }
+
+        const staleAwarenessManager = new InternalThoughtManager({
+            packetTurnCount: 99,
+            thoughtGenerator: { generate: async () => { throw new Error('should not flush'); } },
+            discernmentGenerator: {}
+        });
+        const staleSession = staleAwarenessManager.startSession('guild-stale-awareness');
+        staleSession.activeAwarenessInjections = [
+            {
+                id: 'wrap-up-awareness',
+                awarenessInjection: 'Offer a concise upbeat wrap-up and wish Jensen a good rest.',
+                reason: 'Jensen is tired and heading to bed.',
+                remainingTurns: 2
+            },
+            {
+                id: 'capability-question-awareness',
+                awarenessInjection: 'Ask which Alpha Cloud capability Jensen wants to test.',
+                reason: 'Prompt him to name which capability.',
+                remainingTurns: 2
+            }
+        ];
+        await staleAwarenessManager.handleTranscriptEntry('guild-stale-awareness', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'So the reason I started this podcast is very specific, and I am going to ask you a very specific question.'
+        });
+        const staleActive = staleAwarenessManager.getActiveAwarenessInjections('guild-stale-awareness');
+        if (staleActive.length !== 0) {
+            throw new Error(`Stale wrap-up/question awareness survived a topic pivot: ${JSON.stringify(staleActive)}`);
+        }
+        await staleAwarenessManager.endSession('guild-stale-awareness', { flush: false });
 
         const ended = await manager.endSession('guild-thoughts');
         if (ended.thoughtCount !== 2 || manager.getActiveAwarenessInjections('guild-thoughts').length !== 0) {
@@ -1794,13 +1895,21 @@ async function runTests() {
         bot.RecordingState = { RECORDING: 'RECORDING' };
         bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
         bot.internalThoughtsEnabled = true;
+        const recentThoughtRequests = [];
         bot.internalThoughtManager = {
             getActiveAwarenessInjections: (activeGuildId) => activeGuildId === guildId
                 ? [{
                     id: 'awareness-direct-test',
                     awarenessInjection: 'Jensen is testing whether private awareness reaches direct turns.'
                 }]
-                : []
+                : [],
+            getRecentInternalThoughts: (activeGuildId, limit) => {
+                recentThoughtRequests.push({ guildId: activeGuildId, limit });
+                return Array.from({ length: 9 }, (_, index) => ({
+                    packetId: `internal-packet-${index + 1}`,
+                    internalThought: `Recent internal thought ${index + 1}`
+                })).slice(-limit);
+            }
         };
         bot.lastParticipantSpeechAt = new Map([[guildId, firstSpeechAt]]);
         bot.idleDecisionHandledSpeechAt = new Map();
@@ -1846,6 +1955,7 @@ async function runTests() {
         const holdEvents = [];
         let directGenerateCalled = false;
         let directAwarenessInjections = null;
+        let directRecentInternalThoughts = null;
         bot.conversationBuffer.setFlushHold = (reason, active) => {
             holdEvents.push({ reason, active });
         };
@@ -1853,6 +1963,7 @@ async function runTests() {
             generate: async (input) => {
                 directGenerateCalled = true;
                 directAwarenessInjections = input.awarenessInjections || [];
+                directRecentInternalThoughts = input.recentInternalThoughts || [];
                 if (!bot.directResponseInFlight.has(guildId)) {
                     throw new Error('Direct response was not marked in-flight during generation');
                 }
@@ -1875,6 +1986,24 @@ async function runTests() {
         }
         if (directAwarenessInjections?.[0]?.id !== 'awareness-direct-test') {
             throw new Error(`Direct generator did not receive active awareness injections: ${JSON.stringify(directAwarenessInjections)}`);
+        }
+        if (directRecentInternalThoughts.length !== 0 || recentThoughtRequests.length !== 0) {
+            throw new Error(`Direct generator received recent internal thoughts without a trigger: ${JSON.stringify({ directRecentInternalThoughts, recentThoughtRequests })}`);
+        }
+
+        directGenerateCalled = false;
+        directRecentInternalThoughts = null;
+        await bot.handleDirectGeneratorFlush(guildId, [
+            { speaker: 'Jensen', transcription: 'Can we talk about your internal thoughts and self knowledge?' }
+        ], 'Jensen: Can we talk about your internal thoughts and self knowledge?');
+
+        if (
+            !directGenerateCalled ||
+            directRecentInternalThoughts?.length !== 7 ||
+            directRecentInternalThoughts[0]?.packetId !== 'internal-packet-3' ||
+            recentThoughtRequests.at(-1)?.limit !== 7
+        ) {
+            throw new Error(`Direct generator did not receive seven recent internal thoughts on introspection trigger: ${JSON.stringify({ directGenerateCalled, directRecentInternalThoughts, recentThoughtRequests })}`);
         }
 
         directGenerateCalled = false;

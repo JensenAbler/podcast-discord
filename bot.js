@@ -456,6 +456,42 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    shouldInjectRecentInternalThoughts(transcript = '', utterances = []) {
+        const utteranceText = Array.isArray(utterances)
+            ? utterances
+                .map((utterance) => `${utterance?.speaker || ''}: ${utterance?.transcription || utterance?.text || ''}`)
+                .join('\n')
+            : '';
+        const text = [transcript, utteranceText].filter(Boolean).join('\n');
+        if (!text.trim()) {
+            return false;
+        }
+
+        return /\b(?:introspection|introspective|metacognition|metacognitive)\b/i.test(text) ||
+            /\bself[-\s]?(?:knowledge|awareness|understanding|model)\b/i.test(text) ||
+            /\b(?:internal|inner|private)\s+(?:thoughts?|monologue|awareness|state|states|life)\b/i.test(text) ||
+            /\bchain[-\s]?of[-\s]?thought\b/i.test(text) ||
+            /\b(?:awareness\s+(?:notes?|injections?)|private\s+reasoning|thought\s+process)\b/i.test(text) ||
+            /\bwhat (?:are|were) you thinking\b/i.test(text);
+    }
+
+    getRecentInternalThoughtsForGenerator(guildId, transcript = '', utterances = []) {
+        if (
+            !this.internalThoughtsEnabled ||
+            !this.internalThoughtManager?.getRecentInternalThoughts ||
+            !this.shouldInjectRecentInternalThoughts(transcript, utterances)
+        ) {
+            return [];
+        }
+
+        try {
+            return this.internalThoughtManager.getRecentInternalThoughts(guildId, 7);
+        } catch (error) {
+            console.warn(`[Bot] Failed to read recent internal thoughts: ${error.message}`);
+            return [];
+        }
+    }
+
     async selectAwarenessInjectionsForBigBrain(guildId, response, options = {}) {
         const activeAwarenessInjections = this.getAwarenessInjectionsForGenerator(guildId);
         if (
@@ -1732,6 +1768,7 @@ class AlphaClawdVoiceBot {
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
                 awarenessInjections: this.getAwarenessInjectionsForGenerator(guildId),
+                recentInternalThoughts: this.getRecentInternalThoughtsForGenerator(guildId, transcript, utterances),
                 remember: false
             });
 
