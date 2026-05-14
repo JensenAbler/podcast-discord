@@ -197,6 +197,8 @@ function renderUtterance(utterance) {
         emphasis.textContent = formatThoughtSubheading(utterance.injectedThoughts);
         subheading.append(emphasis);
         bubble.append(subheading);
+
+        bubble.append(renderAwareness(utterance.injectedThoughts));
     }
 
     const text = document.createElement('div');
@@ -204,35 +206,50 @@ function renderUtterance(utterance) {
     text.textContent = utterance.text || '';
     bubble.append(text);
 
-    if (isHost(utterance) && utterance.injectedThoughts?.length) {
-        bubble.append(renderThoughtDetails(utterance.injectedThoughts));
-    }
-
     row.append(time, bubble);
     return row;
 }
 
-function renderThoughtDetails(thoughts) {
-    const details = document.createElement('details');
-    const summary = document.createElement('summary');
-    summary.textContent = thoughts.length === 1 ? 'Injected awareness' : 'Injected awareness notes';
-    details.append(summary);
-
-    const body = document.createElement('div');
-    body.className = 'details-body';
+function renderAwareness(thoughts) {
+    const container = document.createElement('div');
+    container.className = 'awareness';
     thoughts.forEach((thought) => {
-        if (thought.awarenessInjection) {
-            const injection = document.createElement('p');
-            injection.textContent = `Awareness: ${thought.awarenessInjection}`;
-            body.append(injection);
-        }
-        if (thought.reason) {
-            const reason = document.createElement('p');
-            reason.textContent = `Reason: ${thought.reason}`;
-            body.append(reason);
-        }
+        container.append(thought.awarenessInjection
+            ? renderInjectedAwareness(thought)
+            : renderRejectedAwareness(thought));
     });
-    details.append(body);
+    return container;
+}
+
+function renderInjectedAwareness(thought) {
+    const block = document.createElement('div');
+    block.className = 'awareness-injected';
+    const label = document.createElement('strong');
+    label.textContent = 'Injected awareness: ';
+    block.append(label, document.createTextNode(thought.awarenessInjection));
+    if (thought.reason) {
+        const reason = document.createElement('div');
+        reason.className = 'awareness-reason';
+        reason.textContent = `Reason: ${thought.reason}`;
+        block.append(reason);
+    }
+    return block;
+}
+
+function renderRejectedAwareness(thought) {
+    const details = document.createElement('details');
+    details.className = 'awareness-rejected';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Rejected awareness';
+    details.append(summary);
+    if (thought.reason) {
+        const body = document.createElement('div');
+        body.className = 'details-body';
+        const reason = document.createElement('p');
+        reason.textContent = `Reason: ${thought.reason}`;
+        body.append(reason);
+        details.append(body);
+    }
     return details;
 }
 

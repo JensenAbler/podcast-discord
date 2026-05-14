@@ -267,6 +267,35 @@ button:hover {
     font-style: italic;
 }
 
+.awareness {
+    margin-bottom: 10px;
+    display: grid;
+    gap: 6px;
+}
+
+.awareness-injected {
+    color: var(--thought);
+    font-size: 0.95rem;
+    padding: 6px 10px;
+    border-left: 2px solid var(--accent);
+    background: rgba(0, 109, 119, 0.06);
+    border-radius: 0 4px 4px 0;
+}
+
+.awareness-injected strong {
+    font-weight: 600;
+}
+
+.awareness-reason {
+    color: var(--muted);
+    font-size: 0.86rem;
+    margin-top: 4px;
+}
+
+.awareness-rejected {
+    margin-top: 0;
+}
+
 .utterance-text {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
