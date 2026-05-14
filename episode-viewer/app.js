@@ -27,6 +27,25 @@ function authHeaders() {
     return state.token ? { Authorization: `Bearer ${state.token}` } : {};
 }
 
+function consumeTokenFromUrl() {
+    const token = readTokenFromParams(window.location.hash) || readTokenFromParams(window.location.search);
+    if (!token) return;
+
+    state.token = token;
+    localStorage.setItem('episodeTranscriptToken', token);
+
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete('token');
+    cleanUrl.searchParams.delete('access_token');
+    cleanUrl.hash = '';
+    window.history.replaceState(null, document.title, cleanUrl.toString());
+}
+
+function readTokenFromParams(value) {
+    const params = new URLSearchParams(String(value || '').replace(/^[?#]/, ''));
+    return (params.get('token') || params.get('access_token') || '').trim();
+}
+
 async function fetchJson(url) {
     const response = await fetch(url, { headers: authHeaders() });
     if (response.status === 401) {
@@ -244,5 +263,6 @@ saveToken.addEventListener('click', () => {
     loadEpisodes();
 });
 
+consumeTokenFromUrl();
 authToken.value = state.token;
 loadEpisodes();

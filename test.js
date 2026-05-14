@@ -3688,6 +3688,16 @@ async function runTests() {
             throw new Error(`Viewer server auth/API failed: ${JSON.stringify({ unauthorized: unauthorized.status, authorized: authorized.status, authorizedBody })}`);
         }
 
+        const viewerApp = fs.readFileSync(path.join(__dirname, 'episode-viewer', 'app.js'), 'utf8');
+        if (
+            !viewerApp.includes('consumeTokenFromUrl()') ||
+            !viewerApp.includes("localStorage.setItem('episodeTranscriptToken', token)") ||
+            !viewerApp.includes("cleanUrl.hash = ''") ||
+            !viewerApp.includes("params.get('access_token')")
+        ) {
+            throw new Error('Viewer app does not consume shortcut tokens from the URL fragment/query string');
+        }
+
         fs.rmSync(tempRoot, { recursive: true, force: true });
         console.log('  Episode transcript viewer lists episodes and annotates host turns with injected thoughts');
         passed++;
