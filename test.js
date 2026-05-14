@@ -1013,7 +1013,10 @@ async function runTests() {
             !thoughtSystemPrompt.includes('active awarenessInjection') ||
             !thoughtSystemPrompt.includes('artifact content being discussed') ||
             !thoughtSystemPrompt.includes('generic question-autocomplete behavior') ||
-            !thoughtSystemPrompt.includes('throwing the conversational burden back')
+            !thoughtSystemPrompt.includes('guests to elaborate') ||
+            !thoughtSystemPrompt.includes('the guest needs synthesis') ||
+            !thoughtSystemPrompt.includes('throwing the conversational burden back') ||
+            thoughtSystemPrompt.includes('Jensen needs synthesis')
         ) {
             throw new Error(`Internal thought system prompt does not guard recursive artifact ingestion: ${thoughtSystemPrompt}`);
         }
