@@ -324,7 +324,7 @@ async function runTests() {
             systemPrompt.includes('Do not let any stock phrase become a groove') &&
             systemPrompt.includes('"What does that bring up..."') &&
             systemPrompt.includes('Speech-context cues matter') &&
-            systemPrompt.includes('Do not autocomplete introspection') &&
+            systemPrompt.includes('Do not autocomplete with generic questions') &&
             systemPrompt.includes('what does that feel like') &&
             systemPrompt.includes('Internal-thought transparency') &&
             systemPrompt.includes('you should transparently disclose') &&
@@ -333,17 +333,22 @@ async function runTests() {
             systemPrompt.includes('Disclose them when asked') &&
             !systemPrompt.includes('You do not have access to private chain-of-thought') &&
             systemPrompt.includes('Sounding-board exception') &&
-            systemPrompt.includes('Screen exploration and standby') &&
-            systemPrompt.includes('carry the conversation for several turns') &&
+            systemPrompt.includes('Guest floor holding') &&
+            systemPrompt.includes('technical assistance') &&
             systemPrompt.includes('fictional universes, canon') &&
-            systemPrompt.includes('Structured hosting:') &&
-            systemPrompt.includes('play ball') &&
-            systemPrompt.includes('listing example questions') &&
+            systemPrompt.includes('After you ask a question and the guest answers:') &&
+            systemPrompt.includes('Play ball') &&
+            systemPrompt.includes('miscellaneous or philosophical lanes') &&
             systemPrompt.includes('Imminent question cue') &&
             systemPrompt.includes('Permission framing is for sensitive, personal, or easy-to-decline invitations') &&
             systemPrompt.includes('Do not ask a question every turn') &&
+            systemPrompt.includes('When in doubt, choose silence or the smaller move') &&
             systemPrompt.includes('Minimal backchannel is allowed but should be rare') &&
             systemPrompt.includes('meta-comment naming a missed signal') &&
+            !systemPrompt.includes('Structured hosting:') &&
+            !systemPrompt.includes('Screen exploration and standby') &&
+            !systemPrompt.includes('The mistake to avoid:') &&
+            !systemPrompt.includes('listing example questions') &&
             !systemPrompt.includes('Vary your surface form') &&
             !systemPrompt.includes('one integrated sentence or two short sentences') &&
             !systemPrompt.includes('Signals they are still mid-thought:') &&
