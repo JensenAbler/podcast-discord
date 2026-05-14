@@ -1009,7 +1009,9 @@ async function runTests() {
             !thoughtSystemPrompt.includes('previous internalThought') ||
             !thoughtSystemPrompt.includes('candidateAwarenessNote') ||
             !thoughtSystemPrompt.includes('active awarenessInjection') ||
-            !thoughtSystemPrompt.includes('artifact content being discussed')
+            !thoughtSystemPrompt.includes('artifact content being discussed') ||
+            !thoughtSystemPrompt.includes('generic question-autocomplete behavior') ||
+            !thoughtSystemPrompt.includes('throwing the conversational burden back')
         ) {
             throw new Error(`Internal thought system prompt does not guard recursive artifact ingestion: ${thoughtSystemPrompt}`);
         }
@@ -1111,8 +1113,12 @@ async function runTests() {
             !discernmentPrompt.includes('Preserve good rejections') ||
             !discernmentPrompt.includes('Reject awareness candidates that would push step-by-step troubleshooting') ||
             !discernmentPrompt.includes('Reject stale closing candidates') ||
+            !discernmentPrompt.includes('prevention of generic question-autocomplete') ||
+            !discernmentPrompt.includes('another generic question') ||
             !discernmentGenerator.buildSystemPrompt('candidate').includes('Prefer attention and pacing notes') ||
             !discernmentGenerator.buildSystemPrompt('candidate').includes('latest transcript beats older mood') ||
+            !discernmentGenerator.buildSystemPrompt('candidate').includes('guarding the podcast generator against generic question-autocomplete') ||
+            !discernmentGenerator.buildSystemPrompt('candidate').includes('synthesize, contribute, bridge, or hold space') ||
             discernmentPrompt.includes('priority')
         ) {
             throw new Error(`Discernment prompt does not match the revised framing: ${discernmentPrompt}`);

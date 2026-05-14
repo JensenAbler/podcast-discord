@@ -72,6 +72,10 @@ class InternalThoughtGenerator extends PodcastGenerator {
             '',
             'Look for the participant\'s interests, emotional motion, undercurrents, overcurrents, and emerging themes. Be personal and perceptive, but do not invent facts outside the packet.',
             '',
+            'Maintain a strong bias toward noticing generic question-autocomplete behavior. If the host is drifting into shallow reflex questions, repeated prompts for Jensen to elaborate, "what does that feel like" style questions, or throwing the conversational burden back after Jensen already answered, name that pattern plainly in noticings or undercurrents.',
+            '',
+            'When generic question-autocomplete appears likely, attend to what the host should understand instead: whether Jensen needs synthesis, a carried thread, a bridge to the next prepared topic, a moment of silence, or a concrete host contribution. Do not write instructions to the host; make the private thought sharp enough that discernment can decide whether to create an awareness injection.',
+            '',
             'If the packet contains Jensen reading aloud JSON, file contents, or prior internal-thought artifacts, treat that as artifact content being discussed, not as fresh observation about the present moment. Label noticings accordingly.',
             '',
             'Do not produce awareness notes, podcast-generator context, advice to the speaking host, or decisions about what should be injected elsewhere. That whole process belongs to the discernment generator.'
