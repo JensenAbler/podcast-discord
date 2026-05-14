@@ -3625,6 +3625,7 @@ async function runTests() {
             path.join(episodeDir, 'transcript.jsonl'),
             transcriptEntries.map((entry) => JSON.stringify(entry)).join('\n') + '\n'
         );
+        fs.writeFileSync(path.join(episodeDir, 'mixed-audio.wav'), Buffer.from('RIFF-test-audio-WAVE'));
 
         fs.writeFileSync(path.join(episodeDir, 'internal-thoughts.jsonl'), JSON.stringify({
             type: 'internal_thought',
@@ -3658,6 +3659,8 @@ async function runTests() {
         if (
             episodes.length !== 1 ||
             episodes[0].id !== episodeId ||
+            episodes[0].hasAudio !== true ||
+            episodes[0].audioFile !== 'mixed-audio.wav' ||
             hostBeforeInjection.injectedThoughts.length !== 0 ||
             hostWithInjection.injectedThoughts[0]?.internalThought !== 'Jensen is asking Alpha-Clawd to stop generic question autocomplete and carry the thread.' ||
             hostWithInjection.injectedThoughts[0]?.awarenessInjection !== 'Do not ask another broad question; synthesize and bridge.' ||
@@ -3678,28 +3681,51 @@ async function runTests() {
             headers: { Authorization: 'Bearer viewer-token' }
         });
         const authorizedBody = await authorized.json();
+        const unauthorizedAudio = await fetch(`http://127.0.0.1:${port}/api/episodes/${episodeId}/audio`);
+        const rangedAudio = await fetch(`http://127.0.0.1:${port}/api/episodes/${episodeId}/audio?token=viewer-token`, {
+            headers: { Range: 'bytes=0-3' }
+        });
+        const rangedAudioBody = Buffer.from(await rangedAudio.arrayBuffer()).toString('utf8');
         await new Promise((resolve) => server.close(resolve));
 
         if (
             unauthorized.status !== 401 ||
             authorized.status !== 200 ||
-            authorizedBody.utterances.find((entry) => entry.text.startsWith('Right.'))?.injectedThoughts?.length !== 1
+            authorizedBody.episode?.hasAudio !== true ||
+            authorizedBody.episode?.audioFile !== 'mixed-audio.wav' ||
+            authorizedBody.utterances.find((entry) => entry.text.startsWith('Right.'))?.injectedThoughts?.length !== 1 ||
+            unauthorizedAudio.status !== 401 ||
+            rangedAudio.status !== 206 ||
+            rangedAudio.headers.get('content-range') !== 'bytes 0-3/20' ||
+            rangedAudioBody !== 'RIFF'
         ) {
-            throw new Error(`Viewer server auth/API failed: ${JSON.stringify({ unauthorized: unauthorized.status, authorized: authorized.status, authorizedBody })}`);
+            throw new Error(`Viewer server auth/API failed: ${JSON.stringify({
+                unauthorized: unauthorized.status,
+                authorized: authorized.status,
+                authorizedBody,
+                unauthorizedAudio: unauthorizedAudio.status,
+                rangedAudio: rangedAudio.status,
+                contentRange: rangedAudio.headers.get('content-range'),
+                rangedAudioBody
+            })}`);
         }
 
+        const viewerHtml = fs.readFileSync(path.join(__dirname, 'episode-viewer', 'index.html'), 'utf8');
         const viewerApp = fs.readFileSync(path.join(__dirname, 'episode-viewer', 'app.js'), 'utf8');
         if (
+            !viewerHtml.includes('id="episode-audio"') ||
             !viewerApp.includes('consumeTokenFromUrl()') ||
+            !viewerApp.includes('renderAudioPlayer(data.episode)') ||
+            !viewerApp.includes('/audio') ||
             !viewerApp.includes("localStorage.setItem('episodeTranscriptToken', token)") ||
             !viewerApp.includes("cleanUrl.hash = ''") ||
             !viewerApp.includes("params.get('access_token')")
         ) {
-            throw new Error('Viewer app does not consume shortcut tokens from the URL fragment/query string');
+            throw new Error('Viewer app does not render audio playback or consume shortcut tokens');
         }
 
         fs.rmSync(tempRoot, { recursive: true, force: true });
-        console.log('  Episode transcript viewer lists episodes and annotates host turns with injected thoughts');
+        console.log('  Episode transcript viewer lists episodes, serves WAV playback, and annotates host turns with injected thoughts');
         passed++;
     } catch (error) {
         console.log(`  Episode transcript viewer failed: ${error.message}`);

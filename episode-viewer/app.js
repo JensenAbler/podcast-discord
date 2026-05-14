@@ -12,6 +12,8 @@ const transcriptFilter = document.getElementById('transcript-filter');
 const transcript = document.getElementById('transcript');
 const episodeTitle = document.getElementById('episode-title');
 const episodeMeta = document.getElementById('episode-meta');
+const audioPanel = document.getElementById('audio-panel');
+const episodeAudio = document.getElementById('episode-audio');
 const parseErrors = document.getElementById('parse-errors');
 const authPanel = document.getElementById('auth-panel');
 const authToken = document.getElementById('auth-token');
@@ -76,6 +78,7 @@ async function loadEpisodes() {
 async function selectEpisode(id) {
     state.selectedEpisode = id;
     renderEpisodeList();
+    hideAudioPlayer();
     renderEmpty('Loading transcript...');
 
     try {
@@ -83,9 +86,11 @@ async function selectEpisode(id) {
         state.utterances = data.utterances || [];
         episodeTitle.textContent = data.episode?.id || id;
         episodeMeta.textContent = formatEpisodeMeta(data.episode);
+        renderAudioPlayer(data.episode);
         renderParseErrors(data.parseErrors || []);
         renderTranscript();
     } catch (error) {
+        hideAudioPlayer();
         renderEmpty(error.message);
     }
 }
@@ -139,6 +144,29 @@ function renderTranscript() {
     visible.forEach((utterance) => {
         transcript.append(renderUtterance(utterance));
     });
+}
+
+function renderAudioPlayer(episode) {
+    if (!episode?.hasAudio) {
+        hideAudioPlayer();
+        return;
+    }
+
+    const episodeId = encodeURIComponent(episode.id || state.selectedEpisode);
+    const audioUrl = new URL(`${apiBase()}/episodes/${episodeId}/audio`, window.location.href);
+    if (state.token) {
+        audioUrl.searchParams.set('token', state.token);
+    }
+
+    episodeAudio.src = audioUrl.toString();
+    audioPanel.classList.remove('hidden');
+}
+
+function hideAudioPlayer() {
+    audioPanel.classList.add('hidden');
+    episodeAudio.pause();
+    episodeAudio.removeAttribute('src');
+    episodeAudio.load();
 }
 
 function renderUtterance(utterance) {

@@ -189,6 +189,18 @@ button:hover {
     padding: 12px;
 }
 
+.audio-panel {
+    max-width: 980px;
+    margin-top: 18px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+}
+
+.audio-panel audio {
+    display: block;
+    width: min(100%, 720px);
+}
+
 .transcript {
     display: grid;
     gap: 14px;

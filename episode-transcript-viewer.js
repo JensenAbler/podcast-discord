@@ -35,6 +35,7 @@ class EpisodeTranscriptStore {
         const metadata = this.readEpisodeMetadata(episodePath);
         const transcriptPath = path.join(episodePath, 'transcript.jsonl');
         const thoughtsPath = path.join(episodePath, 'internal-thoughts.jsonl');
+        const audio = this.findEpisodeAudio(episodePath);
         const stat = fs.statSync(episodePath);
         const startedAt = metadata.startedAt ||
             metadata.startTime ||
@@ -50,6 +51,9 @@ class EpisodeTranscriptStore {
             duration: metadata.duration || metadata.episode?.duration || 0,
             hasTranscript: fs.existsSync(transcriptPath),
             hasInternalThoughts: fs.existsSync(thoughtsPath),
+            hasAudio: Boolean(audio),
+            audioFile: audio?.filename || null,
+            audioBytes: audio?.bytes || 0,
             transcriptCount: this.countJsonlLines(transcriptPath),
             internalThoughtCount: this.countJsonlLines(thoughtsPath),
             sortTime: this.toMs(startedAt) || stat.mtimeMs
@@ -83,6 +87,11 @@ class EpisodeTranscriptStore {
                 ...thoughts.parseErrors
             ]
         };
+    }
+
+    getEpisodeAudio(id) {
+        const episodePath = this.getEpisodePath(id);
+        return episodePath ? this.findEpisodeAudio(episodePath) : null;
     }
 
     readTranscript(transcriptPath, metadata = {}) {
@@ -326,6 +335,30 @@ class EpisodeTranscriptStore {
             : [];
     }
 
+    findEpisodeAudio(episodePath) {
+        if (!fs.existsSync(episodePath)) return null;
+
+        const files = fs.readdirSync(episodePath);
+        const preferred = ['mixed-audio.wav', 'recording.wav', 'episode.wav'];
+        const filename = preferred.find((name) => files.includes(name)) ||
+            files.find((name) => /\.wav$/i.test(name));
+
+        if (!filename) return null;
+
+        const filePath = path.resolve(episodePath, filename);
+        const root = `${path.resolve(episodePath)}${path.sep}`;
+        if (!filePath.startsWith(root) || !fs.statSync(filePath).isFile()) {
+            return null;
+        }
+
+        const stat = fs.statSync(filePath);
+        return {
+            filename,
+            filePath,
+            bytes: stat.size
+        };
+    }
+
     parseEpisodeStartFromId(id) {
         const match = String(id || '').match(/^episode-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)$/);
         if (!match) return null;
@@ -386,7 +419,7 @@ function createEpisodeTranscriptRequestHandler(options = {}) {
         }
 
         if (relativePath === '/api/episodes' || relativePath === '/api/episodes/') {
-            if (!isAuthorized(req, requireAuth, authToken)) {
+            if (!isAuthorized(req, requestUrl, requireAuth, authToken)) {
                 sendJson(res, 401, { error: 'Unauthorized' });
                 return true;
             }
@@ -397,9 +430,24 @@ function createEpisodeTranscriptRequestHandler(options = {}) {
             return true;
         }
 
+        const audioMatch = relativePath.match(/^\/api\/episodes\/([^/]+)\/audio$/);
+        if (audioMatch) {
+            if (!isAuthorized(req, requestUrl, requireAuth, authToken)) {
+                sendJson(res, 401, { error: 'Unauthorized' });
+                return true;
+            }
+            const audio = store.getEpisodeAudio(audioMatch[1]);
+            if (!audio) {
+                sendJson(res, 404, { error: 'Episode audio not found' });
+                return true;
+            }
+            sendAudioFile(req, res, audio);
+            return true;
+        }
+
         const episodeMatch = relativePath.match(/^\/api\/episodes\/([^/]+)$/);
         if (episodeMatch) {
-            if (!isAuthorized(req, requireAuth, authToken)) {
+            if (!isAuthorized(req, requestUrl, requireAuth, authToken)) {
                 sendJson(res, 401, { error: 'Unauthorized' });
                 return true;
             }
@@ -469,10 +517,14 @@ function getRelativePath(pathname, basePath) {
     return null;
 }
 
-function isAuthorized(req, requireAuth, authToken) {
+function isAuthorized(req, requestUrl, requireAuth, authToken) {
     if (!requireAuth) return true;
     const header = req.headers.authorization || '';
-    return Boolean(authToken) && header === `Bearer ${authToken}`;
+    const queryToken = requestUrl?.searchParams?.get('token') || requestUrl?.searchParams?.get('access_token') || '';
+    return Boolean(authToken) && (
+        header === `Bearer ${authToken}` ||
+        queryToken === authToken
+    );
 }
 
 function setCommonHeaders(res) {
@@ -484,6 +536,75 @@ function setCommonHeaders(res) {
 function sendJson(res, statusCode, payload) {
     res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(payload));
+}
+
+function sendAudioFile(req, res, audio) {
+    const totalBytes = audio.bytes;
+    const range = req.headers.range || '';
+    const commonHeaders = {
+        'Accept-Ranges': 'bytes',
+        'Content-Type': 'audio/wav',
+        'Content-Disposition': `inline; filename="${audio.filename.replace(/"/g, '')}"`
+    };
+
+    if (range) {
+        const parsed = parseRangeHeader(range, totalBytes);
+        if (!parsed) {
+            res.writeHead(416, {
+                ...commonHeaders,
+                'Content-Range': `bytes */${totalBytes}`
+            });
+            res.end();
+            return;
+        }
+
+        res.writeHead(206, {
+            ...commonHeaders,
+            'Content-Length': parsed.end - parsed.start + 1,
+            'Content-Range': `bytes ${parsed.start}-${parsed.end}/${totalBytes}`
+        });
+        fs.createReadStream(audio.filePath, { start: parsed.start, end: parsed.end }).pipe(res);
+        return;
+    }
+
+    res.writeHead(200, {
+        ...commonHeaders,
+        'Content-Length': totalBytes
+    });
+    fs.createReadStream(audio.filePath).pipe(res);
+}
+
+function parseRangeHeader(range, totalBytes) {
+    const match = String(range || '').match(/^bytes=(\d*)-(\d*)$/);
+    if (!match || totalBytes <= 0) return null;
+
+    let start;
+    let end;
+
+    if (match[1] === '' && match[2] !== '') {
+        const suffixLength = Number(match[2]);
+        if (!Number.isInteger(suffixLength) || suffixLength <= 0) return null;
+        start = Math.max(totalBytes - suffixLength, 0);
+        end = totalBytes - 1;
+    } else {
+        start = Number(match[1]);
+        end = match[2] === '' ? totalBytes - 1 : Number(match[2]);
+    }
+
+    if (
+        !Number.isInteger(start) ||
+        !Number.isInteger(end) ||
+        start < 0 ||
+        end < start ||
+        start >= totalBytes
+    ) {
+        return null;
+    }
+
+    return {
+        start,
+        end: Math.min(end, totalBytes - 1)
+    };
 }
 
 function serveStaticFile(res, rootDir, requestPath) {
@@ -506,7 +627,8 @@ function getMimeType(filePath) {
         '.css': 'text/css; charset=utf-8',
         '.js': 'application/javascript; charset=utf-8',
         '.json': 'application/json; charset=utf-8',
-        '.svg': 'image/svg+xml'
+        '.svg': 'image/svg+xml',
+        '.wav': 'audio/wav'
     }[ext] || 'application/octet-stream';
 }
 
