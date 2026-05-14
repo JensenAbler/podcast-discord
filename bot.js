@@ -456,6 +456,25 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    formatAwarenessInjectionsForTranscript(items = []) {
+        return (Array.isArray(items) ? items : [])
+            .map((item) => {
+                const awarenessInjection = typeof item === 'string'
+                    ? item
+                    : item?.awarenessInjection || item?.text || '';
+                return {
+                    id: String(item?.id || '').trim(),
+                    packetId: String(item?.packetId || '').trim(),
+                    createdAt: item?.createdAt || null,
+                    awarenessInjection: String(awarenessInjection).trim(),
+                    reason: String(item?.reason || '').trim(),
+                    expiresAfterTurns: Number(item?.expiresAfterTurns || 0),
+                    remainingTurns: Number(item?.remainingTurns || 0)
+                };
+            })
+            .filter((item) => item.awarenessInjection);
+    }
+
     shouldInjectRecentInternalThoughts(transcript = '', utterances = []) {
         const utteranceText = Array.isArray(utterances)
             ? utterances
@@ -748,6 +767,7 @@ class AlphaClawdVoiceBot {
             const idleSeconds = (Date.now() - lastSpeechAt) / 1000;
             const participantActivityBaseline = this.getParticipantActivityVersion(guildId);
             this.markIdleDecisionHandled(guildId, lastSpeechAt);
+            const awarenessInjections = this.getAwarenessInjectionsForGenerator(guildId);
 
             console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s without participant speech`);
             const response = await this.podcastGenerator.generate({
@@ -756,7 +776,7 @@ class AlphaClawdVoiceBot {
                 idleSeconds,
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
-                awarenessInjections: this.getAwarenessInjectionsForGenerator(guildId),
+                awarenessInjections,
                 remember: false
             });
 
@@ -779,6 +799,7 @@ class AlphaClawdVoiceBot {
                 source: 'idle',
                 playFiller: false,
                 rememberAssistant: true,
+                awarenessInjections,
                 participantActivityBaseline
             });
             const finalResponse = playbackResult?.finalResponse || response;
@@ -1758,6 +1779,7 @@ class AlphaClawdVoiceBot {
         this.directResponseInFlight.add(guildId);
         this.conversationBuffer?.setFlushHold?.('direct-response', true);
         const participantActivityBaseline = this.getParticipantActivityVersion(guildId);
+        const awarenessInjections = this.getAwarenessInjectionsForGenerator(guildId);
         let bigBrainDispatch = null;
 
         try {
@@ -1767,7 +1789,7 @@ class AlphaClawdVoiceBot {
                 wordData,
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
-                awarenessInjections: this.getAwarenessInjectionsForGenerator(guildId),
+                awarenessInjections,
                 recentInternalThoughts: this.getRecentInternalThoughtsForGenerator(guildId, transcript, utterances),
                 remember: false
             });
@@ -1808,6 +1830,7 @@ class AlphaClawdVoiceBot {
                 source: 'buffer',
                 playFiller: true,
                 participantActivityBaseline,
+                awarenessInjections,
                 flushedUtterances: utterances,
                 rememberTranscript: transcript
             });
@@ -3074,6 +3097,10 @@ class AlphaClawdVoiceBot {
             const consumedBigBrainRunId = finalResponse?.bigBrain?.consumedRunId;
             if (options.bigBrainRunId || consumedBigBrainRunId) {
                 transcriptEntry.bigBrainRunId = options.bigBrainRunId || consumedBigBrainRunId;
+            }
+            const injectedAwarenessInjections = this.formatAwarenessInjectionsForTranscript(options.awarenessInjections);
+            if (injectedAwarenessInjections.length > 0) {
+                transcriptEntry.injectedAwarenessInjections = injectedAwarenessInjections;
             }
             this.voiceManager.saveTranscriptEntry(guildId, transcriptEntry);
             this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);

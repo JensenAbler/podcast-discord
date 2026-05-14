@@ -25,6 +25,7 @@ const { DiscernmentGenerator } = require('./discernment-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
 const { PacketizationBuffer } = require('./packetization-buffer');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
+const { EpisodeTranscriptStore, createEpisodeTranscriptServer } = require('./episode-transcript-viewer');
 
 module.exports = {
     // Core voice components
@@ -44,6 +45,8 @@ module.exports = {
     InternalThoughtManager,
     PacketizationBuffer,
     BigBrainAwarenessSelector,
+    EpisodeTranscriptStore,
+    createEpisodeTranscriptServer,
     
     // Main bot class
     AlphaClawdVoiceBot

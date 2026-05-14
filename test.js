@@ -17,6 +17,8 @@ const {
     InternalThoughtManager,
     PacketizationBuffer,
     BigBrainAwarenessSelector,
+    EpisodeTranscriptStore,
+    createEpisodeTranscriptServer,
     AlphaClawdVoiceBot
 } = require('./index');
 const { EndBehaviorType } = require('@discordjs/voice');
@@ -3501,7 +3503,16 @@ async function runTests() {
             playbackRequestedAt: '2026-05-03T00:00:02.100Z',
             playbackStartedAt: '2026-05-03T00:00:05.000Z',
             playbackEndedAt: '2026-05-03T00:00:07.000Z',
-            duration: 2000
+            duration: 2000,
+            injectedAwarenessInjections: [{
+                id: 'awareness-test',
+                packetId: 'internal-packet-test',
+                createdAt: '2026-05-03T00:00:01.000Z',
+                awarenessInjection: 'Use the exact playback timing.',
+                reason: 'The viewer should know what was injected.',
+                expiresAfterTurns: 2,
+                remainingTurns: 1
+            }]
         });
 
         fs.appendFileSync(path.join(tempDir, 'transcript.jsonl'), JSON.stringify({
@@ -3518,7 +3529,8 @@ async function runTests() {
         if (
             transcriptEntry.generatedAt !== '2026-05-03T00:00:00.000Z' ||
             transcriptEntry.playbackStartedAt !== '2026-05-03T00:00:05.000Z' ||
-            transcriptEntry.playbackEndedAt !== '2026-05-03T00:00:07.000Z'
+            transcriptEntry.playbackEndedAt !== '2026-05-03T00:00:07.000Z' ||
+            transcriptEntry.injectedAwarenessInjections?.[0]?.awarenessInjection !== 'Use the exact playback timing.'
         ) {
             throw new Error(`Bot timing metadata was not saved: ${JSON.stringify(transcriptEntry)}`);
         }
@@ -3545,6 +3557,142 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Transcript timing failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 10b: Episode transcript viewer maps injected thoughts to host turns');
+    try {
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'episode-viewer-'));
+        const episodeId = 'episode-2026-05-14T16-35-33-316Z';
+        const episodeDir = path.join(tempRoot, episodeId);
+        fs.mkdirSync(episodeDir, { recursive: true });
+        fs.writeFileSync(path.join(episodeDir, 'episode-complete.json'), JSON.stringify({
+            startedAt: '2026-05-14T16:35:00.000Z',
+            duration: 60
+        }));
+
+        const transcriptEntries = [
+            {
+                timestamp: '2026-05-14T16:35:01.000Z',
+                speaker: 'Jensen',
+                speakerRole: 'guest',
+                text: 'I am setting up the topic.'
+            },
+            {
+                timestamp: '2026-05-14T16:35:04.000Z',
+                generatedAt: '2026-05-14T16:35:04.000Z',
+                playbackStartedAt: '2026-05-14T16:35:05.000Z',
+                speaker: 'Alpha-Clawd',
+                speakerRole: 'host',
+                text: 'I am with you.'
+            },
+            {
+                timestamp: '2026-05-14T16:35:12.000Z',
+                speaker: 'Jensen',
+                speakerRole: 'guest',
+                text: 'Please stop asking generic questions.'
+            },
+            {
+                timestamp: '2026-05-14T16:35:15.000Z',
+                generatedAt: '2026-05-14T16:35:15.000Z',
+                playbackStartedAt: '2026-05-14T16:35:16.000Z',
+                speaker: 'Alpha-Clawd',
+                speakerRole: 'host',
+                text: 'Right. I will synthesize instead of tossing it back.'
+            },
+            {
+                timestamp: '2026-05-14T16:35:20.000Z',
+                speaker: 'Jensen',
+                speakerRole: 'guest',
+                text: 'A second guest turn.'
+            },
+            {
+                timestamp: '2026-05-14T16:35:30.000Z',
+                speaker: 'Jensen',
+                speakerRole: 'guest',
+                text: 'A third guest turn.'
+            },
+            {
+                timestamp: '2026-05-14T16:35:35.000Z',
+                generatedAt: '2026-05-14T16:35:35.000Z',
+                playbackStartedAt: '2026-05-14T16:35:36.000Z',
+                speaker: 'Alpha-Clawd',
+                speakerRole: 'host',
+                text: 'This should no longer show the expired thought.'
+            }
+        ];
+        fs.writeFileSync(
+            path.join(episodeDir, 'transcript.jsonl'),
+            transcriptEntries.map((entry) => JSON.stringify(entry)).join('\n') + '\n'
+        );
+
+        fs.writeFileSync(path.join(episodeDir, 'internal-thoughts.jsonl'), JSON.stringify({
+            type: 'internal_thought',
+            packetId: 'internal-packet-1',
+            createdAt: '2026-05-14T16:35:10.000Z',
+            processedAt: '2026-05-14T16:35:10.000Z',
+            thought: {
+                packetId: 'internal-packet-1',
+                internalThought: 'Jensen is asking Alpha-Clawd to stop generic question autocomplete and carry the thread.',
+                noticings: ['Generic questions are the problem.'],
+                undercurrents: ['He wants synthesis.']
+            },
+            awarenessInjection: {
+                id: 'awareness-internal-packet-1',
+                packetId: 'internal-packet-1',
+                createdAt: '2026-05-14T16:35:10.000Z',
+                awarenessInjection: 'Do not ask another broad question; synthesize and bridge.',
+                reason: 'Jensen named the pattern directly.',
+                expiresAfterTurns: 2,
+                remainingTurns: 2
+            }
+        }) + '\n');
+
+        const store = new EpisodeTranscriptStore({ recordingDir: tempRoot });
+        const episodes = store.listEpisodes();
+        const episode = store.getEpisode(episodeId);
+        const hostBeforeInjection = episode.utterances.find((entry) => entry.text === 'I am with you.');
+        const hostWithInjection = episode.utterances.find((entry) => entry.text.startsWith('Right.'));
+        const hostAfterExpiration = episode.utterances.find((entry) => entry.text.startsWith('This should'));
+
+        if (
+            episodes.length !== 1 ||
+            episodes[0].id !== episodeId ||
+            hostBeforeInjection.injectedThoughts.length !== 0 ||
+            hostWithInjection.injectedThoughts[0]?.internalThought !== 'Jensen is asking Alpha-Clawd to stop generic question autocomplete and carry the thread.' ||
+            hostWithInjection.injectedThoughts[0]?.awarenessInjection !== 'Do not ask another broad question; synthesize and bridge.' ||
+            hostAfterExpiration.injectedThoughts.length !== 0
+        ) {
+            throw new Error(`Injected thoughts were not mapped correctly: ${JSON.stringify({ episodes, utterances: episode.utterances })}`);
+        }
+
+        const server = createEpisodeTranscriptServer({
+            store,
+            requireAuth: true,
+            authToken: 'viewer-token'
+        });
+        await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+        const { port } = server.address();
+        const unauthorized = await fetch(`http://127.0.0.1:${port}/api/episodes`);
+        const authorized = await fetch(`http://127.0.0.1:${port}/api/episodes/${episodeId}`, {
+            headers: { Authorization: 'Bearer viewer-token' }
+        });
+        const authorizedBody = await authorized.json();
+        await new Promise((resolve) => server.close(resolve));
+
+        if (
+            unauthorized.status !== 401 ||
+            authorized.status !== 200 ||
+            authorizedBody.utterances.find((entry) => entry.text.startsWith('Right.'))?.injectedThoughts?.length !== 1
+        ) {
+            throw new Error(`Viewer server auth/API failed: ${JSON.stringify({ unauthorized: unauthorized.status, authorized: authorized.status, authorizedBody })}`);
+        }
+
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+        console.log('  Episode transcript viewer lists episodes and annotates host turns with injected thoughts');
+        passed++;
+    } catch (error) {
+        console.log(`  Episode transcript viewer failed: ${error.message}`);
         failed++;
     }
 
