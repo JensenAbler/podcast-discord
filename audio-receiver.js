@@ -702,6 +702,19 @@ class AudioReceiver {
             return true;
         }
 
+        // Observed Fish/Discord feedback can also produce tiny CJK fragments
+        // like "\u6211\u4eec\u3002" during bot playback. Keep the raw text in
+        // transcript metadata, but do not let these trigger a second host turn.
+        const shortCjkPhantoms = new Set(['\u6211\u4eec']);
+        if (shortCjkPhantoms.has(compact)) {
+            return true;
+        }
+
+        const shortJapanesePhantoms = new Set(['\u3046\u3093', '\u3048\u3048', '\u3042']);
+        if (shortJapanesePhantoms.has(compact)) {
+            return true;
+        }
+
         return false;
     }
 

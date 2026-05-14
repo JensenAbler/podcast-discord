@@ -321,6 +321,14 @@ async function runTests() {
             systemPrompt.includes('Vary your choice of words') &&
             systemPrompt.includes('Do not let any stock phrase become a groove') &&
             systemPrompt.includes('"What does that bring up..."') &&
+            systemPrompt.includes('Speech-context cues matter') &&
+            systemPrompt.includes('Do not autocomplete introspection') &&
+            systemPrompt.includes('what does that feel like') &&
+            systemPrompt.includes('Internal-thought transparency') &&
+            systemPrompt.includes('Sounding-board exception') &&
+            systemPrompt.includes('Screen exploration and standby') &&
+            systemPrompt.includes('carry the conversation for several turns') &&
+            systemPrompt.includes('fictional universes, canon') &&
             systemPrompt.includes('Permission framing is for sensitive, personal, or easy-to-decline invitations') &&
             systemPrompt.includes('Do not ask a question every turn') &&
             systemPrompt.includes('Minimal backchannel is allowed but should be rare') &&
@@ -419,6 +427,100 @@ async function runTests() {
         } else {
             throw new Error(`Awareness injection prompt was not formatted correctly: ${awarenessPrompt}`);
         }
+
+        const defaultSpeechCapGenerator = new PodcastGenerator({ apiKey: 'sk-test-placeholder' });
+        if (defaultSpeechCapGenerator.maxSpeechChars !== 420) {
+            throw new Error(`Default live speech cap should be 420 chars, got ${defaultSpeechCapGenerator.maxSpeechChars}`);
+        }
+
+        const pendingPrompt = generator.buildUserPrompt('Jensen: Did Big Brain finish yet?', null, {
+            pendingBigBrain: [{
+                runId: 'discord-bigbrain-pending',
+                reason: 'NIH lookup is still running.',
+                transcript: 'Jensen: Can you look up the NIH earthing evidence?',
+                requestedAt: '2026-05-13T00:00:00.000Z'
+            }]
+        });
+        if (
+            !pendingPrompt.includes('Big Brain request already pending') ||
+            !pendingPrompt.includes('discord-bigbrain-pending') ||
+            !pendingPrompt.includes('Do not request Big Brain again') ||
+            !pendingPrompt.includes('Set bigBrain.requested=false')
+        ) {
+            throw new Error(`Pending bigBrain prompt did not suppress duplicate stalls: ${pendingPrompt}`);
+        }
+
+        const standbyGenerator = new PodcastGenerator({ apiKey: 'sk-test-placeholder' });
+        standbyGenerator.rememberTurn('Jensen: Please just stand by while I explore on my own.', {
+            shouldRespond: true,
+            speech: 'Got it, I will stand by.',
+            bigBrain: { requested: false, reason: '', consumedRunId: '' }
+        });
+        const standbyPrompt = standbyGenerator.buildUserPrompt('Jensen: The Greek letter kappa is super cool.', null, {});
+        if (
+            !standbyGenerator.standbyMode ||
+            !standbyPrompt.includes('Standing-by mode is active') ||
+            !standbyPrompt.includes('Prefer shouldRespond=false')
+        ) {
+            throw new Error(`Standby mode was not preserved for narration: ${standbyPrompt}`);
+        }
+        const explicitAfterStandbyPrompt = standbyGenerator.buildUserPrompt('Jensen: What is kappa?', null, {});
+        if (explicitAfterStandbyPrompt.includes('Standing-by mode is active')) {
+            throw new Error(`Explicit request should override standby prompt: ${explicitAfterStandbyPrompt}`);
+        }
+        standbyGenerator.rememberTurn('Jensen: Now you carry the conversation for at least five turns, please.', {
+            shouldRespond: true,
+            speech: 'Here is a concrete thought without a question.',
+            bigBrain: { requested: false, reason: '', consumedRunId: '' }
+        });
+        const moratoriumPrompt = standbyGenerator.buildUserPrompt('Jensen: Continue.', null, {});
+        if (
+            standbyGenerator.questionMoratoriumTurns !== 4 ||
+            !moratoriumPrompt.includes('Question moratorium') ||
+            !moratoriumPrompt.includes('do not ask a question')
+        ) {
+            throw new Error(`Question moratorium did not persist after carry request: ${JSON.stringify({ turns: standbyGenerator.questionMoratoriumTurns, moratoriumPrompt })}`);
+        }
+        console.log('  Generator tracks standby and no-question pacing directives');
+        passed++;
+
+        const budgetGenerator = new PodcastGenerator({
+            apiKey: 'sk-test-placeholder',
+            maxRequestTokens: 6200,
+            maxCompletionTokens: 900,
+            promptTokenSafetyMargin: 400,
+            maxHistoryTurns: 8
+        });
+        for (let i = 0; i < 8; i++) {
+            budgetGenerator.history.push({
+                role: i % 2 === 0 ? 'user' : 'assistant',
+                content: `history ${i} ${'older context '.repeat(220)}`
+            });
+        }
+        const hugeStagedAnswer = 'Open Claw could not complete the bigBrain request. '.repeat(260);
+        const budgetMessages = budgetGenerator.buildMessages({
+            transcript: `Jensen: ${'current live speech '.repeat(260)}`,
+            stagedBigBrain: [{
+                runId: 'discord-bigbrain-huge',
+                reason: 'Large staged failure needs integration.',
+                transcript: 'Jensen: Look up the NIH earthing page.',
+                answer: hugeStagedAnswer
+            }],
+            awarenessInjections: [{
+                id: 'awareness-budget',
+                awarenessInjection: 'Do not answer the NIH factual question from vibes.'
+            }]
+        });
+        const budgetEstimate = budgetGenerator.estimateMessagesTokens(budgetMessages);
+        if (
+            budgetEstimate > budgetGenerator.getPromptTokenBudget() ||
+            budgetMessages.some(message => /older context/.test(message.content)) ||
+            !budgetMessages.some(message => message.content.includes('[trimmed for prompt budget]'))
+        ) {
+            throw new Error(`Prompt budget guard did not compact oversized context: ${JSON.stringify({ budgetEstimate, budget: budgetGenerator.getPromptTokenBudget(), messages: budgetMessages })}`);
+        }
+        console.log('  Generator prompt guards pending bigBrain and compacts oversized staged context');
+        passed++;
 
         const savedEnv = {
             PODCAST_GENERATOR_API_KEY_ACTIVE: process.env.PODCAST_GENERATOR_API_KEY_ACTIVE,
@@ -845,6 +947,16 @@ async function runTests() {
         ) {
             throw new Error(`Internal thought prompt should stay packet-only: ${thoughtPrompt}`);
         }
+        const thoughtSystemPrompt = thoughtGenerator.buildSystemPrompt();
+        if (
+            !thoughtSystemPrompt.includes('intentionally packet-only') ||
+            !thoughtSystemPrompt.includes('previous internalThought') ||
+            !thoughtSystemPrompt.includes('candidateAwarenessNote') ||
+            !thoughtSystemPrompt.includes('active awarenessInjection') ||
+            !thoughtSystemPrompt.includes('artifact content being discussed')
+        ) {
+            throw new Error(`Internal thought system prompt does not guard recursive artifact ingestion: ${thoughtSystemPrompt}`);
+        }
 
         const discernmentGenerator = new DiscernmentGenerator({
             apiKey: 'discernment-test-key',
@@ -938,6 +1050,11 @@ async function runTests() {
         if (
             !discernmentPrompt.includes('relevant enough to the interests of the podcast participants') ||
             !discernmentPrompt.includes('awarenessInjection') ||
+            !discernmentPrompt.includes('immediate, present-tense') ||
+            !discernmentPrompt.includes('later in this same episode') ||
+            !discernmentPrompt.includes('Preserve good rejections') ||
+            !discernmentPrompt.includes('Reject awareness candidates that would push step-by-step troubleshooting') ||
+            !discernmentGenerator.buildSystemPrompt('candidate').includes('Prefer attention and pacing notes') ||
             discernmentPrompt.includes('priority')
         ) {
             throw new Error(`Discernment prompt does not match the revised framing: ${discernmentPrompt}`);
@@ -2392,6 +2509,84 @@ async function runTests() {
 
         bot.cleanupPendingBigBrain(specificResult.runId);
 
+        bot.pendingBigBrainResponses.set('discord-bigbrain-existing', {
+            guildId,
+            runId: 'discord-bigbrain-existing',
+            reason: 'Already checking the NIH source.',
+            transcript: 'Jensen: Look up the NIH page.',
+            requestedAt: '2026-05-13T00:00:00.000Z'
+        });
+        const pendingForGenerator = bot.getPendingBigBrainForGenerator(guildId);
+        if (
+            pendingForGenerator.length !== 1 ||
+            pendingForGenerator[0].runId !== 'discord-bigbrain-existing' ||
+            !bot.shouldSuppressDuplicateBigBrainStall(guildId, {
+                bigBrain: { requested: true, reason: 'Duplicate NIH lookup.' }
+            })
+        ) {
+            throw new Error(`Pending bigBrain helper did not expose/suppress existing run: ${JSON.stringify({ pendingForGenerator })}`);
+        }
+        bot.cleanupPendingBigBrain('discord-bigbrain-existing');
+
+        const streamingBot = Object.create(AlphaClawdVoiceBot.prototype);
+        const streamingGuildId = 'guild-streaming-duplicate-bigbrain';
+        const rememberedTurns = [];
+        streamingBot.pendingBigBrainResponses = new Map([[
+            'discord-bigbrain-streaming-existing',
+            {
+                guildId: streamingGuildId,
+                runId: 'discord-bigbrain-streaming-existing',
+                reason: 'Already checking Animorphs canon.',
+                transcript: 'Jensen: Look up the Animorphs example.',
+                requestedAt: '2026-05-13T00:00:00.000Z'
+            }
+        ]]);
+        streamingBot.stagedBigBrainResponses = new Map();
+        streamingBot.directResponseInFlight = new Set();
+        streamingBot.participantActivityVersion = new Map([[streamingGuildId, 0]]);
+        streamingBot.conversationBuffer = {
+            setFlushHold: () => {},
+            requeueUtterances: () => {}
+        };
+        streamingBot.getAwarenessInjectionsForGenerator = () => [];
+        streamingBot.beginGeneratorTurn = async () => ({
+            shouldRespond: true,
+            speech: '',
+            text: '',
+            bigBrain: { requested: false, reason: '', consumedRunId: '' },
+            isStreaming: true,
+            speechStream: (async function* () {})(),
+            completed: Promise.resolve({
+                shouldRespond: true,
+                speech: 'Let me check Animorphs canon.',
+                text: 'Let me check Animorphs canon.',
+                bigBrain: {
+                    requested: true,
+                    reason: 'Need verified Animorphs canon.',
+                    consumedRunId: ''
+                }
+            })
+        });
+        streamingBot.podcastGenerator = {
+            rememberTurn: (rememberedTranscript, output) => rememberedTurns.push({ rememberedTranscript, output })
+        };
+        streamingBot.speakDirectGeneratorResponse = async () => {
+            throw new Error('Duplicate streaming bigBrain stall should have been suppressed before TTS');
+        };
+
+        await streamingBot.handleDirectGeneratorFlush(
+            streamingGuildId,
+            [{ speaker: 'Jensen', transcription: 'Did Big Brain finish the Animorphs thing?' }],
+            'Jensen: Did Big Brain finish the Animorphs thing?'
+        );
+        if (
+            rememberedTurns.length !== 1 ||
+            rememberedTurns[0].output.shouldRespond !== false ||
+            streamingBot.directResponseInFlight.has(streamingGuildId)
+        ) {
+            throw new Error(`Streaming duplicate bigBrain stall was not suppressed cleanly: ${JSON.stringify({ rememberedTurns, inFlight: Array.from(streamingBot.directResponseInFlight) })}`);
+        }
+
         console.log('  Bare handoff cues are deferred, while specific Big Brain questions still dispatch');
         passed++;
     } catch (error) {
@@ -2823,11 +3018,26 @@ async function runTests() {
             throw new Error(`Fallback did not mark idle/cooldown: ${JSON.stringify({ idleMarked, cooldownStarted })}`);
         }
         if (
-            !synthesizedText.includes('Groq 429 rate limit') ||
+            !synthesizedText.includes('Groq rate limit (429)') ||
             !synthesizedText.includes('both configured Groq keys') ||
             !synthesizedText.includes('12 seconds')
         ) {
             throw new Error(`Fallback text was not operationally informative: ${synthesizedText}`);
+        }
+        const requestTooLarge = new Error('OpenAI API error: 413 - Request too large. Requested 8950 tokens, max 8000.');
+        requestTooLarge.status = 413;
+        requestTooLarge.providerError = {
+            status: 413,
+            code: 'request_too_large',
+            type: 'invalid_request_error'
+        };
+        const sizeFallbackText = bot.buildFallbackResponseText(requestTooLarge);
+        if (
+            !sizeFallbackText.includes("request-size limit (413)") ||
+            sizeFallbackText.includes('429') ||
+            sizeFallbackText.includes('rate limit')
+        ) {
+            throw new Error(`413 fallback text was misleading: ${sizeFallbackText}`);
         }
         if (
             savedEntry?.speaker !== 'Alpha-Clawd' ||
@@ -3111,7 +3321,7 @@ async function runTests() {
         });
 
         // Single CJK particles observed as phantoms in real episodes
-        const truthyCases = ['嗯。', '啊', '哎', '哥', '会', '对。'];
+        const truthyCases = ['嗯。', '啊', '哎', '哥', '会', '对。', '\u6211\u4eec\u3002', '\u3046\u3093\u3002', '\u3048\u3048\u3002', '\u3042\u3002'];
         for (const raw of truthyCases) {
             if (!receiver.isLikelyPhantomTranscription(raw)) {
                 throw new Error(`Expected ${JSON.stringify(raw)} to be classified as phantom`);

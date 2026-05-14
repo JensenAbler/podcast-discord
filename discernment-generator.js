@@ -116,6 +116,10 @@ class DiscernmentGenerator extends PodcastGenerator {
                 '',
                 'Review the three most recent internal thoughts together with the complete transcript so far. Produce at most one concise candidate awareness note that might help Alpha-Clawd listen or respond better in the live conversation.',
                 '',
+                'Ground candidates in the live transcript and recent internal thoughts only. Do not use prior candidate awareness notes or active awareness injections as source material. If Jensen is reading prior JSON/file artifacts aloud, distinguish that artifact report from current-moment observation.',
+                '',
+                'Prefer attention and pacing notes over suggested content. Do not propose step-by-step instructions while Jensen is actively exploring a screen/tool or has asked Alpha-Clawd to stand by. Do not propose another question when Jensen has objected to repeated questions or asked Alpha-Clawd to carry the conversation.',
+                '',
                 'Do not decide whether the note should be injected. If there is no candidate useful enough for a separate judgment pass, leave candidateAwarenessNote empty.'
             ].join('\n');
         }
@@ -128,6 +132,12 @@ class DiscernmentGenerator extends PodcastGenerator {
             'You receive a candidate awareness note produced by a prior discernment pass and decide whether it is relevant enough to the interests of the podcast participants to warrant injecting it into the context of the podcast generator.',
             '',
             'Approve only when the awareness would help Alpha-Clawd listen or respond better in the live conversation. Do not approve something merely because it is interesting, poetic, clever, or true. Do not steer the podcast away from what participants are actually doing.',
+            '',
+            'The awarenessInjection text must be immediate, present-tense, and useful for the next few live turns. Future-oriented reasoning belongs in reason, not in the injected text. Distinguish "later in this same episode" from future-episode planning.',
+            '',
+            'Preserve good rejections: do not inject impulses to fill silence, dispatch a helper, or retrieve files unless that would directly improve the host\'s next live move.',
+            '',
+            'Reject awareness candidates that would push step-by-step troubleshooting after Jensen asked to explore on his own. Reject candidates that end by inviting Jensen to react when he has just asked Alpha-Clawd to stop throwing the conversation back to him.',
             '',
             'If approved, awarenessInjection is the exact private context text to show the podcast generator. It is not speech. If rejected, awarenessInjection must be empty.'
         ].join('\n');

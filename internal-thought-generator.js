@@ -68,7 +68,11 @@ class InternalThoughtGenerator extends PodcastGenerator {
             '',
             'Your job is private reflection, not speech. Read a packet of finalized realtime transcript and produce one internal thought about what is happening in the conversation.',
             '',
+            'The live input is intentionally packet-only. Do not ingest or infer from previous internalThought text, candidateAwarenessNote text, discernment output, or active awarenessInjection text unless a human explicitly read that artifact into the conversation packet.',
+            '',
             'Look for the participant\'s interests, emotional motion, undercurrents, overcurrents, and emerging themes. Be personal and perceptive, but do not invent facts outside the packet.',
+            '',
+            'If the packet contains Jensen reading aloud JSON, file contents, or prior internal-thought artifacts, treat that as artifact content being discussed, not as fresh observation about the present moment. Label noticings accordingly.',
             '',
             'Do not produce awareness notes, podcast-generator context, advice to the speaking host, or decisions about what should be injected elsewhere. That whole process belongs to the discernment generator.'
         ].join('\n');

@@ -719,9 +719,15 @@ class AlphaClawdVoiceBot {
                 idleCheck: true,
                 idleSeconds,
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
+                pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
                 awarenessInjections: this.getAwarenessInjectionsForGenerator(guildId),
                 remember: false
             });
+
+            if (this.shouldSuppressDuplicateBigBrainStall(guildId, response)) {
+                console.log('[Bot] Idle generator requested bigBrain while one is already pending; suppressing duplicate stall');
+                return;
+            }
 
             if (!response.shouldRespond) {
                 console.log(`[Bot] Idle generator chose silence`);
@@ -1719,14 +1725,29 @@ class AlphaClawdVoiceBot {
         let bigBrainDispatch = null;
 
         try {
-            const response = await this.beginGeneratorTurn({
+            let response = await this.beginGeneratorTurn({
                 utterances,
                 transcript,
                 wordData,
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
+                pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
                 awarenessInjections: this.getAwarenessInjectionsForGenerator(guildId),
                 remember: false
             });
+
+            if (this.hasPendingBigBrain(guildId) && response?.isStreaming) {
+                response = await this.settleGeneratorResponse(response, 'pending bigBrain duplicate check');
+            }
+
+            if (this.shouldSuppressDuplicateBigBrainStall(guildId, response)) {
+                this.podcastGenerator.rememberTurn?.(transcript, {
+                    shouldRespond: false,
+                    speech: '',
+                    bigBrain: { requested: false, reason: '', consumedRunId: '' }
+                });
+                console.log('[Bot] Direct generator requested bigBrain while one is already pending; suppressing duplicate stall');
+                return;
+            }
 
             if (!response.shouldRespond) {
                 await this.waitForParticipantFloorToSettle(guildId);
@@ -1883,6 +1904,27 @@ class AlphaClawdVoiceBot {
 
     hasStagedBigBrain(guildId) {
         return (this.stagedBigBrainResponses?.get?.(guildId) || []).length > 0;
+    }
+
+    hasPendingBigBrain(guildId) {
+        return Array.from(this.pendingBigBrainResponses?.values?.() || [])
+            .some((pending) => pending.guildId === guildId);
+    }
+
+    getPendingBigBrainForGenerator(guildId) {
+        return Array.from(this.pendingBigBrainResponses?.values?.() || [])
+            .filter((pending) => pending.guildId === guildId)
+            .slice(0, 1)
+            .map((pending) => ({
+                runId: pending.runId,
+                reason: pending.reason,
+                transcript: pending.transcript || '',
+                requestedAt: pending.requestedAt
+            }));
+    }
+
+    shouldSuppressDuplicateBigBrainStall(guildId, response = {}) {
+        return Boolean(response?.bigBrain?.requested && this.hasPendingBigBrain(guildId));
     }
 
     getStagedBigBrainForGenerator(guildId) {
@@ -3030,6 +3072,7 @@ class AlphaClawdVoiceBot {
             status: providerError.status || error?.status || null,
             code: providerError.code || errorBody.code || null,
             type: providerError.type || errorBody.type || null,
+            message,
             organization: providerError.organization || (orgMatch ? orgMatch[1] : null),
             retryAfterSeconds: Number.isFinite(providerError.retryAfterSeconds)
                 ? providerError.retryAfterSeconds
@@ -3042,7 +3085,10 @@ class AlphaClawdVoiceBot {
 
     buildFallbackResponseText(error) {
         const summary = this.summarizeGeneratorError(error);
-        const isRateLimit = summary.status === 429 || summary.code === 'rate_limit_exceeded';
+        const isRequestTooLarge = summary.status === 413 ||
+            /request too large|context length|too many tokens|maximum context/i.test(summary.message || '');
+        const isRateLimit = summary.status === 429 ||
+            (!isRequestTooLarge && summary.code === 'rate_limit_exceeded');
         const retryAfter = Number.isFinite(summary.retryAfterSeconds)
             ? Math.max(1, Math.ceil(summary.retryAfterSeconds))
             : null;
@@ -3052,9 +3098,13 @@ class AlphaClawdVoiceBot {
 
         if (isRateLimit) {
             const sourceText = summary.failedApiKeySources.length > 1
-                ? ' on both configured Groq keys'
+                ? ' after trying both configured Groq keys'
                 : '';
-            return `I'm hitting a Groq 429 rate limit${sourceText} right now.${retryText} I may need you to ask that again in a moment.`;
+            return `I'm hitting a Groq rate limit (429)${sourceText} right now.${retryText} I may need you to ask that again in a moment.`;
+        }
+
+        if (isRequestTooLarge) {
+            return `I hit Groq's request-size limit (413) before I could answer. I need to compact the conversation context and have you ask again in a moment.`;
         }
 
         if (summary.status || summary.code) {
