@@ -1571,6 +1571,17 @@ async function runTests() {
 
         const managerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'showrunner-manager-'));
         const managerCalls = [];
+        const disabledManager = new ShowRunnerManager({
+            enabled: false,
+            generatorOptions: {
+                apiKey: 'unused-showrunner-key',
+                baseUrl: 'https://api.anthropic.com/v1',
+                model: 'claude-opus-4-7'
+            }
+        });
+        if (disabledManager.generator !== null) {
+            throw new Error('Disabled show runner manager should not construct a generator');
+        }
         const manager = new ShowRunnerManager({
             enabled: true,
             updateIntervalParticipantTurns: 2,

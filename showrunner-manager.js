@@ -8,7 +8,8 @@ class ShowRunnerManager {
             ? Boolean(options.enabled)
             : process.env.PODCAST_SHOW_RUNNER_ENABLED === 'true';
         this.outputFilename = options.outputFilename || 'showrunner-state.jsonl';
-        this.generator = options.generator || new ShowRunnerGenerator(options.generatorOptions || {});
+        this.generatorOptions = options.generatorOptions || {};
+        this.generator = options.generator || (this.enabled ? new ShowRunnerGenerator(this.generatorOptions) : null);
         this.updateIntervalParticipantTurns = this.parsePositiveInt(
             options.updateIntervalParticipantTurns ?? process.env.PODCAST_SHOW_RUNNER_INTERVAL_TURNS,
             2
@@ -181,7 +182,7 @@ class ShowRunnerManager {
         };
 
         try {
-            const guidance = await this.generator.generate(input);
+            const guidance = await this.getGenerator().generate(input);
             session.updateSeq += 1;
             session.turnsSinceUpdate = 0;
             session.latestGuidance = {
@@ -208,6 +209,13 @@ class ShowRunnerManager {
             console.warn(`[ShowRunnerManager] Failed update for guild ${session.guildId}: ${error.message}`);
             return record;
         }
+    }
+
+    getGenerator() {
+        if (!this.generator) {
+            this.generator = new ShowRunnerGenerator(this.generatorOptions);
+        }
+        return this.generator;
     }
 
     buildGeneratorInput(session, reason) {
