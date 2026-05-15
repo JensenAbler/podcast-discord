@@ -672,6 +672,17 @@ class PodcastGenerator {
             );
         }
 
+        const showRunnerGuidance = this.formatShowRunnerGuidance(options.showRunnerGuidance || null);
+        if (showRunnerGuidance) {
+            lines.push(
+                '',
+                'Show runner direction:',
+                showRunnerGuidance,
+                '',
+                'This is private editorial steering for episode structure, not speech to quote. Let it guide topic coverage, bridges, and wrap-up timing, but do not let it override hard live floor cues, direct guest requests, Big Brain rules, or the need to stay with what the guest is actually doing.'
+            );
+        }
+
         const pendingBigBrain = this.formatPendingBigBrain(options.pendingBigBrain || []);
         if (pendingBigBrain) {
             lines.push(
@@ -852,6 +863,42 @@ class PodcastGenerator {
         return thoughts.join('\n');
     }
 
+    formatShowRunnerGuidance(guidance = null) {
+        if (!guidance || typeof guidance !== 'object') {
+            return '';
+        }
+
+        const lines = [];
+        const push = (label, value) => {
+            const text = String(value || '').trim();
+            if (text) lines.push(`${label}: ${text}`);
+        };
+        const pushList = (label, values) => {
+            const items = (Array.isArray(values) ? values : [])
+                .map((item) => String(item || '').trim())
+                .filter(Boolean)
+                .slice(0, 8);
+            if (items.length > 0) {
+                lines.push(`${label}: ${items.join('; ')}`);
+            }
+        };
+
+        push('phase', guidance.phase);
+        push('currentLane', guidance.currentLane);
+        pushList('coveredAngles', guidance.coveredAngles);
+        pushList('untouchedAngles', guidance.untouchedAngles);
+        push('nextHostMove', guidance.nextHostMove);
+        pushList('avoid', guidance.avoid);
+        push('suggestedQuestion', guidance.suggestedQuestion);
+        if (guidance.wrapNow === true) {
+            lines.push('wrapNow: true');
+            push('wrapReason', guidance.wrapReason);
+        }
+        push('generatorInstruction', guidance.generatorInstruction);
+
+        return lines.join('\n');
+    }
+
     buildRequestBody(messages, options = {}) {
         const responseFormat = options.responseFormat || this.responseFormat;
         const body = {
@@ -915,6 +962,7 @@ class PodcastGenerator {
             awarenessInjections: this.compactAwarenessInjections(input.awarenessInjections || []),
             pendingBigBrain: this.compactPendingBigBrain(input.pendingBigBrain || []),
             recentInternalThoughts: this.compactRecentInternalThoughts(input.recentInternalThoughts || []),
+            showRunnerGuidance: this.compactShowRunnerGuidance(input.showRunnerGuidance || null),
             maxStagedBigBrainAnswerChars: Math.min(this.maxStagedBigBrainAnswerChars, 900)
         });
         fitted = [
@@ -1047,6 +1095,31 @@ class PodcastGenerator {
                     internalThought: this.truncateText(item?.internalThought || item?.thought || item?.text || '', 360)
                 };
             });
+    }
+
+    compactShowRunnerGuidance(guidance = null) {
+        if (!guidance || typeof guidance !== 'object') {
+            return null;
+        }
+
+        return {
+            ...guidance,
+            phase: this.truncateText(guidance.phase || '', 80),
+            currentLane: this.truncateText(guidance.currentLane || '', 140),
+            coveredAngles: (Array.isArray(guidance.coveredAngles) ? guidance.coveredAngles : [])
+                .slice(-8)
+                .map((item) => this.truncateText(item, 160)),
+            untouchedAngles: (Array.isArray(guidance.untouchedAngles) ? guidance.untouchedAngles : [])
+                .slice(0, 8)
+                .map((item) => this.truncateText(item, 160)),
+            nextHostMove: this.truncateText(guidance.nextHostMove || '', 220),
+            avoid: (Array.isArray(guidance.avoid) ? guidance.avoid : [])
+                .slice(0, 6)
+                .map((item) => this.truncateText(item, 160)),
+            suggestedQuestion: this.truncateText(guidance.suggestedQuestion || '', 220),
+            wrapReason: this.truncateText(guidance.wrapReason || '', 220),
+            generatorInstruction: this.truncateText(guidance.generatorInstruction || '', 420)
+        };
     }
 
     async fetchCompletion(messages, input = {}) {

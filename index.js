@@ -23,6 +23,8 @@ const { PodcastGenerator } = require('./podcast-generator');
 const { InternalThoughtGenerator } = require('./internal-thought-generator');
 const { DiscernmentGenerator } = require('./discernment-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
+const { ShowRunnerGenerator } = require('./showrunner-generator');
+const { ShowRunnerManager } = require('./showrunner-manager');
 const { PacketizationBuffer } = require('./packetization-buffer');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
 const { EpisodeTranscriptStore, createEpisodeTranscriptServer } = require('./episode-transcript-viewer');
@@ -43,6 +45,8 @@ module.exports = {
     InternalThoughtGenerator,
     DiscernmentGenerator,
     InternalThoughtManager,
+    ShowRunnerGenerator,
+    ShowRunnerManager,
     PacketizationBuffer,
     BigBrainAwarenessSelector,
     EpisodeTranscriptStore,

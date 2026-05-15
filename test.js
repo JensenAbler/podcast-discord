@@ -15,6 +15,8 @@ const {
     InternalThoughtGenerator,
     DiscernmentGenerator,
     InternalThoughtManager,
+    ShowRunnerGenerator,
+    ShowRunnerManager,
     PacketizationBuffer,
     BigBrainAwarenessSelector,
     EpisodeTranscriptStore,
@@ -549,6 +551,31 @@ async function runTests() {
             !rememberedStructurePrompt.includes('synthesize, bridge')
         ) {
             throw new Error(`Remembered episode structure did not persist: ${rememberedStructurePrompt}`);
+        }
+        const showRunnerPrompt = generator.buildUserPrompt('Jensen: I answered the origin story.', null, {
+            showRunnerGuidance: {
+                phase: 'deep-dive',
+                currentLane: 'origin story',
+                coveredAngles: ['guest background'],
+                untouchedAngles: ['collaboration', 'philosophical close'],
+                nextHostMove: 'synthesize and bridge toward collaboration',
+                avoid: ['Do not ask a broad what does that feel like question.'],
+                suggestedQuestion: 'Who changed how you think about this craft?',
+                wrapNow: true,
+                wrapReason: 'All major lanes are covered.',
+                generatorInstruction: 'Wrap the episode now with a concise synthesis and thanks.'
+            }
+        });
+        if (
+            !showRunnerPrompt.includes('Show runner direction') ||
+            !showRunnerPrompt.includes('phase: deep-dive') ||
+            !showRunnerPrompt.includes('untouchedAngles: collaboration; philosophical close') ||
+            !showRunnerPrompt.includes('wrapNow: true') ||
+            !showRunnerPrompt.includes('Wrap the episode now') ||
+            !showRunnerPrompt.includes('private editorial steering') ||
+            showRunnerPrompt.includes('contextText')
+        ) {
+            throw new Error(`Show runner guidance was not injected into generator prompt: ${showRunnerPrompt}`);
         }
         console.log('  Generator tracks standby, no-question pacing, and episode structure directives');
         passed++;
@@ -1378,6 +1405,162 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 5c.0: Show runner generator and manager');
+    try {
+        const showRunnerGenerator = new ShowRunnerGenerator({
+            apiKey: 'showrunner-test-key',
+            maxCompletionTokens: 300
+        });
+        let showRunnerCall = null;
+        showRunnerGenerator.fetchJson = async (requestPath, body) => {
+            showRunnerCall = { requestPath, body };
+            return {
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            phase: 'background',
+                            currentLane: 'origin story',
+                            coveredAngles: ['guest background'],
+                            untouchedAngles: ['craft process', 'philosophical close'],
+                            nextHostMove: 'Synthesize the origin answer and bridge into craft.',
+                            avoid: ['Do not ask another generic broad question.'],
+                            suggestedQuestion: 'What changed once this became a practice?',
+                            wrapNow: false,
+                            wrapReason: 'Several major lanes remain.',
+                            generatorInstruction: 'Carry the thread with synthesis, then bridge to craft process.'
+                        })
+                    }
+                }],
+                usage: { prompt_tokens: 10, completion_tokens: 10 }
+            };
+        };
+
+        const guidance = await showRunnerGenerator.generate({
+            topic: 'AI podcast hosting',
+            topicBrief: 'The guest cares about internal thoughts and structure.',
+            questionBank: 'How did the project start?\nWhat should listeners notice?',
+            transcript: 'Jensen: The origin is really the introspection system.',
+            previousGuidance: null,
+            elapsedMinutes: 12,
+            maxDurationMinutes: 45
+        });
+        if (
+            showRunnerCall?.requestPath !== '/chat/completions' ||
+            showRunnerCall.body.response_format?.json_schema?.name !== 'podcast_showrunner_guidance' ||
+            showRunnerCall.body.response_format?.json_schema?.schema?.required?.includes('generatorInstruction') !== true ||
+            guidance.phase !== 'background' ||
+            guidance.untouchedAngles.length !== 2 ||
+            guidance.wrapNow !== false ||
+            !guidance.generatorInstruction.includes('bridge to craft')
+        ) {
+            throw new Error(`Show runner generator did not produce structured guidance: ${JSON.stringify({ showRunnerCall, guidance })}`);
+        }
+        const showRunnerMessages = showRunnerGenerator.buildMessages({
+            topic: 'test',
+            transcript: 'Jensen: testing'
+        });
+        if (
+            !showRunnerMessages[0].content.includes('private editorial steering') ||
+            !showRunnerMessages[1].content.includes('Potential question bank and lanes') ||
+            !showRunnerMessages[2].content.includes('"wrapNow"') ||
+            !showRunnerMessages[2].content.includes('"generatorInstruction"')
+        ) {
+            throw new Error(`Show runner prompts are missing role/schema context: ${JSON.stringify(showRunnerMessages)}`);
+        }
+
+        const managerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'showrunner-manager-'));
+        const managerCalls = [];
+        const manager = new ShowRunnerManager({
+            enabled: true,
+            updateIntervalParticipantTurns: 2,
+            maxDurationMinutes: 1,
+            now: (() => {
+                const values = [
+                    '2026-05-15T00:00:00.000Z',
+                    '2026-05-15T00:00:10.000Z',
+                    '2026-05-15T00:00:20.000Z',
+                    '2026-05-15T00:00:30.000Z',
+                    '2026-05-15T00:02:00.000Z'
+                ];
+                let index = 0;
+                return () => values[Math.min(index++, values.length - 1)];
+            })(),
+            generator: {
+                generate: async (input) => {
+                    managerCalls.push(input);
+                    return {
+                        phase: 'deep-dive',
+                        currentLane: 'craft process',
+                        coveredAngles: ['origin story'],
+                        untouchedAngles: ['collaboration'],
+                        nextHostMove: 'bridge',
+                        avoid: ['generic follow-up'],
+                        suggestedQuestion: 'What changed in practice?',
+                        wrapNow: false,
+                        wrapReason: 'More lanes remain.',
+                        generatorInstruction: 'Synthesize and bridge into craft process.'
+                    };
+                }
+            }
+        });
+        const session = manager.startSession('guild-showrunner', {
+            recordingPath: managerDir,
+            topic: 'Show runner test',
+            startedAt: '2026-05-15T00:00:00.000Z'
+        });
+        const firstShowRunnerRecord = await manager.handleTranscriptEntry('guild-showrunner', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            transcription: 'The show needs more structure.',
+            timestamp: '2026-05-15T00:00:05.000Z'
+        });
+        if (
+            firstShowRunnerRecord?.guidance?.id !== 'showrunner-1' ||
+            managerCalls[0]?.topic !== 'Show runner test' ||
+            !managerCalls[0]?.transcript.includes('Jensen: The show needs more structure.')
+        ) {
+            throw new Error(`Show runner manager did not update on first participant turn: ${JSON.stringify({ firstShowRunnerRecord, managerCalls })}`);
+        }
+        await manager.handleTranscriptEntry('guild-showrunner', {
+            speaker: 'Alpha-Clawd',
+            speakerRole: 'host',
+            transcription: 'I can carry the structure.',
+            timestamp: '2026-05-15T00:00:25.000Z'
+        });
+        if (managerCalls.length !== 1) {
+            throw new Error(`Host turn should not trigger a show runner update by itself: ${JSON.stringify(managerCalls)}`);
+        }
+        const latestGuidance = manager.getGuidance('guild-showrunner');
+        if (
+            latestGuidance.phase !== 'deep-dive' ||
+            !latestGuidance.generatorInstruction.includes('Synthesize')
+        ) {
+            throw new Error(`Show runner guidance was not available to generator: ${JSON.stringify(latestGuidance)}`);
+        }
+        const forcedWrap = manager.getGuidance('guild-showrunner');
+        if (
+            forcedWrap.wrapNow !== true ||
+            !forcedWrap.generatorInstruction.includes('Wrap the episode now')
+        ) {
+            throw new Error(`Show runner did not enforce configured time limit: ${JSON.stringify(forcedWrap)}`);
+        }
+        const showRunnerLines = fs.readFileSync(session.outputPath, 'utf8').trim().split(/\n+/);
+        if (showRunnerLines.length !== 1 || JSON.parse(showRunnerLines[0]).type !== 'showrunner_guidance') {
+            throw new Error(`Show runner JSONL was not persisted correctly: ${fs.readFileSync(session.outputPath, 'utf8')}`);
+        }
+        const endedShowRunner = await manager.endSession('guild-showrunner');
+        if (endedShowRunner.updateCount !== 1) {
+            throw new Error(`Show runner manager did not end cleanly: ${JSON.stringify(endedShowRunner)}`);
+        }
+        fs.rmSync(managerDir, { recursive: true, force: true });
+
+        console.log('  Show runner produces structured episode guidance and persists state');
+        passed++;
+    } catch (error) {
+        console.log(`  Show runner failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\nTest 5c.1: Internal thought packetization buffer waits through monologues and flushes on alternation');
     try {
         const defaultPacketizationBuffer = new PacketizationBuffer();
@@ -1971,6 +2154,7 @@ async function runTests() {
         bot.RecordingState = { RECORDING: 'RECORDING' };
         bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
         bot.internalThoughtsEnabled = true;
+        bot.showRunnerEnabled = true;
         const recentThoughtRequests = [];
         bot.internalThoughtManager = {
             getActiveAwarenessInjections: (activeGuildId) => activeGuildId === guildId
@@ -1986,6 +2170,16 @@ async function runTests() {
                     internalThought: `Recent internal thought ${index + 1}`
                 })).slice(-limit);
             }
+        };
+        bot.showRunnerManager = {
+            getGuidance: (activeGuildId) => activeGuildId === guildId
+                ? {
+                    phase: 'background',
+                    currentLane: 'origin story',
+                    nextHostMove: 'synthesize and bridge',
+                    generatorInstruction: 'Do not ask another generic question; bridge into the next lane.'
+                }
+                : null
         };
         bot.lastParticipantSpeechAt = new Map([[guildId, firstSpeechAt]]);
         bot.idleDecisionHandledSpeechAt = new Map();
@@ -2032,6 +2226,7 @@ async function runTests() {
         let directGenerateCalled = false;
         let directAwarenessInjections = null;
         let directRecentInternalThoughts = null;
+        let directShowRunnerGuidance = null;
         bot.conversationBuffer.setFlushHold = (reason, active) => {
             holdEvents.push({ reason, active });
         };
@@ -2040,6 +2235,7 @@ async function runTests() {
                 directGenerateCalled = true;
                 directAwarenessInjections = input.awarenessInjections || [];
                 directRecentInternalThoughts = input.recentInternalThoughts || [];
+                directShowRunnerGuidance = input.showRunnerGuidance || null;
                 if (!bot.directResponseInFlight.has(guildId)) {
                     throw new Error('Direct response was not marked in-flight during generation');
                 }
@@ -2063,11 +2259,15 @@ async function runTests() {
         if (directAwarenessInjections?.[0]?.id !== 'awareness-direct-test') {
             throw new Error(`Direct generator did not receive active awareness injections: ${JSON.stringify(directAwarenessInjections)}`);
         }
+        if (directShowRunnerGuidance?.phase !== 'background' || !directShowRunnerGuidance.generatorInstruction.includes('bridge')) {
+            throw new Error(`Direct generator did not receive show runner guidance: ${JSON.stringify(directShowRunnerGuidance)}`);
+        }
         if (directRecentInternalThoughts.length !== 0 || recentThoughtRequests.length !== 0) {
             throw new Error(`Direct generator received recent internal thoughts without a trigger: ${JSON.stringify({ directRecentInternalThoughts, recentThoughtRequests })}`);
         }
 
         directGenerateCalled = false;
+        directShowRunnerGuidance = null;
         directRecentInternalThoughts = null;
         await bot.handleDirectGeneratorFlush(guildId, [
             { speaker: 'Jensen', transcription: 'Can we talk about your internal thoughts and self knowledge?' }
