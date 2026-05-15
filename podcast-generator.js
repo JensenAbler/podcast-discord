@@ -1154,6 +1154,10 @@ class PodcastGenerator {
     }
 
     async fetchJsonWithKeyRouting(path, body, input = {}) {
+        if (isAnthropicBaseUrl(this.baseUrl)) {
+            return this.fetchJsonWithKeyFailover(path, body);
+        }
+
         if (this.keyRouting === 'free-first-paid-fallback') {
             return this.fetchJsonFreeFirstPaidFallback(path, body, input);
         }

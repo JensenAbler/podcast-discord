@@ -1244,6 +1244,40 @@ async function runTests() {
             throw new Error(`Anthropic Messages adapter request/response was wrong: ${JSON.stringify({ anthropicRequest, anthropicThought })}`);
         }
 
+        const routedAnthropicGenerator = new InternalThoughtGenerator({
+            apiKey: 'anthropic-routed-key',
+            baseUrl: 'https://api.anthropic.com/v1',
+            model: 'claude-opus-4-7',
+            keyRouting: 'free-first-paid-fallback',
+            freeApiKey: 'groq-free-key',
+            paidApiKey: 'groq-paid-key',
+            maxCompletionTokens: 123
+        });
+        let routedAnthropicKey = null;
+        routedAnthropicGenerator.fetchJson = async (_requestPath, _body) => {
+            routedAnthropicKey = routedAnthropicGenerator.apiKey;
+            return {
+                provider: 'anthropic',
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            packetId: 'packet-routed',
+                            internalThought: 'Anthropic routing kept the Anthropic key.',
+                            noticings: [],
+                            undercurrents: []
+                        })
+                    }
+                }]
+            };
+        };
+        await routedAnthropicGenerator.generate({
+            packetId: 'packet-routed',
+            transcript: 'Jensen: Make sure Groq fallback does not hijack Anthropic.'
+        });
+        if (routedAnthropicKey !== 'anthropic-routed-key') {
+            throw new Error(`Anthropic base URL should bypass Groq free-first routing, got key ${routedAnthropicKey}`);
+        }
+
         const candidatePrompt = discernmentGenerator.buildUserPrompt({
             mode: 'candidate',
             recentInternalThoughts: [thought],
