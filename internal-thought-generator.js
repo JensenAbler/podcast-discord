@@ -65,7 +65,7 @@ class InternalThoughtGenerator extends PodcastGenerator {
         return [
             { role: 'system', content: this.buildSystemPrompt() },
             { role: 'user', content: this.buildUserPrompt(input) },
-            { role: 'system', content: 'Return only JSON matching the schema.' }
+            { role: 'system', content: this.buildSchemaPrompt() }
         ];
     }
 
@@ -98,6 +98,13 @@ class InternalThoughtGenerator extends PodcastGenerator {
         ];
 
         return lines.join('\n');
+    }
+
+    buildSchemaPrompt() {
+        return [
+            'Return only valid JSON matching this exact schema. Do not include markdown, code fences, or commentary.',
+            JSON.stringify(this.getResponseSchema(), null, 2)
+        ].join('\n');
     }
 
     getResponseSchema() {

@@ -103,7 +103,7 @@ class DiscernmentGenerator extends PodcastGenerator {
         return [
             { role: 'system', content: this.buildSystemPrompt(input.mode) },
             { role: 'user', content: this.buildUserPrompt(input) },
-            { role: 'system', content: 'Return only JSON matching the schema.' }
+            { role: 'system', content: this.buildSchemaPrompt(input.mode) }
         ];
     }
 
@@ -189,6 +189,13 @@ class DiscernmentGenerator extends PodcastGenerator {
         }
 
         return lines.join('\n');
+    }
+
+    buildSchemaPrompt(mode = 'judgment') {
+        return [
+            'Return only valid JSON matching this exact schema. Do not include markdown, code fences, or commentary.',
+            JSON.stringify(this.getResponseSchema(mode), null, 2)
+        ].join('\n');
     }
 
     getResponseSchema(mode = 'judgment') {

@@ -25,6 +25,7 @@ const { EndBehaviorType } = require('@discordjs/voice');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { GatewayWsClient, verifyDeviceSignature } = require('./gateway-ws-client');
 const { EpisodePostProcessor } = require('./post-processor');
+const { resolveFrontierConfig } = require('./introspection-frontier');
 const { PassThrough } = require('stream');
 const fs = require('fs');
 const os = require('os');
@@ -994,6 +995,17 @@ async function runTests() {
         ) {
             throw new Error(`Internal thought schema was not used: ${JSON.stringify(thoughtCall)}`);
         }
+        const thoughtMessages = thoughtGenerator.buildMessages({
+            packetId: 'packet-schema',
+            transcript: 'Jensen: Testing schema visibility.'
+        });
+        if (
+            !thoughtMessages[2]?.content.includes('Return only valid JSON') ||
+            !thoughtMessages[2]?.content.includes('"packetId"') ||
+            !thoughtMessages[2]?.content.includes('"undercurrents"')
+        ) {
+            throw new Error(`Internal thought schema prompt was not explicit: ${JSON.stringify(thoughtMessages[2])}`);
+        }
         if (
             thought.packetId !== 'packet-voice-1' ||
             thought.noticings.length !== 2 ||
@@ -1104,6 +1116,38 @@ async function runTests() {
             !approved.awarenessInjection.includes('personality come through')
         ) {
             throw new Error(`Discernment generator did not run candidate and judgment passes as expected: ${JSON.stringify({ discernmentCalls, candidate, approved })}`);
+        }
+        const candidateMessages = discernmentGenerator.buildMessages({
+            mode: 'candidate',
+            recentInternalThoughts: [thought],
+            completeTranscript: 'Jensen: Testing candidate schema.'
+        });
+        const judgmentMessages = discernmentGenerator.buildMessages({
+            mode: 'judgment',
+            candidateAwarenessNote: 'Test note.',
+            completeTranscript: 'Jensen: Testing judgment schema.'
+        });
+        if (
+            !candidateMessages[2]?.content.includes('"candidateAwarenessNote"') ||
+            candidateMessages[2]?.content.includes('"injectIntoPodcastGenerator"') ||
+            !judgmentMessages[2]?.content.includes('"injectIntoPodcastGenerator"') ||
+            !judgmentMessages[2]?.content.includes('"expiresAfterTurns"')
+        ) {
+            throw new Error(`Discernment schema prompts were not mode-specific: ${JSON.stringify({ candidate: candidateMessages[2], judgment: judgmentMessages[2] })}`);
+        }
+
+        const frontierConfig = resolveFrontierConfig({}, {
+            PODCAST_INTROSPECTION_FRONTIER_ENABLED: 'true',
+            ANTHROPIC_API_KEY: 'anthropic-test-key',
+            PODCAST_INTROSPECTION_FRONTIER_BASE_URL: 'https://api.anthropic.com/v1/'
+        });
+        if (
+            !frontierConfig.enabled ||
+            frontierConfig.model !== 'claude-opus-4-7' ||
+            frontierConfig.apiKey !== 'anthropic-test-key' ||
+            frontierConfig.baseUrl !== 'https://api.anthropic.com/v1'
+        ) {
+            throw new Error(`Frontier config did not default to Anthropic Opus 4.7: ${JSON.stringify(frontierConfig)}`);
         }
 
         const candidatePrompt = discernmentGenerator.buildUserPrompt({
