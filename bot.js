@@ -2759,14 +2759,10 @@ class AlphaClawdVoiceBot {
 
     formatBigBrainAwarenessInjections(items = []) {
         return (Array.isArray(items) ? items : [])
-            .map((item, index) => {
+            .map((item) => {
                 const awarenessInjection = String(item?.awarenessInjection || item?.text || item || '').trim();
                 if (!awarenessInjection) return null;
-                const id = String(item?.id || `awareness-${index + 1}`).trim();
-                return [
-                    `id: ${id}`,
-                    `awarenessInjection: ${awarenessInjection}`
-                ].join('\n');
+                return awarenessInjection;
             })
             .filter(Boolean)
             .join('\n\n');
@@ -2801,10 +2797,7 @@ class AlphaClawdVoiceBot {
         if (awarenessInjections) {
             lines.push(
                 '',
-                'Selected awareness injection(s) for this Big Brain request:',
-                awarenessInjections,
-                '',
-                'These are private context notes selected at request time. Use them only if they help answer the guest request; do not mention awareness injections.'
+                awarenessInjections
             );
         }
 

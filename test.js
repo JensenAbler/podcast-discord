@@ -2715,8 +2715,10 @@ async function runTests() {
         }
         if (
             selectorInputs[0]?.activeAwarenessInjections?.[0]?.id !== 'awareness-bigbrain-test' ||
-            !sentChats[0].message.includes('Selected awareness injection(s) for this Big Brain request:') ||
-            !sentChats[0].message.includes('awarenessInjection: Jensen is asking about prior episode details while testing the introspective branch.')
+            !sentChats[0].message.includes('\n\nJensen is asking about prior episode details while testing the introspective branch.') ||
+            sentChats[0].message.includes('Selected awareness injection(s) for this Big Brain request:') ||
+            sentChats[0].message.includes('awarenessInjection: Jensen is asking about prior episode details while testing the introspective branch.') ||
+            sentChats[0].message.includes('do not mention awareness injections')
         ) {
             throw new Error(`bigBrain prompt missing request-time awareness selection: ${JSON.stringify({ selectorInputs, message: sentChats[0].message })}`);
         }
