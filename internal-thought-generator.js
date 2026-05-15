@@ -1,17 +1,24 @@
 const { PodcastGenerator } = require('./podcast-generator');
+const { resolveFrontierConfig } = require('./introspection-frontier');
 
 class InternalThoughtGenerator extends PodcastGenerator {
     constructor(options = {}) {
+        const frontier = resolveFrontierConfig(options);
         super({
             ...options,
-            apiKey: options.apiKey || process.env.PODCAST_INTERNAL_THOUGHT_API_KEY,
-            model: options.model || process.env.PODCAST_INTERNAL_THOUGHT_MODEL || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini',
+            apiKey: options.apiKey || frontier.apiKey || process.env.PODCAST_INTERNAL_THOUGHT_API_KEY,
+            baseUrl: options.baseUrl || frontier.baseUrl,
+            model: options.model || frontier.model || process.env.PODCAST_INTERNAL_THOUGHT_MODEL || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini',
             timeout: options.timeout || process.env.PODCAST_INTERNAL_THOUGHT_TIMEOUT_MS || process.env.PODCAST_GENERATOR_TIMEOUT_MS || 20000,
             maxCompletionTokens: options.maxCompletionTokens || process.env.PODCAST_INTERNAL_THOUGHT_MAX_TOKENS || 1200,
             responseFormat: options.responseFormat || process.env.PODCAST_INTERNAL_THOUGHT_RESPONSE_FORMAT || process.env.PODCAST_GENERATOR_RESPONSE_FORMAT || 'json_schema',
             reasoningFormat: options.reasoningFormat || process.env.PODCAST_INTERNAL_THOUGHT_REASONING_FORMAT || process.env.PODCAST_GENERATOR_REASONING_FORMAT
         });
         this.schemaName = 'podcast_internal_thought';
+        this.frontierEnabled = frontier.enabled;
+        if (frontier.enabled) {
+            console.log(`[InternalThoughtGenerator] Frontier introspection enabled: model=${this.model}, baseUrl=${this.baseUrl}`);
+        }
     }
 
     async generate(input = {}) {

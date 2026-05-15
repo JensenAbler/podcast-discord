@@ -1,11 +1,14 @@
 const { PodcastGenerator } = require('./podcast-generator');
+const { resolveFrontierConfig } = require('./introspection-frontier');
 
 class DiscernmentGenerator extends PodcastGenerator {
     constructor(options = {}) {
+        const frontier = resolveFrontierConfig(options);
         super({
             ...options,
-            apiKey: options.apiKey || process.env.PODCAST_DISCERNMENT_API_KEY,
-            model: options.model || process.env.PODCAST_DISCERNMENT_MODEL || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini',
+            apiKey: options.apiKey || frontier.apiKey || process.env.PODCAST_DISCERNMENT_API_KEY,
+            baseUrl: options.baseUrl || frontier.baseUrl,
+            model: options.model || frontier.model || process.env.PODCAST_DISCERNMENT_MODEL || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini',
             timeout: options.timeout || process.env.PODCAST_DISCERNMENT_TIMEOUT_MS || process.env.PODCAST_GENERATOR_TIMEOUT_MS || 12000,
             maxCompletionTokens: options.maxCompletionTokens || process.env.PODCAST_DISCERNMENT_MAX_TOKENS || 800,
             responseFormat: options.responseFormat || process.env.PODCAST_DISCERNMENT_RESPONSE_FORMAT || process.env.PODCAST_GENERATOR_RESPONSE_FORMAT || 'json_schema',
@@ -13,6 +16,10 @@ class DiscernmentGenerator extends PodcastGenerator {
         });
         this.judgmentSchemaName = 'podcast_awareness_discernment';
         this.candidateSchemaName = 'podcast_awareness_candidate';
+        this.frontierEnabled = frontier.enabled;
+        if (frontier.enabled) {
+            console.log(`[DiscernmentGenerator] Frontier introspection enabled: model=${this.model}, baseUrl=${this.baseUrl}`);
+        }
     }
 
     async generateCandidate(input = {}) {
