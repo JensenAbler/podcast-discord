@@ -1177,6 +1177,73 @@ async function runTests() {
             throw new Error(`Frontier config did not default to Anthropic Opus 4.7: ${JSON.stringify(frontierConfig)}`);
         }
 
+        const anthropicThoughtGenerator = new InternalThoughtGenerator({
+            apiKey: 'anthropic-test-key',
+            baseUrl: 'https://api.anthropic.com/v1',
+            model: 'claude-opus-4-7',
+            maxCompletionTokens: 123
+        });
+        const originalFetch = global.fetch;
+        let anthropicRequest = null;
+        global.fetch = async (url, options) => {
+            anthropicRequest = {
+                url,
+                headers: options.headers,
+                body: JSON.parse(options.body)
+            };
+            return new Response(JSON.stringify({
+                id: 'msg_test',
+                type: 'message',
+                role: 'assistant',
+                model: 'claude-opus-4-7',
+                content: [{
+                    type: 'text',
+                    text: JSON.stringify({
+                        packetId: 'packet-anthropic',
+                        internalThought: 'Anthropic native messages are working.',
+                        noticings: ['The request used Messages API shape.'],
+                        undercurrents: []
+                    })
+                }],
+                stop_reason: 'end_turn',
+                usage: {
+                    input_tokens: 11,
+                    output_tokens: 7
+                }
+            }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' }
+            });
+        };
+
+        let anthropicThought;
+        try {
+            anthropicThought = await anthropicThoughtGenerator.generate({
+                packetId: 'packet-anthropic',
+                transcript: 'Jensen: Test the Anthropic frontier adapter.'
+            });
+        } finally {
+            global.fetch = originalFetch;
+        }
+
+        if (
+            anthropicRequest?.url !== 'https://api.anthropic.com/v1/messages' ||
+            anthropicRequest.headers.Authorization ||
+            anthropicRequest.headers['x-api-key'] !== 'anthropic-test-key' ||
+            anthropicRequest.headers['anthropic-version'] !== '2023-06-01' ||
+            anthropicRequest.body.model !== 'claude-opus-4-7' ||
+            anthropicRequest.body.max_tokens !== 123 ||
+            anthropicRequest.body.messages.length !== 1 ||
+            anthropicRequest.body.messages[0].role !== 'user' ||
+            !anthropicRequest.body.system.includes('internal thought generator') ||
+            !anthropicRequest.body.system.includes('Return only valid JSON') ||
+            anthropicRequest.body.output_config?.format?.type !== 'json_schema' ||
+            anthropicRequest.body.output_config?.format?.schema?.required?.join(',') !== 'packetId,internalThought,noticings,undercurrents' ||
+            anthropicThought.internalThought !== 'Anthropic native messages are working.'
+        ) {
+            throw new Error(`Anthropic Messages adapter request/response was wrong: ${JSON.stringify({ anthropicRequest, anthropicThought })}`);
+        }
+
         const candidatePrompt = discernmentGenerator.buildUserPrompt({
             mode: 'candidate',
             recentInternalThoughts: [thought],

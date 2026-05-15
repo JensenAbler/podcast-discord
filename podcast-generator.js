@@ -7,6 +7,7 @@
  * - speech: exact TTS text
  * - bigBrain: escape-hatch handoff to the deeper agent (see schema)
  */
+const { fetchAnthropicMessages, isAnthropicBaseUrl } = require('./anthropic-messages');
 
 /**
  * Streams the JSON response from the structured LLM call and pulls the
@@ -2075,6 +2076,7 @@ class PodcastGenerator {
 
         const promptTokens = Number(usage.prompt_tokens || 0);
         const completionTokens = Number(usage.completion_tokens || 0);
+        const provider = result?.provider || (isAnthropicBaseUrl(this.baseUrl) ? 'anthropic' : 'openai-compatible');
         const cachedTokens = Number(
             usage.prompt_tokens_details?.cached_tokens ||
             usage.input_token_details?.cache_read ||
@@ -2082,7 +2084,7 @@ class PodcastGenerator {
             0
         );
         const role = keyConfig.role || this.resolveApiKeyRole(keyConfig.source);
-        const costUsd = this.estimateUsageCostUsd({ promptTokens, completionTokens, cachedTokens });
+        const costUsd = this.estimateUsageCostUsd({ promptTokens, completionTokens, cachedTokens, provider });
 
         if (role === 'paid' && Number.isFinite(costUsd)) {
             this.paidSessionSpendUsd += costUsd;
@@ -2090,6 +2092,7 @@ class PodcastGenerator {
         }
 
         const parts = [
+            `provider=${provider}`,
             `keyRole=${role}`,
             `source=${keyConfig.source || 'unknown'}`,
             `promptTokens=${promptTokens}`,
@@ -2108,7 +2111,15 @@ class PodcastGenerator {
         console.log(`[PodcastGenerator] Usage ${parts.join(', ')}`);
     }
 
-    estimateUsageCostUsd({ promptTokens = 0, completionTokens = 0, cachedTokens = 0 } = {}) {
+    estimateUsageCostUsd({ promptTokens = 0, completionTokens = 0, cachedTokens = 0, provider = 'openai-compatible' } = {}) {
+        if (provider === 'anthropic') {
+            const uncachedPromptTokens = Math.max(0, promptTokens - cachedTokens);
+            const inputCost = uncachedPromptTokens * 5 / 1_000_000;
+            const cachedInputCost = cachedTokens * 0.50 / 1_000_000;
+            const outputCost = completionTokens * 25 / 1_000_000;
+            return inputCost + cachedInputCost + outputCost;
+        }
+
         const uncachedPromptTokens = Math.max(0, promptTokens - cachedTokens);
         const inputCost = uncachedPromptTokens * 0.15 / 1_000_000;
         const cachedInputCost = cachedTokens * 0.075 / 1_000_000;
@@ -2141,6 +2152,15 @@ class PodcastGenerator {
     }
 
     async fetchJson(path, body) {
+        if (isAnthropicBaseUrl(this.baseUrl)) {
+            return fetchAnthropicMessages({
+                baseUrl: this.baseUrl,
+                apiKey: this.apiKey,
+                body,
+                timeout: this.timeout
+            });
+        }
+
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), this.timeout);
 
