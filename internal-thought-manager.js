@@ -201,6 +201,14 @@ class InternalThoughtManager {
             transcript: packet.transcript,
             entries: packet.entries
         };
+        const record = {
+            ...baseRecord,
+            thought: null,
+            awarenessCandidate: null,
+            discernment: null,
+            awarenessInjection: null
+        };
+        let errorStage = 'internal_thought';
 
         try {
             const thought = await this.thoughtGenerator.generate({
@@ -208,14 +216,7 @@ class InternalThoughtManager {
                 transcript: packet.transcript,
                 utterances: packet.entries
             });
-
-            const record = {
-                ...baseRecord,
-                thought,
-                awarenessCandidate: null,
-                discernment: null,
-                awarenessInjection: null
-            };
+            record.thought = thought;
 
             session.thoughts.push({
                 packetId: packet.packetId,
@@ -224,6 +225,7 @@ class InternalThoughtManager {
             });
 
             const recentInternalThoughts = session.thoughts.slice(-this.maxRecentThoughts);
+            errorStage = 'awareness_candidate';
             const awarenessCandidate = await this.generateAwarenessCandidate({
                 recentInternalThoughts,
                 completeTranscript: packet.completeTranscript,
@@ -232,6 +234,7 @@ class InternalThoughtManager {
             record.awarenessCandidate = awarenessCandidate;
 
             if (awarenessCandidate.candidateAwarenessNote) {
+                errorStage = 'discernment_judgment';
                 const discernment = await this.judgeAwarenessCandidate({
                     candidateAwarenessNote: awarenessCandidate.candidateAwarenessNote,
                     candidateReason: awarenessCandidate.reason,
@@ -250,8 +253,9 @@ class InternalThoughtManager {
             return record;
         } catch (error) {
             const errorRecord = {
-                ...baseRecord,
+                ...record,
                 type: 'internal_thought_error',
+                errorStage,
                 error: error.message
             };
             this.appendRecord(session, errorRecord);

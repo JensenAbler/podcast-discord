@@ -236,8 +236,6 @@ class DiscernmentGenerator extends PodcastGenerator {
                 },
                 expiresAfterTurns: {
                     type: 'integer',
-                    minimum: 0,
-                    maximum: 12,
                     description: 'How many participant turns this injection should remain active. Use 0 when not approved.'
                 }
             }

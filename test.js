@@ -1083,7 +1083,9 @@ async function runTests() {
             discernmentSchema.required.join(',') !== 'injectIntoPodcastGenerator,reason,awarenessInjection,expiresAfterTurns' ||
             discernmentSchema.properties.priority ||
             discernmentSchema.properties.risk ||
-            discernmentSchema.properties.participantRelevance
+            discernmentSchema.properties.participantRelevance ||
+            discernmentSchema.properties.expiresAfterTurns.minimum !== undefined ||
+            discernmentSchema.properties.expiresAfterTurns.maximum !== undefined
         ) {
             throw new Error(`Discernment schema includes stale fields: ${JSON.stringify(discernmentSchema)}`);
         }
@@ -1461,6 +1463,50 @@ async function runTests() {
         ) {
             throw new Error(`Recent internal thoughts were not exposed as safe copies: ${JSON.stringify(recentThoughtsAgain)}`);
         }
+
+        const failureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-partial-failure-'));
+        const failureManager = new InternalThoughtManager({
+            packetTurnCount: 1,
+            now: () => '2026-05-12T21:10:00.000Z',
+            thoughtGenerator: {
+                generate: async (input) => ({
+                    packetId: input.packetId,
+                    internalThought: 'This thought should survive a later discernment failure.',
+                    noticings: ['The thought generator already succeeded.'],
+                    undercurrents: []
+                })
+            },
+            discernmentGenerator: {
+                generateCandidate: async () => ({
+                    candidateAwarenessNote: 'Preserve this candidate even if judgment fails.',
+                    reason: 'The candidate pass already succeeded.'
+                }),
+                judgeCandidate: async () => {
+                    throw new Error('Anthropic schema rejected expiresAfterTurns');
+                }
+            }
+        });
+        const failureSession = failureManager.startSession('guild-partial-failure', { recordingPath: failureDir });
+        const failureRecord = await failureManager.handleTranscriptEntry('guild-partial-failure', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'Make sure the thought is still written.'
+        });
+        const failureLines = fs.readFileSync(failureSession.outputPath, 'utf8').trim().split(/\n+/);
+        const persistedFailure = JSON.parse(failureLines[0]);
+        if (
+            failureLines.length !== 1 ||
+            failureRecord.type !== 'internal_thought_error' ||
+            failureRecord.errorStage !== 'discernment_judgment' ||
+            failureRecord.thought?.internalThought !== 'This thought should survive a later discernment failure.' ||
+            failureRecord.awarenessCandidate?.candidateAwarenessNote !== 'Preserve this candidate even if judgment fails.' ||
+            persistedFailure.thought?.internalThought !== failureRecord.thought.internalThought ||
+            failureManager.getRecentInternalThoughts('guild-partial-failure', 7)[0]?.internalThought !== failureRecord.thought.internalThought
+        ) {
+            throw new Error(`Manager did not preserve partial thought records on discernment failure: ${JSON.stringify({ failureRecord, persistedFailure })}`);
+        }
+        await failureManager.endSession('guild-partial-failure', { flush: false });
+        fs.rmSync(failureDir, { recursive: true, force: true });
 
         const staleAwarenessManager = new InternalThoughtManager({
             packetTurnCount: 99,
