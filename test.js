@@ -627,6 +627,7 @@ async function runTests() {
             PODCAST_GENERATOR_API_KEY_GROQ_STANDBY: process.env.PODCAST_GENERATOR_API_KEY_GROQ_STANDBY,
             PODCAST_GENERATOR_API_KEY: process.env.PODCAST_GENERATOR_API_KEY,
             PODCAST_GENERATOR_BASE_URL: process.env.PODCAST_GENERATOR_BASE_URL,
+            PODCAST_GENERATOR_MODEL: process.env.PODCAST_GENERATOR_MODEL,
             ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
             OPENAI_API_KEY: process.env.OPENAI_API_KEY
         };
@@ -900,6 +901,30 @@ async function runTests() {
                     apiKey: anthropicGenerator.apiKey,
                     source: anthropicGenerator.apiKeySource,
                     streaming: anthropicGenerator.supportsStreaming()
+                })}`);
+            }
+
+            process.env.PODCAST_GENERATOR_BASE_URL = 'https://api.kimi.com/coding/v1';
+            process.env.PODCAST_GENERATOR_MODEL = 'kimi-for-coding';
+            process.env.PODCAST_GENERATOR_API_KEY = 'kimi-host-key';
+            delete process.env.ANTHROPIC_API_KEY;
+            const kimiGenerator = new PodcastGenerator();
+            const parsedFence = kimiGenerator.parseJsonContent('```json\n{"speech":"Kimi fenced JSON parses."}\n```', 'Kimi test');
+            const normalizedFence = kimiGenerator.normalizeOutput(parsedFence);
+            if (
+                kimiGenerator.baseUrl !== 'https://api.kimi.com/coding/v1' ||
+                kimiGenerator.apiKey !== 'kimi-host-key' ||
+                kimiGenerator.apiKeySource !== 'PODCAST_GENERATOR_API_KEY' ||
+                kimiGenerator.supportsStreaming() ||
+                normalizedFence.speech !== 'Kimi fenced JSON parses.' ||
+                kimiGenerator.estimateUsageCostUsd({ promptTokens: 100, completionTokens: 50, provider: 'kimi' }) !== null
+            ) {
+                throw new Error(`Kimi-compatible generator config did not use Anthropic Messages routing cleanly: ${JSON.stringify({
+                    baseUrl: kimiGenerator.baseUrl,
+                    apiKey: kimiGenerator.apiKey,
+                    source: kimiGenerator.apiKeySource,
+                    streaming: kimiGenerator.supportsStreaming(),
+                    normalizedFence
                 })}`);
             }
         } finally {

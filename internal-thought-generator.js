@@ -40,13 +40,7 @@ class InternalThoughtGenerator extends PodcastGenerator {
             throw new Error('Internal thought generator returned an empty response');
         }
 
-        let parsed;
-        try {
-            parsed = JSON.parse(content);
-        } catch (error) {
-            throw new Error(`Internal thought generator returned invalid JSON: ${error.message}`);
-        }
-
+        const parsed = this.parseJsonContent(content, 'Internal thought generator');
         const output = this.normalizeOutput(parsed, input);
         const duration = Date.now() - startTime;
         console.log(`[InternalThoughtGenerator] Completed in ${duration}ms: packet=${output.packetId || 'none'}`);

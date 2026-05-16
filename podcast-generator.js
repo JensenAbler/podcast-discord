@@ -290,12 +290,7 @@ class PodcastGenerator {
             throw new Error('Podcast generator returned an empty response');
         }
 
-        let parsed;
-        try {
-            parsed = JSON.parse(content);
-        } catch (error) {
-            throw new Error(`Podcast generator returned invalid JSON: ${error.message}`);
-        }
+        const parsed = this.parseJsonContent(content, 'Podcast generator');
 
         const output = this.normalizeOutput(parsed);
         if (input.remember !== false) {
@@ -505,6 +500,32 @@ class PodcastGenerator {
 
     supportsStreaming() {
         return !isAnthropicBaseUrl(this.baseUrl);
+    }
+
+    parseJsonContent(content, label = 'Model') {
+        const text = String(content || '').trim();
+        try {
+            return JSON.parse(text);
+        } catch {}
+
+        const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        if (fenced) {
+            try {
+                return JSON.parse(fenced[1].trim());
+            } catch {}
+        }
+
+        const first = text.indexOf('{');
+        const last = text.lastIndexOf('}');
+        if (first !== -1 && last > first) {
+            try {
+                return JSON.parse(text.slice(first, last + 1));
+            } catch (error) {
+                throw new Error(`${label} returned invalid JSON: ${error.message}`);
+            }
+        }
+
+        throw new Error(`${label} returned invalid JSON`);
     }
 
     buildMessages(input = {}) {
@@ -1706,7 +1727,9 @@ class PodcastGenerator {
     }
 
     normalizeOutput(output) {
-        const shouldRespond = Boolean(output?.shouldRespond);
+        const shouldRespond = output?.shouldRespond === undefined
+            ? Boolean(output?.speech)
+            : Boolean(output?.shouldRespond);
         const speech = shouldRespond ? this.sanitizeSpeech(output?.speech || '') : '';
 
         return {
@@ -2145,6 +2168,10 @@ class PodcastGenerator {
     }
 
     estimateUsageCostUsd({ promptTokens = 0, completionTokens = 0, cachedTokens = 0, provider = 'openai-compatible' } = {}) {
+        if (provider === 'kimi') {
+            return null;
+        }
+
         if (provider === 'anthropic') {
             const uncachedPromptTokens = Math.max(0, promptTokens - cachedTokens);
             const inputCost = uncachedPromptTokens * 5 / 1_000_000;

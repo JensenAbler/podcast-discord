@@ -2,11 +2,25 @@ const DEFAULT_ANTHROPIC_VERSION = '2023-06-01';
 
 function isAnthropicBaseUrl(baseUrl = '') {
     try {
-        const host = new URL(String(baseUrl)).hostname.toLowerCase();
-        return host === 'api.anthropic.com' || host.endsWith('.anthropic.com');
+        const url = new URL(String(baseUrl));
+        const host = url.hostname.toLowerCase();
+        const pathname = url.pathname.replace(/\/+$/, '');
+        return host === 'api.anthropic.com' ||
+            host.endsWith('.anthropic.com') ||
+            (host === 'api.kimi.com' && pathname === '/coding/v1');
     } catch {
         return false;
     }
+}
+
+function getAnthropicCompatibleProvider(baseUrl = '') {
+    try {
+        const host = new URL(String(baseUrl)).hostname.toLowerCase();
+        if (host === 'api.kimi.com') {
+            return 'kimi';
+        }
+    } catch {}
+    return 'anthropic';
 }
 
 function normalizeBaseUrl(baseUrl = '') {
@@ -115,13 +129,13 @@ function extractResponseHeaders(headers) {
     }, {});
 }
 
-function normalizeAnthropicResponse(json = {}, headers = {}) {
+function normalizeAnthropicResponse(json = {}, headers = {}, baseUrl = '') {
     const content = extractTextContent(json.content);
     const usage = json.usage || {};
     return {
         id: json.id,
         model: json.model,
-        provider: 'anthropic',
+        provider: getAnthropicCompatibleProvider(baseUrl),
         choices: [{
             message: {
                 role: 'assistant',
@@ -180,7 +194,7 @@ async function fetchAnthropicMessages({
         }
 
         const json = await response.json();
-        return normalizeAnthropicResponse(json, headers);
+        return normalizeAnthropicResponse(json, headers, baseUrl);
     } finally {
         clearTimeout(timeoutId);
     }
@@ -190,6 +204,7 @@ module.exports = {
     DEFAULT_ANTHROPIC_VERSION,
     buildAnthropicMessagesBody,
     fetchAnthropicMessages,
+    getAnthropicCompatibleProvider,
     isAnthropicBaseUrl,
     normalizeAnthropicResponse
 };

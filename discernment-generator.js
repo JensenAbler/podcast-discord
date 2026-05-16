@@ -51,13 +51,7 @@ class DiscernmentGenerator extends PodcastGenerator {
             throw new Error('Discernment generator returned an empty response');
         }
 
-        let parsed;
-        try {
-            parsed = JSON.parse(content);
-        } catch (error) {
-            throw new Error(`Discernment generator returned invalid JSON: ${error.message}`);
-        }
-
+        const parsed = this.parseJsonContent(content, 'Discernment generator');
         const output = this.normalizeOutput(parsed, modeInput);
         const duration = Date.now() - startTime;
         if (mode === 'candidate') {
