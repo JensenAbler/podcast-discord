@@ -206,5 +206,6 @@ module.exports = {
     fetchAnthropicMessages,
     getAnthropicCompatibleProvider,
     isAnthropicBaseUrl,
+    normalizeBaseUrl,
     normalizeAnthropicResponse
 };

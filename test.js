@@ -915,7 +915,7 @@ async function runTests() {
                 kimiGenerator.baseUrl !== 'https://api.kimi.com/coding/v1' ||
                 kimiGenerator.apiKey !== 'kimi-host-key' ||
                 kimiGenerator.apiKeySource !== 'PODCAST_GENERATOR_API_KEY' ||
-                kimiGenerator.supportsStreaming() ||
+                !kimiGenerator.supportsStreaming() ||
                 normalizedFence.speech !== 'Kimi fenced JSON parses.' ||
                 kimiGenerator.estimateUsageCostUsd({ promptTokens: 100, completionTokens: 50, provider: 'kimi' }) !== null
             ) {
@@ -4842,6 +4842,112 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Streaming unhandled-rejection guard failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 16a: Kimi Anthropic-compatible streaming');
+    try {
+        const { PodcastGenerator } = require('./podcast-generator');
+        const originalFetch = globalThis.fetch;
+        let request = null;
+
+        try {
+            globalThis.fetch = async (url, options = {}) => {
+                request = {
+                    url,
+                    headers: options.headers,
+                    body: JSON.parse(options.body)
+                };
+                const data = (event) => `data: ${JSON.stringify(event)}`;
+                const sse = [
+                    'event: message_start',
+                    data({
+                        type: 'message_start',
+                        message: {
+                            usage: {
+                                input_tokens: 21,
+                                cache_read_input_tokens: 3,
+                                output_tokens: 0
+                            }
+                        }
+                    }),
+                    '',
+                    'event: content_block_delta',
+                    data({
+                        type: 'content_block_delta',
+                        delta: {
+                            type: 'text_delta',
+                            text: '```json\n{"speech":"Kimi '
+                        }
+                    }),
+                    '',
+                    'event: content_block_delta',
+                    data({
+                        type: 'content_block_delta',
+                        delta: {
+                            type: 'text_delta',
+                            text: 'streaming works."}\n```'
+                        }
+                    }),
+                    '',
+                    'event: message_delta',
+                    data({
+                        type: 'message_delta',
+                        usage: {
+                            output_tokens: 9
+                        }
+                    }),
+                    '',
+                    'event: message_stop',
+                    data({ type: 'message_stop' }),
+                    ''
+                ].join('\n');
+                return new Response(sse, {
+                    status: 200,
+                    headers: { 'content-type': 'text/event-stream' }
+                });
+            };
+
+            const kimiGenerator = new PodcastGenerator({
+                apiKey: 'kimi-test-key',
+                baseUrl: 'https://api.kimi.com/coding/v1',
+                model: 'kimi-for-coding',
+                timeout: 1000
+            });
+            const stream = await kimiGenerator.generateStreaming({
+                transcript: 'Jensen: Test Kimi streaming.',
+                remember: false
+            });
+
+            const shouldRespond = await stream.shouldRespond;
+            let speech = '';
+            for await (const chunk of stream.speechStream) {
+                speech += chunk;
+            }
+            const completed = await stream.completed;
+
+            if (
+                !shouldRespond ||
+                speech !== 'Kimi streaming works.' ||
+                completed.speech !== 'Kimi streaming works.' ||
+                request?.url !== 'https://api.kimi.com/coding/v1/messages' ||
+                request.headers.Authorization ||
+                request.headers['x-api-key'] !== 'kimi-test-key' ||
+                request.headers['anthropic-version'] !== '2023-06-01' ||
+                request.body.model !== 'kimi-for-coding' ||
+                request.body.stream !== true ||
+                request.body.output_config?.format?.type !== 'json_schema'
+            ) {
+                throw new Error(`Kimi streaming route failed: ${JSON.stringify({ shouldRespond, speech, completed, request })}`);
+            }
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        console.log('  Kimi streaming uses Anthropic Messages SSE and feeds speech chunks to TTS');
+        passed++;
+    } catch (error) {
+        console.log(`  Kimi streaming failed: ${error.message}`);
         failed++;
     }
 

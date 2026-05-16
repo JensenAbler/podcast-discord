@@ -7,7 +7,14 @@
  * - speech: exact TTS text
  * - bigBrain: escape-hatch handoff to the deeper agent (see schema)
  */
-const { fetchAnthropicMessages, isAnthropicBaseUrl } = require('./anthropic-messages');
+const {
+    DEFAULT_ANTHROPIC_VERSION,
+    buildAnthropicMessagesBody,
+    fetchAnthropicMessages,
+    getAnthropicCompatibleProvider,
+    isAnthropicBaseUrl,
+    normalizeBaseUrl
+} = require('./anthropic-messages');
 
 /**
  * Streams the JSON response from the structured LLM call and pulls the
@@ -127,7 +134,7 @@ class IncrementalSpeechReader {
             return JSON.parse(this.buffer);
         } catch (e) {
             return {
-                shouldRespond: this.shouldRespondValue ?? false,
+                shouldRespond: this.shouldRespondValue ?? this.fullSpeech.length > 0,
                 speech: this.fullSpeech,
                 bigBrain: { requested: false, reason: '' }
             };
@@ -325,14 +332,13 @@ class PodcastGenerator {
             throw new Error(this.apiKeyError || 'OpenAI API key not provided. Set OPENAI_API_KEY or use PODCAST_GENERATOR=gateway.');
         }
         if (!this.supportsStreaming()) {
-            throw new Error('Podcast generator streaming is not supported for Anthropic Messages API.');
+            throw new Error('Podcast generator streaming is not supported for the configured provider.');
         }
 
         const transcript = input.transcript || this.formatUtterances(input.utterances || []);
         const messages = this.buildMessages(input);
         const body = this.buildRequestBody(messages);
-        body.stream = true;
-        body.stream_options = { include_usage: true };
+        const request = this.buildStreamingRequest(body);
 
         const startTime = Date.now();
         const reader = new IncrementalSpeechReader();
@@ -401,13 +407,10 @@ class PodcastGenerator {
             };
 
             try {
-                const response = await fetch(`${this.baseUrl}/chat/completions`, {
+                const response = await fetch(request.url, {
                     method: 'POST',
-                    headers: {
-                        Authorization: `Bearer ${this.apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(body),
+                    headers: request.headers,
+                    body: JSON.stringify(request.body),
                     signal: controller.signal
                 });
 
@@ -422,14 +425,11 @@ class PodcastGenerator {
 
                 for await (const event of streamChatCompletionEvents(response)) {
                     resetIdleTimeout();
-                    if (event.usage) {
-                        // Groq sends a trailing event with empty choices and a
-                        // populated usage block when stream_options.include_usage
-                        // is set. Capture it for logUsage after the loop.
-                        lastUsage = event.usage;
+                    const usage = this.extractStreamingUsage(event, lastUsage);
+                    if (usage) {
+                        lastUsage = usage;
                     }
-                    const choice = event.choices?.[0];
-                    const delta = choice?.delta?.content;
+                    const delta = this.extractStreamingTextDelta(event);
                     if (typeof delta === 'string' && delta.length > 0) {
                         const result = reader.push(delta);
                         if (result.shouldRespond !== null) {
@@ -438,6 +438,9 @@ class PodcastGenerator {
                         if (result.chunks.length > 0) {
                             for (const chunk of result.chunks) {
                                 queue.push(chunk);
+                            }
+                            if (result.shouldRespond === null) {
+                                resolveShould(true);
                             }
                             wakeWaiter();
                         }
@@ -464,7 +467,7 @@ class PodcastGenerator {
                 this.rememberTurn(transcript, output);
             }
             if (lastUsage) {
-                this.logUsage({ usage: lastUsage }, keyConfigSnapshot);
+                this.logUsage({ provider: request.provider, usage: lastUsage }, keyConfigSnapshot);
             }
             const duration = Date.now() - startTime;
             console.log(`[PodcastGenerator] Streaming completed in ${duration}ms: respond=${output.shouldRespond}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}`);
@@ -499,7 +502,95 @@ class PodcastGenerator {
     }
 
     supportsStreaming() {
-        return !isAnthropicBaseUrl(this.baseUrl);
+        if (!isAnthropicBaseUrl(this.baseUrl)) {
+            return true;
+        }
+        return getAnthropicCompatibleProvider(this.baseUrl) === 'kimi';
+    }
+
+    buildStreamingRequest(body = {}) {
+        if (isAnthropicBaseUrl(this.baseUrl)) {
+            return {
+                provider: getAnthropicCompatibleProvider(this.baseUrl),
+                url: `${normalizeBaseUrl(this.baseUrl)}/messages`,
+                headers: {
+                    'x-api-key': this.apiKey,
+                    'anthropic-version': process.env.ANTHROPIC_VERSION || process.env.PODCAST_ANTHROPIC_VERSION || DEFAULT_ANTHROPIC_VERSION,
+                    'Content-Type': 'application/json'
+                },
+                body: {
+                    ...buildAnthropicMessagesBody(body),
+                    stream: true
+                }
+            };
+        }
+
+        return {
+            provider: 'openai-compatible',
+            url: `${this.baseUrl}/chat/completions`,
+            headers: {
+                Authorization: `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: {
+                ...body,
+                stream: true,
+                stream_options: { include_usage: true }
+            }
+        };
+    }
+
+    extractStreamingTextDelta(event = {}) {
+        if (isAnthropicBaseUrl(this.baseUrl)) {
+            if (event.type === 'content_block_start' && event.content_block?.type === 'text') {
+                return event.content_block.text || '';
+            }
+            if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+                return event.delta.text || '';
+            }
+            return '';
+        }
+
+        return event.choices?.[0]?.delta?.content || '';
+    }
+
+    extractStreamingUsage(event = {}, previousUsage = null) {
+        if (!isAnthropicBaseUrl(this.baseUrl)) {
+            return event.usage || previousUsage;
+        }
+
+        const usage = event.message?.usage || event.usage;
+        if (!usage) {
+            return previousUsage;
+        }
+
+        return {
+            prompt_tokens: Number(
+                usage.prompt_tokens ??
+                usage.input_tokens ??
+                previousUsage?.prompt_tokens ??
+                0
+            ),
+            completion_tokens: Number(
+                usage.completion_tokens ??
+                usage.output_tokens ??
+                previousUsage?.completion_tokens ??
+                0
+            ),
+            input_token_details: {
+                cache_read: Number(
+                    usage.cache_read_input_tokens ??
+                    usage.cached_tokens ??
+                    previousUsage?.input_token_details?.cache_read ??
+                    0
+                ),
+                cache_creation: Number(
+                    usage.cache_creation_input_tokens ??
+                    previousUsage?.input_token_details?.cache_creation ??
+                    0
+                )
+            }
+        };
     }
 
     parseJsonContent(content, label = 'Model') {
