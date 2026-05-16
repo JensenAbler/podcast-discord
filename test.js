@@ -894,7 +894,7 @@ async function runTests() {
                 anthropicGenerator.baseUrl !== 'https://api.anthropic.com/v1' ||
                 anthropicGenerator.apiKey !== 'anthropic-host-key' ||
                 anthropicGenerator.apiKeySource !== 'ANTHROPIC_API_KEY' ||
-                anthropicGenerator.supportsStreaming()
+                !anthropicGenerator.supportsStreaming()
             ) {
                 throw new Error(`Anthropic podcast generator config did not bypass Groq routing cleanly: ${JSON.stringify({
                     baseUrl: anthropicGenerator.baseUrl,
@@ -1221,11 +1221,11 @@ async function runTests() {
         });
         if (
             !frontierConfig.enabled ||
-            frontierConfig.model !== 'claude-opus-4-7' ||
+            frontierConfig.model !== 'claude-sonnet-4-5-20250929' ||
             frontierConfig.apiKey !== 'anthropic-test-key' ||
             frontierConfig.baseUrl !== 'https://api.anthropic.com/v1'
         ) {
-            throw new Error(`Frontier config did not default to Anthropic Opus 4.7: ${JSON.stringify(frontierConfig)}`);
+            throw new Error(`Frontier config did not default to Anthropic Sonnet 4.5: ${JSON.stringify(frontierConfig)}`);
         }
 
         const anthropicThoughtGenerator = new InternalThoughtGenerator({
@@ -4948,6 +4948,112 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Kimi streaming failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 16b: Anthropic Messages streaming');
+    try {
+        const { PodcastGenerator } = require('./podcast-generator');
+        const originalFetch = globalThis.fetch;
+        let request = null;
+
+        try {
+            globalThis.fetch = async (url, options = {}) => {
+                request = {
+                    url,
+                    headers: options.headers,
+                    body: JSON.parse(options.body)
+                };
+                const data = (event) => `data: ${JSON.stringify(event)}`;
+                const sse = [
+                    'event: message_start',
+                    data({
+                        type: 'message_start',
+                        message: {
+                            usage: {
+                                input_tokens: 18,
+                                cache_read_input_tokens: 0,
+                                output_tokens: 0
+                            }
+                        }
+                    }),
+                    '',
+                    'event: content_block_delta',
+                    data({
+                        type: 'content_block_delta',
+                        delta: {
+                            type: 'text_delta',
+                            text: '```json\n{"speech":"Anthropic '
+                        }
+                    }),
+                    '',
+                    'event: content_block_delta',
+                    data({
+                        type: 'content_block_delta',
+                        delta: {
+                            type: 'text_delta',
+                            text: 'streaming works."}\n```'
+                        }
+                    }),
+                    '',
+                    'event: message_delta',
+                    data({
+                        type: 'message_delta',
+                        usage: {
+                            output_tokens: 8
+                        }
+                    }),
+                    '',
+                    'event: message_stop',
+                    data({ type: 'message_stop' }),
+                    ''
+                ].join('\n');
+                return new Response(sse, {
+                    status: 200,
+                    headers: { 'content-type': 'text/event-stream' }
+                });
+            };
+
+            const anthropicGenerator = new PodcastGenerator({
+                apiKey: 'anthropic-test-key',
+                baseUrl: 'https://api.anthropic.com/v1',
+                model: 'claude-sonnet-4-5-20250929',
+                timeout: 1000
+            });
+            const stream = await anthropicGenerator.generateStreaming({
+                transcript: 'Jensen: Test Anthropic streaming.',
+                remember: false
+            });
+
+            const shouldRespond = await stream.shouldRespond;
+            let speech = '';
+            for await (const chunk of stream.speechStream) {
+                speech += chunk;
+            }
+            const completed = await stream.completed;
+
+            if (
+                !shouldRespond ||
+                speech !== 'Anthropic streaming works.' ||
+                completed.speech !== 'Anthropic streaming works.' ||
+                request?.url !== 'https://api.anthropic.com/v1/messages' ||
+                request.headers.Authorization ||
+                request.headers['x-api-key'] !== 'anthropic-test-key' ||
+                request.headers['anthropic-version'] !== '2023-06-01' ||
+                request.body.model !== 'claude-sonnet-4-5-20250929' ||
+                request.body.stream !== true ||
+                request.body.output_config?.format?.type !== 'json_schema'
+            ) {
+                throw new Error(`Anthropic streaming route failed: ${JSON.stringify({ shouldRespond, speech, completed, request })}`);
+            }
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        console.log('  Anthropic streaming uses Messages SSE and feeds speech chunks to TTS');
+        passed++;
+    } catch (error) {
+        console.log(`  Anthropic streaming failed: ${error.message}`);
         failed++;
     }
 

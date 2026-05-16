@@ -1,4 +1,4 @@
-const DEFAULT_FRONTIER_MODEL = 'claude-opus-4-7';
+const DEFAULT_FRONTIER_MODEL = 'claude-sonnet-4-5-20250929';
 const DEFAULT_FRONTIER_BASE_URL = 'https://api.anthropic.com/v1';
 
 function isTruthy(value) {

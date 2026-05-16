@@ -502,10 +502,7 @@ class PodcastGenerator {
     }
 
     supportsStreaming() {
-        if (!isAnthropicBaseUrl(this.baseUrl)) {
-            return true;
-        }
-        return getAnthropicCompatibleProvider(this.baseUrl) === 'kimi';
+        return true;
     }
 
     buildStreamingRequest(body = {}) {
