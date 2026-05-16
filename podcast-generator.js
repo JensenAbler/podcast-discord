@@ -187,6 +187,7 @@ async function* streamChatCompletionEvents(response) {
 
 class PodcastGenerator {
     constructor(options = {}) {
+        this.baseUrl = options.baseUrl || process.env.PODCAST_GENERATOR_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
         this.keyRouting = this.resolveKeyRouting(options);
         this.groqRoleKeys = this.resolveGroqRoleKeys(options);
         const apiKeyConfig = this.resolveApiKey(options, process.env, this.keyRouting);
@@ -195,7 +196,6 @@ class PodcastGenerator {
         this.apiKeyActiveName = apiKeyConfig.activeName || null;
         this.apiKeyRole = apiKeyConfig.role || this.resolveApiKeyRole(apiKeyConfig.source);
         this.apiKeyError = apiKeyConfig.error;
-        this.baseUrl = options.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
         this.model = options.model || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini';
         this.timeout = Number(options.timeout || process.env.PODCAST_GENERATOR_TIMEOUT_MS || 15000);
         this.maxCompletionTokens = Number(options.maxCompletionTokens || process.env.PODCAST_GENERATOR_MAX_TOKENS || 1500);
@@ -328,6 +328,9 @@ class PodcastGenerator {
     async generateStreaming(input = {}) {
         if (!this.apiKey) {
             throw new Error(this.apiKeyError || 'OpenAI API key not provided. Set OPENAI_API_KEY or use PODCAST_GENERATOR=gateway.');
+        }
+        if (!this.supportsStreaming()) {
+            throw new Error('Podcast generator streaming is not supported for Anthropic Messages API.');
         }
 
         const transcript = input.transcript || this.formatUtterances(input.utterances || []);
@@ -498,6 +501,10 @@ class PodcastGenerator {
         });
 
         return { shouldRespond, speechStream, completed };
+    }
+
+    supportsStreaming() {
+        return !isAnthropicBaseUrl(this.baseUrl);
     }
 
     buildMessages(input = {}) {
@@ -1556,6 +1563,28 @@ class PodcastGenerator {
                 apiKey: options.apiKey,
                 source: 'options.apiKey',
                 role: 'single'
+            };
+        }
+
+        if (isAnthropicBaseUrl(this.baseUrl)) {
+            if (env.PODCAST_GENERATOR_API_KEY) {
+                return {
+                    apiKey: env.PODCAST_GENERATOR_API_KEY,
+                    source: 'PODCAST_GENERATOR_API_KEY',
+                    role: 'single'
+                };
+            }
+            if (env.ANTHROPIC_API_KEY) {
+                return {
+                    apiKey: env.ANTHROPIC_API_KEY,
+                    source: 'ANTHROPIC_API_KEY',
+                    role: 'single'
+                };
+            }
+            return {
+                apiKey: null,
+                source: null,
+                error: 'Anthropic podcast generator API key not provided. Set PODCAST_GENERATOR_API_KEY or ANTHROPIC_API_KEY.'
             };
         }
 

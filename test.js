@@ -625,6 +625,9 @@ async function runTests() {
             PODCAST_GENERATOR_API_KEY_GROQ_PAID: process.env.PODCAST_GENERATOR_API_KEY_GROQ_PAID,
             PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY: process.env.PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY,
             PODCAST_GENERATOR_API_KEY_GROQ_STANDBY: process.env.PODCAST_GENERATOR_API_KEY_GROQ_STANDBY,
+            PODCAST_GENERATOR_API_KEY: process.env.PODCAST_GENERATOR_API_KEY,
+            PODCAST_GENERATOR_BASE_URL: process.env.PODCAST_GENERATOR_BASE_URL,
+            ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
             OPENAI_API_KEY: process.env.OPENAI_API_KEY
         };
 
@@ -877,6 +880,27 @@ async function runTests() {
             const missingValidation = missingGenerator.validate();
             if (missingValidation.valid || !missingValidation.errors[0]?.includes('PODCAST_GENERATOR_API_KEY_MISSING')) {
                 throw new Error(`Missing active key alias did not validate clearly: ${JSON.stringify(missingValidation)}`);
+            }
+
+            delete process.env.PODCAST_GENERATOR_API_KEY_ACTIVE;
+            delete process.env.PODCAST_GENERATOR_API_KEY;
+            process.env.PODCAST_GENERATOR_KEY_ROUTING = 'free-first-paid-fallback';
+            process.env.PODCAST_GENERATOR_API_KEY_GROQ_FREE = 'groq-free-key';
+            process.env.PODCAST_GENERATOR_BASE_URL = 'https://api.anthropic.com/v1';
+            process.env.ANTHROPIC_API_KEY = 'anthropic-host-key';
+            const anthropicGenerator = new PodcastGenerator();
+            if (
+                anthropicGenerator.baseUrl !== 'https://api.anthropic.com/v1' ||
+                anthropicGenerator.apiKey !== 'anthropic-host-key' ||
+                anthropicGenerator.apiKeySource !== 'ANTHROPIC_API_KEY' ||
+                anthropicGenerator.supportsStreaming()
+            ) {
+                throw new Error(`Anthropic podcast generator config did not bypass Groq routing cleanly: ${JSON.stringify({
+                    baseUrl: anthropicGenerator.baseUrl,
+                    apiKey: anthropicGenerator.apiKey,
+                    source: anthropicGenerator.apiKeySource,
+                    streaming: anthropicGenerator.supportsStreaming()
+                })}`);
             }
         } finally {
             for (const [key, value] of Object.entries(savedEnv)) {

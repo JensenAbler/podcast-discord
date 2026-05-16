@@ -206,6 +206,7 @@ class AlphaClawdVoiceBot {
 
         // Direct structured generator for live podcast responses.
         const podcastGeneratorOptions = {
+            baseUrl: process.env.PODCAST_GENERATOR_BASE_URL,
             model: process.env.PODCAST_GENERATOR_MODEL,
             timeout: process.env.PODCAST_GENERATOR_TIMEOUT_MS,
             maxCompletionTokens: process.env.PODCAST_GENERATOR_MAX_TOKENS,
@@ -2013,7 +2014,8 @@ class AlphaClawdVoiceBot {
      * still work.
      */
     async beginGeneratorTurn(input = {}) {
-        const useStreaming = process.env.PODCAST_GENERATOR_STREAMING === 'true';
+        const useStreaming = process.env.PODCAST_GENERATOR_STREAMING === 'true' &&
+            (typeof this.podcastGenerator.supportsStreaming !== 'function' || this.podcastGenerator.supportsStreaming());
         if (!useStreaming) {
             return this.podcastGenerator.generate(input);
         }
