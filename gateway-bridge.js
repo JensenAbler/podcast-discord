@@ -6,6 +6,7 @@
  */
 
 const http = require('http');
+const { createEpisodeTranscriptRequestHandler } = require('./episode-transcript-viewer');
 
 class GatewayBridge {
     constructor(options = {}) {
@@ -14,6 +15,12 @@ class GatewayBridge {
         this.gatewayUrl = options.gatewayUrl || process.env.GATEWAY_URL || 'http://localhost:3000';
         this.responseServer = null;
         this.isServerRunning = false;
+        this.transcriptViewerHandler = options.transcriptViewerHandler ||
+            createEpisodeTranscriptRequestHandler({
+                basePath: '/transcripts',
+                requireAuth: true,
+                authToken: this.authToken
+            });
     }
 
     /**
@@ -34,7 +41,15 @@ class GatewayBridge {
 
         return new Promise((resolve, reject) => {
             this.responseServer = http.createServer((req, res) => {
-                this.handleIncomingRequest(req, res);
+                Promise.resolve(this.handleIncomingRequest(req, res)).catch((error) => {
+                    console.error('[GatewayBridge] Request error:', error);
+                    if (!res.headersSent) {
+                        res.writeHead(500, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: 'Internal server error' }));
+                    } else {
+                        res.end();
+                    }
+                });
             });
 
             this.responseServer.on('error', (error) => {
@@ -59,15 +74,19 @@ class GatewayBridge {
     /**
      * Handle incoming HTTP request
      */
-    handleIncomingRequest(req, res) {
+    async handleIncomingRequest(req, res) {
         // Set CORS headers
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
         if (req.method === 'OPTIONS') {
             res.writeHead(200);
             res.end();
+            return;
+        }
+
+        if (this.transcriptViewerHandler && await this.transcriptViewerHandler(req, res)) {
             return;
         }
 

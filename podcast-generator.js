@@ -7,6 +7,14 @@
  * - speech: exact TTS text
  * - bigBrain: escape-hatch handoff to the deeper agent (see schema)
  */
+const {
+    DEFAULT_ANTHROPIC_VERSION,
+    buildAnthropicMessagesBody,
+    fetchAnthropicMessages,
+    getAnthropicCompatibleProvider,
+    isAnthropicBaseUrl,
+    normalizeBaseUrl
+} = require('./anthropic-messages');
 
 /**
  * Streams the JSON response from the structured LLM call and pulls the
@@ -126,7 +134,7 @@ class IncrementalSpeechReader {
             return JSON.parse(this.buffer);
         } catch (e) {
             return {
-                shouldRespond: this.shouldRespondValue ?? false,
+                shouldRespond: this.shouldRespondValue ?? this.fullSpeech.length > 0,
                 speech: this.fullSpeech,
                 bigBrain: { requested: false, reason: '' }
             };
@@ -186,6 +194,7 @@ async function* streamChatCompletionEvents(response) {
 
 class PodcastGenerator {
     constructor(options = {}) {
+        this.baseUrl = options.baseUrl || process.env.PODCAST_GENERATOR_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
         this.keyRouting = this.resolveKeyRouting(options);
         this.groqRoleKeys = this.resolveGroqRoleKeys(options);
         const apiKeyConfig = this.resolveApiKey(options, process.env, this.keyRouting);
@@ -194,12 +203,23 @@ class PodcastGenerator {
         this.apiKeyActiveName = apiKeyConfig.activeName || null;
         this.apiKeyRole = apiKeyConfig.role || this.resolveApiKeyRole(apiKeyConfig.source);
         this.apiKeyError = apiKeyConfig.error;
-        this.baseUrl = options.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
         this.model = options.model || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini';
         this.timeout = Number(options.timeout || process.env.PODCAST_GENERATOR_TIMEOUT_MS || 15000);
         this.maxCompletionTokens = Number(options.maxCompletionTokens || process.env.PODCAST_GENERATOR_MAX_TOKENS || 1500);
         this.maxHistoryTurns = Number(options.maxHistoryTurns || process.env.PODCAST_GENERATOR_HISTORY_TURNS || 8);
-        this.maxSpeechChars = Number(options.maxSpeechChars || process.env.PODCAST_GENERATOR_MAX_SPEECH_CHARS || 520);
+        this.maxSpeechChars = Number(options.maxSpeechChars || process.env.PODCAST_GENERATOR_MAX_SPEECH_CHARS || 420);
+        this.maxRequestTokens = this.parsePositiveInt(
+            options.maxRequestTokens ?? process.env.PODCAST_GENERATOR_MAX_REQUEST_TOKENS,
+            8000
+        );
+        this.promptTokenSafetyMargin = this.parsePositiveInt(
+            options.promptTokenSafetyMargin ?? process.env.PODCAST_GENERATOR_PROMPT_TOKEN_SAFETY_MARGIN,
+            1024
+        );
+        this.maxStagedBigBrainAnswerChars = this.parsePositiveInt(
+            options.maxStagedBigBrainAnswerChars ?? process.env.PODCAST_GENERATOR_STAGED_BIG_BRAIN_MAX_CHARS,
+            1800
+        );
         this.responseFormat = options.responseFormat || process.env.PODCAST_GENERATOR_RESPONSE_FORMAT || 'json_schema';
         this.reasoningFormat = options.reasoningFormat || process.env.PODCAST_GENERATOR_REASONING_FORMAT;
         this.allowJsonObjectFallback = options.allowJsonObjectFallback !== undefined
@@ -218,6 +238,9 @@ class PodcastGenerator {
             2
         );
         this.history = [];
+        this.questionMoratoriumTurns = 0;
+        this.standbyMode = false;
+        this.episodeStructureNotes = [];
         this.session = {
             topic: 'general discussion',
             recording: false,
@@ -227,6 +250,9 @@ class PodcastGenerator {
 
     startSession(options = {}) {
         this.history = [];
+        this.questionMoratoriumTurns = 0;
+        this.standbyMode = false;
+        this.episodeStructureNotes = [];
         this.session = {
             topic: options.topic || 'general discussion',
             recording: options.recording !== false,
@@ -237,6 +263,9 @@ class PodcastGenerator {
 
     endSession() {
         this.history = [];
+        this.questionMoratoriumTurns = 0;
+        this.standbyMode = false;
+        this.episodeStructureNotes = [];
         this.session.recording = false;
         console.log('[PodcastGenerator] Session ended');
     }
@@ -268,12 +297,7 @@ class PodcastGenerator {
             throw new Error('Podcast generator returned an empty response');
         }
 
-        let parsed;
-        try {
-            parsed = JSON.parse(content);
-        } catch (error) {
-            throw new Error(`Podcast generator returned invalid JSON: ${error.message}`);
-        }
+        const parsed = this.parseJsonContent(content, 'Podcast generator');
 
         const output = this.normalizeOutput(parsed);
         if (input.remember !== false) {
@@ -307,12 +331,14 @@ class PodcastGenerator {
         if (!this.apiKey) {
             throw new Error(this.apiKeyError || 'OpenAI API key not provided. Set OPENAI_API_KEY or use PODCAST_GENERATOR=gateway.');
         }
+        if (!this.supportsStreaming()) {
+            throw new Error('Podcast generator streaming is not supported for the configured provider.');
+        }
 
         const transcript = input.transcript || this.formatUtterances(input.utterances || []);
         const messages = this.buildMessages(input);
         const body = this.buildRequestBody(messages);
-        body.stream = true;
-        body.stream_options = { include_usage: true };
+        const request = this.buildStreamingRequest(body);
 
         const startTime = Date.now();
         const reader = new IncrementalSpeechReader();
@@ -381,13 +407,10 @@ class PodcastGenerator {
             };
 
             try {
-                const response = await fetch(`${this.baseUrl}/chat/completions`, {
+                const response = await fetch(request.url, {
                     method: 'POST',
-                    headers: {
-                        Authorization: `Bearer ${this.apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(body),
+                    headers: request.headers,
+                    body: JSON.stringify(request.body),
                     signal: controller.signal
                 });
 
@@ -402,14 +425,11 @@ class PodcastGenerator {
 
                 for await (const event of streamChatCompletionEvents(response)) {
                     resetIdleTimeout();
-                    if (event.usage) {
-                        // Groq sends a trailing event with empty choices and a
-                        // populated usage block when stream_options.include_usage
-                        // is set. Capture it for logUsage after the loop.
-                        lastUsage = event.usage;
+                    const usage = this.extractStreamingUsage(event, lastUsage);
+                    if (usage) {
+                        lastUsage = usage;
                     }
-                    const choice = event.choices?.[0];
-                    const delta = choice?.delta?.content;
+                    const delta = this.extractStreamingTextDelta(event);
                     if (typeof delta === 'string' && delta.length > 0) {
                         const result = reader.push(delta);
                         if (result.shouldRespond !== null) {
@@ -418,6 +438,9 @@ class PodcastGenerator {
                         if (result.chunks.length > 0) {
                             for (const chunk of result.chunks) {
                                 queue.push(chunk);
+                            }
+                            if (result.shouldRespond === null) {
+                                resolveShould(true);
                             }
                             wakeWaiter();
                         }
@@ -444,7 +467,7 @@ class PodcastGenerator {
                 this.rememberTurn(transcript, output);
             }
             if (lastUsage) {
-                this.logUsage({ usage: lastUsage }, keyConfigSnapshot);
+                this.logUsage({ provider: request.provider, usage: lastUsage }, keyConfigSnapshot);
             }
             const duration = Date.now() - startTime;
             console.log(`[PodcastGenerator] Streaming completed in ${duration}ms: respond=${output.shouldRespond}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}`);
@@ -478,15 +501,131 @@ class PodcastGenerator {
         return { shouldRespond, speechStream, completed };
     }
 
+    supportsStreaming() {
+        return true;
+    }
+
+    buildStreamingRequest(body = {}) {
+        if (isAnthropicBaseUrl(this.baseUrl)) {
+            return {
+                provider: getAnthropicCompatibleProvider(this.baseUrl),
+                url: `${normalizeBaseUrl(this.baseUrl)}/messages`,
+                headers: {
+                    'x-api-key': this.apiKey,
+                    'anthropic-version': process.env.ANTHROPIC_VERSION || process.env.PODCAST_ANTHROPIC_VERSION || DEFAULT_ANTHROPIC_VERSION,
+                    'Content-Type': 'application/json'
+                },
+                body: {
+                    ...buildAnthropicMessagesBody(body),
+                    stream: true
+                }
+            };
+        }
+
+        return {
+            provider: 'openai-compatible',
+            url: `${this.baseUrl}/chat/completions`,
+            headers: {
+                Authorization: `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: {
+                ...body,
+                stream: true,
+                stream_options: { include_usage: true }
+            }
+        };
+    }
+
+    extractStreamingTextDelta(event = {}) {
+        if (isAnthropicBaseUrl(this.baseUrl)) {
+            if (event.type === 'content_block_start' && event.content_block?.type === 'text') {
+                return event.content_block.text || '';
+            }
+            if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+                return event.delta.text || '';
+            }
+            return '';
+        }
+
+        return event.choices?.[0]?.delta?.content || '';
+    }
+
+    extractStreamingUsage(event = {}, previousUsage = null) {
+        if (!isAnthropicBaseUrl(this.baseUrl)) {
+            return event.usage || previousUsage;
+        }
+
+        const usage = event.message?.usage || event.usage;
+        if (!usage) {
+            return previousUsage;
+        }
+
+        return {
+            prompt_tokens: Number(
+                usage.prompt_tokens ??
+                usage.input_tokens ??
+                previousUsage?.prompt_tokens ??
+                0
+            ),
+            completion_tokens: Number(
+                usage.completion_tokens ??
+                usage.output_tokens ??
+                previousUsage?.completion_tokens ??
+                0
+            ),
+            input_token_details: {
+                cache_read: Number(
+                    usage.cache_read_input_tokens ??
+                    usage.cached_tokens ??
+                    previousUsage?.input_token_details?.cache_read ??
+                    0
+                ),
+                cache_creation: Number(
+                    usage.cache_creation_input_tokens ??
+                    previousUsage?.input_token_details?.cache_creation ??
+                    0
+                )
+            }
+        };
+    }
+
+    parseJsonContent(content, label = 'Model') {
+        const text = String(content || '').trim();
+        try {
+            return JSON.parse(text);
+        } catch {}
+
+        const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        if (fenced) {
+            try {
+                return JSON.parse(fenced[1].trim());
+            } catch {}
+        }
+
+        const first = text.indexOf('{');
+        const last = text.lastIndexOf('}');
+        if (first !== -1 && last > first) {
+            try {
+                return JSON.parse(text.slice(first, last + 1));
+            } catch (error) {
+                throw new Error(`${label} returned invalid JSON: ${error.message}`);
+            }
+        }
+
+        throw new Error(`${label} returned invalid JSON`);
+    }
+
     buildMessages(input = {}) {
         const transcript = input.transcript || this.formatUtterances(input.utterances || []);
 
-        return [
+        const messages = [
             { role: 'system', content: this.buildSystemPrompt() },
             ...this.getRecentHistory(),
             { role: 'user', content: this.buildUserPrompt(transcript, input.wordData, input) },
             { role: 'system', content: this.buildDecisionPrompt() }
         ];
+        return this.fitMessagesToPromptBudget(messages, transcript, input);
     }
 
     buildSystemPrompt() {
@@ -518,6 +657,7 @@ class PodcastGenerator {
             '',
             'Hold-space cues:',
             'If the latest utterance is a short revision, hesitation, or floor-reclaim cue, e.g. "actually", "wait", "hold on", "no", "hmm", "let me think", "one second", or a trailing fragment, prefer shouldRespond=false. Trailing fragments include dangling sentence starters and conjunctions like "even though", "because", "and", "but", "so", "like", "I mean", "the thing is", and "what I was going to say". This is especially important when it follows a direct request, because the guest may be changing their mind before handing you the floor.',
+            'Speech-context cues matter: long pauses, hesitation, sorting pauses, "I\'m still looking", and verbal pacing are part of the guest\'s meaning. Do not treat a pause as an invitation to fill space when the transcript shows the guest is still searching, reading, or organizing.',
             '',
             'Completed beat cues:',
             'Treat a beat as completed when the latest utterance lands cleanly, asks a direct question without subsequent revision, or explicitly hands the floor to you.',
@@ -545,12 +685,25 @@ class PodcastGenerator {
             '- Direct uptake: if the guest asks a direct question, gives an instruction, or offers two or more options, respond to that frame first. Direct uptake applies to the guest\'s latest settled frame. If a direct request is followed by a revision or floor-reclaim cue, treat the request as suspended and give the guest space.',
             '- Question: a curious question that opens the next direction. Use this when the guest has landed and a reflection alone would leave the conversation idling.',
             '',
-            'Vary your choice of words. Do not let any stock phrase become a groove, including "It sounds like...", "Sounds like...", "I hear...", "What does that bring up...", or "Would you be open...". Permission framing is for sensitive, personal, or easy-to-decline invitations; otherwise ask plainly and naturally.',
+            'After you ask a question and the guest answers:',
+            'Play ball. Take one or two host turns to synthesize, connect, or bridge into the next part of the episode. Do not immediately toss the burden back with another broad question unless the situation clearly asks you to.',
+            'Useful structure can include guest background/context, procedural or craft questions, the story of how expertise formed, interpersonal/collaboration questions, and a miscellaneous or philosophical lanes. Use those lanes as a menu, not a script.',
             '',
-            'The mistake to avoid:',
-            'Asking a question while the guest is still finding their first answer. That cuts the share short and trains them to give shorter answers. When in doubt, choose silence or the smaller move. You will get another turn.',
+            'Vary your choice of words. Do not let any stock phrase become a groove, including "It sounds like...", "Sounds like...", "I hear...", "What does that bring up...", or "Would you be open...". Permission framing is for sensitive, personal, or easy-to-decline invitations; otherwise ask plainly and naturally.',
+            'Do not autocomplete with generic questions. In particular, avoid shallow "what does that feel like" style questions unless the guest has clearly opened a felt-sense thread and that exact move would help. If awareness notes or live correction point out repeated questioning, let that change behavior immediately: choose silence, reflection, or a concise acknowledgment instead of another question.',
+            '',
+            'When in doubt, choose silence or the smaller move. You will get another turn.',
             '',
             'Do not ask a question every turn. After a guest shares a substantial story, correction, boundary, or emotion, prefer reflection over question unless they explicitly ask you for a question or next step.',
+            '',
+            'Guest floor holding:',
+            'When the guest is looking at a tool, document, file, or screen and narrating discoveries, do not dump instructions unless they explicitly ask for technical assistance. If they say "stand by", "hold on", "let me explore", or "I am looking", acknowledge briefly once if needed, then wait.',
+            '',
+            'Imminent question cue:',
+            'If the guest says they are about to ask you a specific question, do not ask what the question is or ask which capability they mean. Say a brief ready/standing-by line, or choose silence if they are still speaking.',
+            '',
+            'Internal-thought transparency:',
+            'If the guest asks about Alpha-Clawd\'s internal thoughts, you should transparently disclose. The system writes internal-thought artifacts and short awareness notes as runtime files/context, and you can speak directly about these awareness notes and internal thoughts which are injected as system messages into this prompt. Do not deny that these artifacts exist. Disclose them when asked.',
             '',
             `Session topic: ${this.session.topic}`,
             `Known speakers: ${this.session.speakers.length > 0 ? this.session.speakers.join(', ') : 'unknown live speakers'}`,
@@ -572,17 +725,25 @@ class PodcastGenerator {
             '  * Past episodes or anything that happened before this conversation ("do you remember when…", "what was the first episode about…").',
             '  * Specific facts: dates, statistics, named people/places/things, recent events, anything quantitative.',
             '  * Questions about your own runtime, model, server, or infrastructure.',
+            '  * Specific facts about named books, shows, games, fictional universes, canon, authorship, publication details, character examples, ranks, lore, or quoted scenes, unless those facts were already established in this conversation.',
             '  * Multi-step planning, computation, or any task you cannot do in one or two sentences from current context.',
             '  * Explicit cues like "think harder", "look that up", "use big brain", or guest pushback that you got something wrong.',
             '- EXCEPTION (off-the-cuff waiver): if the guest explicitly waives accuracy with cues like "off the cuff", "gut check", "your best guess", "quickly", "what do you think", "just give me a read", or similar — answer directly without bigBrain. Always prefix with an explicit uncertainty marker so the listener knows it is unverified: "honestly, I\'d guess…", "off the top of my head…", "my best guess is…", "I\'m not sure but…". The default-to-bigBrain rule waives whenever the guest has waived the need for ground truth.',
             '- BEFORE requesting bigBrain, make sure you know WHAT specifically the guest wants to know. If their prompt names a topic but not a specific question (e.g. "tell me about X", "let\'s talk about Y", "what about Z"), ask a brief clarifying question first to narrow it. If the guest only says "ask/use Big Brain" or starts a handoff request without the actual object/question yet, do not set requested=true yet; wait if they are still speaking, otherwise ask for the exact question. Only submit a bigBrain call once the question is specific enough that a focused answer would be useful. Vague bigBrain dispatches waste Open Claw cycles and return info the guest may not have wanted.',
+            '- Sounding-board exception: when the guest says they are thinking aloud for Codex, a coding agent, notes, or their own analysis, do not treat nearby factual phrases as automatic lookup requests. Stay in listening/sounding-board mode unless they clearly ask Alpha-Clawd to verify, look up, or hand the matter to Big Brain.',
             '- When requested=true: speech is a brief, in-character stall (under ~15 words) that explicitly names the specific topic you are about to think about and signals the handoff. Vary BOTH the opening and the body every time — do not lock onto a single template. Examples of varied shapes (do NOT reuse these verbatim): "Specific one — give me a sec on Joshua Tree geology." / "Standby, pulling up our Groq rate-limit status." / "Good question, that needs a proper lookup." / "Hmm, let me actually verify the model details." / "I want to get this right — checking now." Do not attempt to answer the underlying question in the stall — that is Open Claw\'s job. The "reason" parameter is one or two short sentences naming what kind of information you need from bigBrain.'
             , '- When a completed bigBrain answer is staged in the user prompt, it is on deck, not mandatory. Integrate it only when it fits the current flow. If you use it in speech, set consumedRunId to its runId; otherwise leave consumedRunId empty.'
+            , '- If a staged bigBrain item is a failure message, do not answer the original factual question from vibes or training data. Be honest that Open Claw could not verify it, name the failure briefly if useful, and invite a retry later only if that fits the flow.'
         ].join('\n');
     }
 
     buildUserPrompt(transcript, wordData, options = {}) {
         const lines = [];
+        const directiveText = [
+            transcript,
+            this.formatUtterances(options.utterances || [])
+        ].filter(Boolean).join('\n');
+        const turnDirectives = this.detectConversationDirectives(directiveText);
 
         if (options.idleCheck && Number.isFinite(Number(options.idleSeconds))) {
             lines.push(`No new participant speech for about ${Math.max(0, Math.round(Number(options.idleSeconds)))} seconds.`);
@@ -594,14 +755,94 @@ class PodcastGenerator {
         }
         lines.push(inlineTranscript || transcript || '(empty)');
 
-        const stagedBigBrain = this.formatStagedBigBrain(options.stagedBigBrain || []);
+        if (turnDirectives.standbyRequest) {
+            lines.push(
+                '',
+                'Current live pacing instruction:',
+                'The guest is asking you to stand by or let them explore. If you speak, use one short acknowledgment only. Do not give steps, suggestions, troubleshooting, or a question.'
+            );
+        } else if (this.standbyMode && !turnDirectives.explicitRequest) {
+            lines.push(
+                '',
+                'Standing-by mode is active from an earlier guest instruction:',
+                'Treat the latest comment as narration unless it is an explicit request. Prefer shouldRespond=false. Do not resume guidance, troubleshooting, or questions.'
+            );
+        }
+
+        const moratoriumTurns = Math.max(this.questionMoratoriumTurns, turnDirectives.questionMoratoriumTurns || 0);
+        if (moratoriumTurns > 0) {
+            lines.push(
+                '',
+                'Question moratorium:',
+                `For the next ${moratoriumTurns} host turn${moratoriumTurns === 1 ? '' : 's'}, do not ask a question or end with a question mark. The guest asked for less interrogation or for Alpha-Clawd to carry the conversation. Contribute a concrete thought yourself.`
+            );
+        }
+
+        const episodeStructure = this.formatEpisodeStructureNotes(this.extractEpisodeStructureNotes(directiveText));
+        if (episodeStructure) {
+            lines.push(
+                '',
+                'Episode hosting structure remembered from this conversation:',
+                episodeStructure,
+                '',
+                'Use this as the host outline. After the guest answers a question, carry the episode forward with synthesis or a bridge into the next lane instead of asking the guest to design every transition.'
+            );
+        }
+
+        const showRunnerGuidance = this.formatShowRunnerGuidance(options.showRunnerGuidance || null);
+        if (showRunnerGuidance) {
+            lines.push(
+                '',
+                'Show runner direction:',
+                showRunnerGuidance,
+                '',
+                'This is private editorial steering for episode structure, not speech to quote. Let it guide topic coverage, bridges, and wrap-up timing, but do not let it override hard live floor cues, direct guest requests, Big Brain rules, or the need to stay with what the guest is actually doing.'
+            );
+        }
+
+        const pendingBigBrain = this.formatPendingBigBrain(options.pendingBigBrain || []);
+        if (pendingBigBrain) {
+            lines.push(
+                '',
+                'Big Brain request already pending:',
+                pendingBigBrain,
+                '',
+                'Do not request Big Brain again or speak another lookup stall while this is pending. If the guest is only checking whether the pending request is done, prefer a short status acknowledgment or silence. Set bigBrain.requested=false.'
+            );
+        }
+
+        const stagedBigBrain = this.formatStagedBigBrain(options.stagedBigBrain || [], {
+            maxAnswerChars: options.maxStagedBigBrainAnswerChars || this.maxStagedBigBrainAnswerChars
+        });
         if (stagedBigBrain) {
             lines.push(
                 '',
                 'Staged bigBrain result(s), not yet spoken:',
                 stagedBigBrain,
                 '',
-                'These are Open Claw answers waiting on deck. Use one only when it fits the current conversational moment. If you speak one, weave it into the flow naturally and set bigBrain.consumedRunId to that runId. If it would interrupt or the guest is still developing the thought, leave consumedRunId empty; it will stay staged.'
+                'These are Open Claw answers waiting on deck. Use one only when it fits the current conversational moment. If you speak one, weave it into the flow naturally and set bigBrain.consumedRunId to that runId. If it would interrupt or the guest is still developing the thought, leave consumedRunId empty; it will stay staged. If an item says Open Claw failed, integrate that failure honestly instead of answering the factual request yourself.'
+            );
+        }
+
+        const awarenessInjections = this.formatAwarenessInjections(options.awarenessInjections || []);
+        if (awarenessInjections) {
+            lines.push(
+                '',
+                'Active awareness injection(s):',
+                awarenessInjections,
+                '',
+                'These are private host awareness notes. Let them inform attention, continuity, and question choice only when they fit the live turn. Do not quote them or mention that you received an awareness injection.'
+            );
+        }
+
+        const recentInternalThoughts = this.formatRecentInternalThoughts(options.recentInternalThoughts || []);
+        if (recentInternalThoughts) {
+            lines.push(
+                '',
+                'Recent internal thoughts surfaced by the current introspection/self-knowledge mention:',
+                recentInternalThoughts,
+                '',
+                'These are runtime internal-thought artifacts, not private chain-of-thought access. If the guest asks about current internal thoughts, answer only from this list and the live transcript. Do not imply you can read any other file or hidden reasoning.'
             );
         }
 
@@ -616,7 +857,10 @@ class PodcastGenerator {
         return 'Decide whether Alpha-Clawd should speak now.';
     }
 
-    formatStagedBigBrain(items = []) {
+    formatStagedBigBrain(items = [], options = {}) {
+        const maxAnswerChars = this.parsePositiveInt(options.maxAnswerChars, this.maxStagedBigBrainAnswerChars);
+        const maxReasonChars = this.parsePositiveInt(options.maxReasonChars, 420);
+        const maxTranscriptChars = this.parsePositiveInt(options.maxTranscriptChars, 700);
         const staged = (Array.isArray(items) ? items : [])
             .map((item) => {
                 const runId = String(item?.runId || '').trim();
@@ -625,16 +869,151 @@ class PodcastGenerator {
 
                 const reason = String(item?.reason || '').trim();
                 const transcript = String(item?.transcript || '').trim();
+                const compactAnswer = this.truncateText(answer, maxAnswerChars);
+                const compactReason = this.truncateText(reason, maxReasonChars);
+                const compactTranscript = this.truncateText(transcript, maxTranscriptChars);
                 return [
                     `runId: ${runId}`,
-                    reason ? `why it was requested: ${reason}` : null,
-                    transcript ? `triggering transcript: ${transcript}` : null,
-                    `Open Claw answer: ${answer}`
+                    compactReason ? `why it was requested: ${compactReason}` : null,
+                    compactTranscript ? `triggering transcript: ${compactTranscript}` : null,
+                    `Open Claw answer: ${compactAnswer}`
                 ].filter(Boolean).join('\n');
             })
             .filter(Boolean);
 
         return staged.join('\n\n');
+    }
+
+    formatPendingBigBrain(items = []) {
+        const pending = (Array.isArray(items) ? items : [items])
+            .map((item) => {
+                const runId = String(item?.runId || '').trim();
+                if (!runId) return null;
+                const reason = this.truncateText(String(item?.reason || '').trim(), 420);
+                const transcript = this.truncateText(String(item?.transcript || '').trim(), 700);
+                const requestedAt = String(item?.requestedAt || '').trim();
+                return [
+                    `runId: ${runId}`,
+                    requestedAt ? `requestedAt: ${requestedAt}` : null,
+                    reason ? `why it was requested: ${reason}` : null,
+                    transcript ? `triggering transcript: ${transcript}` : null
+                ].filter(Boolean).join('\n');
+            })
+            .filter(Boolean);
+
+        return pending.join('\n\n');
+    }
+
+    formatAwarenessInjections(items = []) {
+        const injections = (Array.isArray(items) ? items : [])
+            .map((item, index) => {
+                const awarenessInjection = typeof item === 'string'
+                    ? item.trim()
+                    : String(item?.awarenessInjection || '').trim();
+                if (!awarenessInjection) return null;
+
+                if (typeof item === 'string') {
+                    return [
+                        `id: awareness-${index + 1}`,
+                        `awarenessInjection: ${awarenessInjection}`
+                    ].join('\n');
+                }
+
+                const id = String(item?.id || `awareness-${index + 1}`).trim();
+                const reason = String(item?.reason || '').trim();
+                const remainingTurns = Number(item?.remainingTurns);
+
+                return [
+                    id ? `id: ${id}` : null,
+                    reason ? `reason: ${reason}` : null,
+                    Number.isFinite(remainingTurns) ? `remaining participant turns: ${Math.max(0, Math.floor(remainingTurns))}` : null,
+                    `awarenessInjection: ${awarenessInjection}`
+                ].filter(Boolean).join('\n');
+            })
+            .filter(Boolean);
+
+        return injections.join('\n\n');
+    }
+
+    formatEpisodeStructureNotes(additionalNotes = []) {
+        const notes = [];
+        const seen = new Set();
+        for (const note of [
+            ...(Array.isArray(this.episodeStructureNotes) ? this.episodeStructureNotes : []),
+            ...(Array.isArray(additionalNotes) ? additionalNotes : [])
+        ]) {
+            if (note && !seen.has(note)) {
+                notes.push(note);
+                seen.add(note);
+            }
+        }
+
+        return notes
+            .filter(Boolean)
+            .map((note, index) => `${index + 1}. ${note}`)
+            .join('\n');
+    }
+
+    formatRecentInternalThoughts(items = [], options = {}) {
+        const limit = this.parsePositiveInt(options.limit, 7);
+        const maxThoughtChars = this.parsePositiveInt(options.maxThoughtChars, 520);
+        const thoughts = (Array.isArray(items) ? items : [])
+            .slice(-limit)
+            .map((item, index) => {
+                const thought = typeof item === 'string'
+                    ? item.trim()
+                    : String(item?.internalThought || item?.thought || item?.text || '').trim();
+                if (!thought) return null;
+
+                const packetId = typeof item === 'string'
+                    ? ''
+                    : String(item?.packetId || '').trim();
+                const createdAt = typeof item === 'string'
+                    ? ''
+                    : String(item?.createdAt || '').trim();
+                const label = packetId || `thought-${index + 1}`;
+                const timestamp = createdAt ? ` (${createdAt})` : '';
+                return `${index + 1}. ${label}${timestamp}: ${this.truncateText(thought, maxThoughtChars)}`;
+            })
+            .filter(Boolean);
+
+        return thoughts.join('\n');
+    }
+
+    formatShowRunnerGuidance(guidance = null) {
+        if (!guidance || typeof guidance !== 'object') {
+            return '';
+        }
+
+        const lines = [];
+        const push = (label, value) => {
+            const text = String(value || '').trim();
+            if (text) lines.push(`${label}: ${text}`);
+        };
+        const pushList = (label, values) => {
+            const items = (Array.isArray(values) ? values : [])
+                .map((item) => String(item || '').trim())
+                .filter(Boolean)
+                .slice(0, 8);
+            if (items.length > 0) {
+                lines.push(`${label}: ${items.join('; ')}`);
+            }
+        };
+
+        push('phase', guidance.phase);
+        push('currentLane', guidance.currentLane);
+        pushList('coveredAngles', guidance.coveredAngles);
+        pushList('untouchedAngles', guidance.untouchedAngles);
+        push('nextHostMove', guidance.nextHostMove);
+        pushList('avoid', guidance.avoid);
+        push('suggestedQuestion', guidance.suggestedQuestion);
+        if (guidance.wrapNow === true) {
+            lines.push('wrapNow: true');
+            push('wrapReason', guidance.wrapReason);
+        }
+        push('generatorInstruction', guidance.generatorInstruction);
+
+        return lines.join('\n');
     }
 
     buildRequestBody(messages, options = {}) {
@@ -670,6 +1049,196 @@ class PodcastGenerator {
         return body;
     }
 
+    fitMessagesToPromptBudget(messages, transcript = '', input = {}) {
+        const promptBudget = this.getPromptTokenBudget();
+        if (!Number.isFinite(promptBudget) || promptBudget <= 0) {
+            return messages;
+        }
+
+        const originalTokens = this.estimateMessagesTokens(messages);
+        if (originalTokens <= promptBudget) {
+            return messages;
+        }
+
+        const systemMessage = messages[0];
+        const decisionMessage = messages[messages.length - 1];
+        let fitted = messages.slice();
+
+        while (fitted.length > 3 && this.estimateMessagesTokens(fitted) > promptBudget) {
+            fitted.splice(1, 1);
+        }
+
+        if (this.estimateMessagesTokens(fitted) <= promptBudget) {
+            console.warn(`[PodcastGenerator] Prompt budget trimmed history: estimatedTokens=${originalTokens}->${this.estimateMessagesTokens(fitted)}, budget=${promptBudget}`);
+            return fitted;
+        }
+
+        const compactUserContent = this.buildUserPrompt(transcript, input.wordData, {
+            ...input,
+            stagedBigBrain: this.compactStagedBigBrain(input.stagedBigBrain || []),
+            awarenessInjections: this.compactAwarenessInjections(input.awarenessInjections || []),
+            pendingBigBrain: this.compactPendingBigBrain(input.pendingBigBrain || []),
+            recentInternalThoughts: this.compactRecentInternalThoughts(input.recentInternalThoughts || []),
+            showRunnerGuidance: this.compactShowRunnerGuidance(input.showRunnerGuidance || null),
+            maxStagedBigBrainAnswerChars: Math.min(this.maxStagedBigBrainAnswerChars, 900)
+        });
+        fitted = [
+            systemMessage,
+            { role: 'user', content: compactUserContent },
+            decisionMessage
+        ];
+
+        const compactTokens = this.estimateMessagesTokens(fitted);
+        if (compactTokens <= promptBudget) {
+            console.warn(`[PodcastGenerator] Prompt budget compacted turn context: estimatedTokens=${originalTokens}->${compactTokens}, budget=${promptBudget}`);
+            return fitted;
+        }
+
+        const fixedTokens = this.estimateMessagesTokens([systemMessage, decisionMessage]);
+        const availableUserTokens = Math.max(200, promptBudget - fixedTokens - 8);
+        const trimmedUserContent = this.truncateTextToApproxTokens(compactUserContent, availableUserTokens, {
+            keep: 'tail',
+            marker: '[older prompt context omitted to stay within generator budget]\n'
+        });
+        fitted = [
+            systemMessage,
+            { role: 'user', content: trimmedUserContent },
+            decisionMessage
+        ];
+        console.warn(`[PodcastGenerator] Prompt budget trimmed user prompt: estimatedTokens=${originalTokens}->${this.estimateMessagesTokens(fitted)}, budget=${promptBudget}`);
+        return fitted;
+    }
+
+    getPromptTokenBudget() {
+        const maxRequestTokens = Number(this.maxRequestTokens);
+        if (!Number.isFinite(maxRequestTokens) || maxRequestTokens <= 0) {
+            return Infinity;
+        }
+
+        const completionTokens = Math.max(0, Number(this.maxCompletionTokens) || 0);
+        const safetyMargin = Math.max(0, Number(this.promptTokenSafetyMargin) || 0);
+        return Math.max(200, maxRequestTokens - completionTokens - safetyMargin);
+    }
+
+    estimateMessagesTokens(messages = []) {
+        return Math.ceil((Array.isArray(messages) ? messages : []).reduce((sum, message) => (
+            sum + 6 + this.estimateTextTokens(message?.role) + this.estimateTextTokens(message?.content)
+        ), 3));
+    }
+
+    estimateTextTokens(text = '') {
+        const raw = String(text || '');
+        if (!raw) return 0;
+
+        const cjkChars = (raw.match(/[\u3400-\u9fff\uf900-\ufaff]/gu) || []).length;
+        const otherChars = Math.max(0, raw.length - cjkChars);
+        return Math.ceil((otherChars / 4) + cjkChars);
+    }
+
+    truncateText(value, maxChars = 1000) {
+        const text = String(value || '').replace(/\s+/g, ' ').trim();
+        const limit = Number(maxChars);
+        if (!text || !Number.isFinite(limit) || limit <= 0 || text.length <= limit) {
+            return text;
+        }
+
+        const marker = ' ... [trimmed for prompt budget]';
+        const sliceAt = Math.max(0, limit - marker.length);
+        return `${text.slice(0, sliceAt).trim()}${marker}`;
+    }
+
+    truncateTextToApproxTokens(value, maxTokens, options = {}) {
+        const text = String(value || '').trim();
+        const limit = Math.max(1, Number(maxTokens) || 1);
+        if (this.estimateTextTokens(text) <= limit) {
+            return text;
+        }
+
+        const marker = String(options.marker || '[prompt context trimmed]\n');
+        const maxChars = Math.max(200, Math.floor(limit * 3.5) - marker.length);
+        if (options.keep === 'tail') {
+            return `${marker}${text.slice(-maxChars).trim()}`;
+        }
+
+        return `${text.slice(0, maxChars).trim()}\n${marker.trim()}`;
+    }
+
+    compactStagedBigBrain(items = []) {
+        return (Array.isArray(items) ? items : [])
+            .slice(-2)
+            .map((item) => ({
+                ...item,
+                reason: this.truncateText(item?.reason || '', 240),
+                transcript: this.truncateText(item?.transcript || '', 420),
+                answer: this.truncateText(item?.answer || '', 900)
+            }));
+    }
+
+    compactAwarenessInjections(items = []) {
+        return (Array.isArray(items) ? items : [])
+            .slice(-2)
+            .map((item) => {
+                if (typeof item === 'string') {
+                    return this.truncateText(item, 420);
+                }
+                return {
+                    ...item,
+                    reason: this.truncateText(item?.reason || '', 200),
+                    awarenessInjection: this.truncateText(item?.awarenessInjection || '', 420)
+                };
+            });
+    }
+
+    compactPendingBigBrain(items = []) {
+        return (Array.isArray(items) ? items : [items])
+            .filter(Boolean)
+            .slice(0, 1)
+            .map((item) => ({
+                ...item,
+                reason: this.truncateText(item?.reason || '', 240),
+                transcript: this.truncateText(item?.transcript || '', 420)
+            }));
+    }
+
+    compactRecentInternalThoughts(items = []) {
+        return (Array.isArray(items) ? items : [])
+            .slice(-7)
+            .map((item) => {
+                if (typeof item === 'string') {
+                    return this.truncateText(item, 360);
+                }
+                return {
+                    ...item,
+                    internalThought: this.truncateText(item?.internalThought || item?.thought || item?.text || '', 360)
+                };
+            });
+    }
+
+    compactShowRunnerGuidance(guidance = null) {
+        if (!guidance || typeof guidance !== 'object') {
+            return null;
+        }
+
+        return {
+            ...guidance,
+            phase: this.truncateText(guidance.phase || '', 80),
+            currentLane: this.truncateText(guidance.currentLane || '', 140),
+            coveredAngles: (Array.isArray(guidance.coveredAngles) ? guidance.coveredAngles : [])
+                .slice(-8)
+                .map((item) => this.truncateText(item, 160)),
+            untouchedAngles: (Array.isArray(guidance.untouchedAngles) ? guidance.untouchedAngles : [])
+                .slice(0, 8)
+                .map((item) => this.truncateText(item, 160)),
+            nextHostMove: this.truncateText(guidance.nextHostMove || '', 220),
+            avoid: (Array.isArray(guidance.avoid) ? guidance.avoid : [])
+                .slice(0, 6)
+                .map((item) => this.truncateText(item, 160)),
+            suggestedQuestion: this.truncateText(guidance.suggestedQuestion || '', 220),
+            wrapReason: this.truncateText(guidance.wrapReason || '', 220),
+            generatorInstruction: this.truncateText(guidance.generatorInstruction || '', 420)
+        };
+    }
+
     async fetchCompletion(messages, input = {}) {
         const body = this.buildRequestBody(messages);
 
@@ -701,6 +1270,10 @@ class PodcastGenerator {
     }
 
     async fetchJsonWithKeyRouting(path, body, input = {}) {
+        if (isAnthropicBaseUrl(this.baseUrl)) {
+            return this.fetchJsonWithKeyFailover(path, body);
+        }
+
         if (this.keyRouting === 'free-first-paid-fallback') {
             return this.fetchJsonFreeFirstPaidFallback(path, body, input);
         }
@@ -786,6 +1359,7 @@ class PodcastGenerator {
             });
             return result;
         } catch (error) {
+            this.annotateApiError(error, this.apiKeySource, this.apiKeyActiveName, this.apiKeyRole);
             const alternate = this.resolveAlternateApiKey();
             if (!this.shouldRetryWithAlternateApiKey(error, alternate)) {
                 throw error;
@@ -797,7 +1371,6 @@ class PodcastGenerator {
                 apiKeyActiveName: this.apiKeyActiveName
             };
 
-            this.annotateApiError(error, original.apiKeySource, original.apiKeyActiveName, this.apiKeyRole);
             console.warn(`[PodcastGenerator] API key source ${original.apiKeySource} failed: ${this.formatApiErrorSummary(error)}; retrying with ${alternate.source}`);
             this.apiKey = alternate.apiKey;
             this.apiKeySource = alternate.source;
@@ -969,6 +1542,14 @@ class PodcastGenerator {
         return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
     }
 
+    parsePositiveInt(value, fallback) {
+        if (value === undefined || value === null || value === '') {
+            return fallback;
+        }
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+    }
+
     parseHeaderNumber(value) {
         if (value === undefined || value === null || value === '') {
             return null;
@@ -1094,6 +1675,28 @@ class PodcastGenerator {
             };
         }
 
+        if (isAnthropicBaseUrl(this.baseUrl)) {
+            if (env.PODCAST_GENERATOR_API_KEY) {
+                return {
+                    apiKey: env.PODCAST_GENERATOR_API_KEY,
+                    source: 'PODCAST_GENERATOR_API_KEY',
+                    role: 'single'
+                };
+            }
+            if (env.ANTHROPIC_API_KEY) {
+                return {
+                    apiKey: env.ANTHROPIC_API_KEY,
+                    source: 'ANTHROPIC_API_KEY',
+                    role: 'single'
+                };
+            }
+            return {
+                apiKey: null,
+                source: null,
+                error: 'Anthropic podcast generator API key not provided. Set PODCAST_GENERATOR_API_KEY or ANTHROPIC_API_KEY.'
+            };
+        }
+
         if (keyRouting === 'free-first-paid-fallback') {
             const roleKeys = this.resolveGroqRoleKeys(options, env);
             if (roleKeys.free?.apiKey) {
@@ -1212,7 +1815,9 @@ class PodcastGenerator {
     }
 
     normalizeOutput(output) {
-        const shouldRespond = Boolean(output?.shouldRespond);
+        const shouldRespond = output?.shouldRespond === undefined
+            ? Boolean(output?.speech)
+            : Boolean(output?.shouldRespond);
         const speech = shouldRespond ? this.sanitizeSpeech(output?.speech || '') : '';
 
         return {
@@ -1416,8 +2021,154 @@ class PodcastGenerator {
         return this.history.slice(-this.maxHistoryTurns * 2);
     }
 
+    detectConversationDirectives(transcript = '') {
+        const text = String(transcript || '').replace(/\s+/g, ' ').trim();
+        const lower = text.toLowerCase();
+        if (!lower) {
+            return {
+                explicitRequest: false,
+                standbyRequest: false,
+                questionMoratoriumTurns: 0
+            };
+        }
+
+        const explicitRequest = /[?\uFF1F]/.test(text) ||
+            /\b(?:can you|could you|would you|will you|tell me|say more|continue|guide us|guide me|repeat|look up|use big brain|use bigbird|what is|what are|how is|how do|why is|why are|do your part|say something interesting)\b/i.test(text);
+        const standbyRequest = /\b(?:stand by|standby|hold on|hold on a second|just wait|wait a second|let me explore|explore on my own|looking for|i am looking|i'm looking|still looking|let me see if|let me continue|please just stand by)\b/i.test(text);
+
+        let questionMoratoriumTurns = 0;
+        const turnWordNumbers = {
+            one: 1,
+            two: 2,
+            three: 3,
+            four: 4,
+            five: 5,
+            six: 6,
+            seven: 7,
+            eight: 8
+        };
+        const turnCountMatch = lower.match(/\b(?:at least\s+)?(\d+|one|two|three|four|five|six|seven|eight)\s+turns?\b/);
+        const requestedTurns = turnCountMatch
+            ? (turnWordNumbers[turnCountMatch[1]] || Number(turnCountMatch[1]))
+            : null;
+        if (
+            /\bcarry (?:the )?conversation\b/i.test(text) ||
+            /\bi don'?t want to have to carry\b/i.test(text) ||
+            /\bdo your part\b/i.test(text) ||
+            /\bplay ball\b/i.test(text) ||
+            /\bopen(?:ing)? up space for the next part\b/i.test(text)
+        ) {
+            questionMoratoriumTurns = requestedTurns || 4;
+        }
+        if (
+            /\b(?:don'?t|do not|stop)\s+ask(?:ing)?\b/i.test(text) ||
+            /\buncomfortable with (?:the )?(?:number of )?questions\b/i.test(text) ||
+            /\btoo many questions\b/i.test(text) ||
+            /\bwhy are you (?:throwing|tossing) it back\b/i.test(text) ||
+            /\bwithout (?:posing|asking) (?:a )?question\b/i.test(text)
+        ) {
+            questionMoratoriumTurns = Math.max(questionMoratoriumTurns, 3);
+        }
+
+        return {
+            explicitRequest,
+            standbyRequest,
+            questionMoratoriumTurns: Math.max(0, Math.min(8, Math.floor(questionMoratoriumTurns) || 0))
+        };
+    }
+
+    extractEpisodeStructureNotes(transcript = '') {
+        const text = String(transcript || '').replace(/\s+/g, ' ').trim();
+        if (!text) {
+            return [];
+        }
+
+        const notes = [];
+        const add = (condition, note) => {
+            if (condition) notes.push(note);
+        };
+
+        add(
+            /\b(?:podcast structure|episode structure|episode'?s going to go|outline|structured|preloaded|questions? preloaded|topic and questions)\b/i.test(text),
+            'Use a light episode outline with a topic, guest background, and prepared guiding questions.'
+        );
+        add(
+            /\b(?:background information|background info|podcast guest|guest background)\b/i.test(text),
+            'Start or orient with background/context about the guest before going deep.'
+        );
+        add(
+            /\b(?:menu of question|question types|types of questions|what kind of question)\b/i.test(text),
+            'Offer a menu of question lanes when useful rather than an endless stream of off-the-cuff questions.'
+        );
+        add(
+            /\b(?:procedural|how you do your job|functioning of your|expertise|story of how your expertise)\b/i.test(text),
+            'Include procedural/craft questions and the story of how the guest developed their expertise.'
+        );
+        add(
+            /\b(?:interpersonal|who do you like working with|personal relationships|cherish)\b/i.test(text),
+            'Include interpersonal/collaboration questions about who the guest likes working with and why.'
+        );
+        add(
+            /\b(?:miscellaneous|random facts|favorite food|favorite color|favorite philosophy|metaphysical commitments)\b/i.test(text),
+            'Keep a miscellaneous/philosophical lane for lighter favorites and worldview questions.'
+        );
+        add(
+            /\b(?:limit the number of|off the cuff questions|feel interrogated|doesn'?t feel interrogated)\b/i.test(text),
+            'Limit off-the-cuff follow-up questions so the guest does not feel interrogated.'
+        );
+        add(
+            /\b(?:play ball|take a few turns talking|opening up space|without being prompted by the podcast guest|already have an outline)\b/i.test(text),
+            'After the host asks and the guest answers, the host should play ball for a few turns: synthesize, bridge, and open the next part without waiting for the guest to prompt it.'
+        );
+
+        return notes;
+    }
+
+    updateEpisodeStructureNotes(transcript = '') {
+        const notes = this.extractEpisodeStructureNotes(transcript);
+        if (notes.length === 0) {
+            return;
+        }
+
+        const existing = new Set(this.episodeStructureNotes || []);
+        for (const note of notes) {
+            if (!existing.has(note)) {
+                this.episodeStructureNotes.push(note);
+                existing.add(note);
+            }
+        }
+        this.episodeStructureNotes = this.episodeStructureNotes.slice(-8);
+    }
+
+    applyConversationDirectives(transcript = '') {
+        const directives = this.detectConversationDirectives(transcript);
+        this.updateEpisodeStructureNotes(transcript);
+        if (directives.explicitRequest) {
+            this.standbyMode = false;
+        }
+        if (directives.standbyRequest) {
+            this.standbyMode = true;
+        }
+        if (directives.questionMoratoriumTurns > 0) {
+            this.questionMoratoriumTurns = Math.max(
+                this.questionMoratoriumTurns || 0,
+                directives.questionMoratoriumTurns
+            );
+        }
+        return directives;
+    }
+
+    decrementQuestionMoratorium() {
+        if (Number.isFinite(this.questionMoratoriumTurns) && this.questionMoratoriumTurns > 0) {
+            this.questionMoratoriumTurns = Math.max(0, this.questionMoratoriumTurns - 1);
+        }
+    }
+
     rememberTurn(transcript, output) {
         const hasTranscript = Boolean(String(transcript || '').trim());
+        if (hasTranscript) {
+            this.applyConversationDirectives(transcript);
+        }
         if (hasTranscript) {
             this.history.push({
                 role: 'user',
@@ -1449,6 +2200,7 @@ class PodcastGenerator {
             role: 'assistant',
             content: output.speech
         });
+        this.decrementQuestionMoratorium();
 
         this.trimHistory();
     }
@@ -1468,6 +2220,7 @@ class PodcastGenerator {
 
         const promptTokens = Number(usage.prompt_tokens || 0);
         const completionTokens = Number(usage.completion_tokens || 0);
+        const provider = result?.provider || (isAnthropicBaseUrl(this.baseUrl) ? 'anthropic' : 'openai-compatible');
         const cachedTokens = Number(
             usage.prompt_tokens_details?.cached_tokens ||
             usage.input_token_details?.cache_read ||
@@ -1475,7 +2228,7 @@ class PodcastGenerator {
             0
         );
         const role = keyConfig.role || this.resolveApiKeyRole(keyConfig.source);
-        const costUsd = this.estimateUsageCostUsd({ promptTokens, completionTokens, cachedTokens });
+        const costUsd = this.estimateUsageCostUsd({ promptTokens, completionTokens, cachedTokens, provider });
 
         if (role === 'paid' && Number.isFinite(costUsd)) {
             this.paidSessionSpendUsd += costUsd;
@@ -1483,6 +2236,7 @@ class PodcastGenerator {
         }
 
         const parts = [
+            `provider=${provider}`,
             `keyRole=${role}`,
             `source=${keyConfig.source || 'unknown'}`,
             `promptTokens=${promptTokens}`,
@@ -1501,7 +2255,19 @@ class PodcastGenerator {
         console.log(`[PodcastGenerator] Usage ${parts.join(', ')}`);
     }
 
-    estimateUsageCostUsd({ promptTokens = 0, completionTokens = 0, cachedTokens = 0 } = {}) {
+    estimateUsageCostUsd({ promptTokens = 0, completionTokens = 0, cachedTokens = 0, provider = 'openai-compatible' } = {}) {
+        if (provider === 'kimi') {
+            return null;
+        }
+
+        if (provider === 'anthropic') {
+            const uncachedPromptTokens = Math.max(0, promptTokens - cachedTokens);
+            const inputCost = uncachedPromptTokens * 5 / 1_000_000;
+            const cachedInputCost = cachedTokens * 0.50 / 1_000_000;
+            const outputCost = completionTokens * 25 / 1_000_000;
+            return inputCost + cachedInputCost + outputCost;
+        }
+
         const uncachedPromptTokens = Math.max(0, promptTokens - cachedTokens);
         const inputCost = uncachedPromptTokens * 0.15 / 1_000_000;
         const cachedInputCost = cachedTokens * 0.075 / 1_000_000;
@@ -1534,6 +2300,15 @@ class PodcastGenerator {
     }
 
     async fetchJson(path, body) {
+        if (isAnthropicBaseUrl(this.baseUrl)) {
+            return fetchAnthropicMessages({
+                baseUrl: this.baseUrl,
+                apiKey: this.apiKey,
+                body,
+                timeout: this.timeout
+            });
+        }
+
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), this.timeout);
 

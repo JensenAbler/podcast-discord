@@ -628,6 +628,17 @@ class VoiceManager {
             source: utterance.source || null,
             fallbackReason: utterance.fallbackReason || null,
             providerError: utterance.providerError || null,
+            injectedAwarenessInjections: Array.isArray(utterance.injectedAwarenessInjections)
+                ? utterance.injectedAwarenessInjections.map((item) => ({
+                    id: item.id || '',
+                    packetId: item.packetId || '',
+                    createdAt: item.createdAt || null,
+                    awarenessInjection: item.awarenessInjection || '',
+                    reason: item.reason || '',
+                    expiresAfterTurns: item.expiresAfterTurns || 0,
+                    remainingTurns: item.remainingTurns || 0
+                }))
+                : null,
             words: (utterance.words || []).map(w => ({
                 text: w.text || w.word,
                 start: w.start,

@@ -20,6 +20,14 @@ const { ElevenLabsIntegration } = require('./elevenlabs-integration');
 const { GatewayBridge } = require('./gateway-bridge');
 const { AlphaClawdVoiceBot } = require('./bot');
 const { PodcastGenerator } = require('./podcast-generator');
+const { InternalThoughtGenerator } = require('./internal-thought-generator');
+const { DiscernmentGenerator } = require('./discernment-generator');
+const { InternalThoughtManager } = require('./internal-thought-manager');
+const { ShowRunnerGenerator } = require('./showrunner-generator');
+const { ShowRunnerManager } = require('./showrunner-manager');
+const { PacketizationBuffer } = require('./packetization-buffer');
+const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
+const { EpisodeTranscriptStore, createEpisodeTranscriptServer } = require('./episode-transcript-viewer');
 
 module.exports = {
     // Core voice components
@@ -34,6 +42,15 @@ module.exports = {
     ElevenLabsIntegration,
     GatewayBridge,
     PodcastGenerator,
+    InternalThoughtGenerator,
+    DiscernmentGenerator,
+    InternalThoughtManager,
+    ShowRunnerGenerator,
+    ShowRunnerManager,
+    PacketizationBuffer,
+    BigBrainAwarenessSelector,
+    EpisodeTranscriptStore,
+    createEpisodeTranscriptServer,
     
     // Main bot class
     AlphaClawdVoiceBot

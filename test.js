@@ -12,12 +12,22 @@ const {
     FishAudioProvider,
     GatewayBridge,
     PodcastGenerator,
+    InternalThoughtGenerator,
+    DiscernmentGenerator,
+    InternalThoughtManager,
+    ShowRunnerGenerator,
+    ShowRunnerManager,
+    PacketizationBuffer,
+    BigBrainAwarenessSelector,
+    EpisodeTranscriptStore,
+    createEpisodeTranscriptServer,
     AlphaClawdVoiceBot
 } = require('./index');
 const { EndBehaviorType } = require('@discordjs/voice');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { GatewayWsClient, verifyDeviceSignature } = require('./gateway-ws-client');
 const { EpisodePostProcessor } = require('./post-processor');
+const { resolveFrontierConfig } = require('./introspection-frontier');
 const { PassThrough } = require('stream');
 const fs = require('fs');
 const os = require('os');
@@ -316,10 +326,32 @@ async function runTests() {
             systemPrompt.includes('Vary your choice of words') &&
             systemPrompt.includes('Do not let any stock phrase become a groove') &&
             systemPrompt.includes('"What does that bring up..."') &&
+            systemPrompt.includes('Speech-context cues matter') &&
+            systemPrompt.includes('Do not autocomplete with generic questions') &&
+            systemPrompt.includes('what does that feel like') &&
+            systemPrompt.includes('Internal-thought transparency') &&
+            systemPrompt.includes('you should transparently disclose') &&
+            systemPrompt.includes('system writes internal-thought artifacts and short awareness notes') &&
+            systemPrompt.includes('awareness notes and internal thoughts which are injected as system messages') &&
+            systemPrompt.includes('Disclose them when asked') &&
+            !systemPrompt.includes('You do not have access to private chain-of-thought') &&
+            systemPrompt.includes('Sounding-board exception') &&
+            systemPrompt.includes('Guest floor holding') &&
+            systemPrompt.includes('technical assistance') &&
+            systemPrompt.includes('fictional universes, canon') &&
+            systemPrompt.includes('After you ask a question and the guest answers:') &&
+            systemPrompt.includes('Play ball') &&
+            systemPrompt.includes('miscellaneous or philosophical lanes') &&
+            systemPrompt.includes('Imminent question cue') &&
             systemPrompt.includes('Permission framing is for sensitive, personal, or easy-to-decline invitations') &&
             systemPrompt.includes('Do not ask a question every turn') &&
+            systemPrompt.includes('When in doubt, choose silence or the smaller move') &&
             systemPrompt.includes('Minimal backchannel is allowed but should be rare') &&
             systemPrompt.includes('meta-comment naming a missed signal') &&
+            !systemPrompt.includes('Structured hosting:') &&
+            !systemPrompt.includes('Screen exploration and standby') &&
+            !systemPrompt.includes('The mistake to avoid:') &&
+            !systemPrompt.includes('listing example questions') &&
             !systemPrompt.includes('Vary your surface form') &&
             !systemPrompt.includes('one integrated sentence or two short sentences') &&
             !systemPrompt.includes('Signals they are still mid-thought:') &&
@@ -388,6 +420,204 @@ async function runTests() {
             throw new Error(`Inline pause prompt missing expected timing hints: ${cadencePrompt}`);
         }
 
+        const awarenessMessages = generator.buildMessages({
+            transcript: 'Jensen: I want Alpha-Clawd to feel more alive.',
+            awarenessInjections: [{
+                id: 'awareness-internal-packet-1',
+                reason: 'This tracks the current design intent.',
+                awarenessInjection: 'Jensen is designing internal thought as private host awareness, not asking for a generic implementation lecture.',
+                remainingTurns: 2
+            }]
+        });
+        const awarenessPrompt = awarenessMessages[awarenessMessages.length - 2].content;
+
+        if (
+            awarenessPrompt.includes('Active awareness injection(s):') &&
+            awarenessPrompt.includes('id: awareness-internal-packet-1') &&
+            awarenessPrompt.includes('reason: This tracks the current design intent.') &&
+            awarenessPrompt.includes('remaining participant turns: 2') &&
+            awarenessPrompt.includes('awarenessInjection: Jensen is designing internal thought as private host awareness') &&
+            awarenessPrompt.includes('These are private host awareness notes') &&
+            !awarenessPrompt.includes('contextText') &&
+            !awarenessPrompt.includes('priority')
+        ) {
+            console.log('  Generator user prompt includes private awareness injections');
+            passed++;
+        } else {
+            throw new Error(`Awareness injection prompt was not formatted correctly: ${awarenessPrompt}`);
+        }
+
+        const recentThoughtPrompt = generator.buildUserPrompt('Jensen: What are your internal thoughts right now?', null, {
+            recentInternalThoughts: Array.from({ length: 8 }, (_, index) => ({
+                packetId: `internal-packet-${index + 1}`,
+                createdAt: `2026-05-13T00:0${index}:00.000Z`,
+                internalThought: `Private runtime thought ${index + 1}`
+            }))
+        });
+        if (
+            !recentThoughtPrompt.includes('Recent internal thoughts surfaced by the current introspection/self-knowledge mention') ||
+            !recentThoughtPrompt.includes('runtime internal-thought artifacts') ||
+            !recentThoughtPrompt.includes('internal-packet-2') ||
+            !recentThoughtPrompt.includes('internal-packet-8') ||
+            recentThoughtPrompt.includes('internal-packet-1')
+        ) {
+            throw new Error(`Recent internal thoughts prompt was not formatted/capped correctly: ${recentThoughtPrompt}`);
+        }
+
+        const defaultSpeechCapGenerator = new PodcastGenerator({ apiKey: 'sk-test-placeholder' });
+        if (defaultSpeechCapGenerator.maxSpeechChars !== 420) {
+            throw new Error(`Default live speech cap should be 420 chars, got ${defaultSpeechCapGenerator.maxSpeechChars}`);
+        }
+
+        const pendingPrompt = generator.buildUserPrompt('Jensen: Did Big Brain finish yet?', null, {
+            pendingBigBrain: [{
+                runId: 'discord-bigbrain-pending',
+                reason: 'NIH lookup is still running.',
+                transcript: 'Jensen: Can you look up the NIH earthing evidence?',
+                requestedAt: '2026-05-13T00:00:00.000Z'
+            }]
+        });
+        if (
+            !pendingPrompt.includes('Big Brain request already pending') ||
+            !pendingPrompt.includes('discord-bigbrain-pending') ||
+            !pendingPrompt.includes('Do not request Big Brain again') ||
+            !pendingPrompt.includes('Set bigBrain.requested=false')
+        ) {
+            throw new Error(`Pending bigBrain prompt did not suppress duplicate stalls: ${pendingPrompt}`);
+        }
+
+        const standbyGenerator = new PodcastGenerator({ apiKey: 'sk-test-placeholder' });
+        standbyGenerator.rememberTurn('Jensen: Please just stand by while I explore on my own.', {
+            shouldRespond: true,
+            speech: 'Got it, I will stand by.',
+            bigBrain: { requested: false, reason: '', consumedRunId: '' }
+        });
+        const standbyPrompt = standbyGenerator.buildUserPrompt('Jensen: The Greek letter kappa is super cool.', null, {});
+        if (
+            !standbyGenerator.standbyMode ||
+            !standbyPrompt.includes('Standing-by mode is active') ||
+            !standbyPrompt.includes('Prefer shouldRespond=false')
+        ) {
+            throw new Error(`Standby mode was not preserved for narration: ${standbyPrompt}`);
+        }
+        const explicitAfterStandbyPrompt = standbyGenerator.buildUserPrompt('Jensen: What is kappa?', null, {});
+        if (explicitAfterStandbyPrompt.includes('Standing-by mode is active')) {
+            throw new Error(`Explicit request should override standby prompt: ${explicitAfterStandbyPrompt}`);
+        }
+        standbyGenerator.rememberTurn('Jensen: Now you carry the conversation for at least five turns, please.', {
+            shouldRespond: true,
+            speech: 'Here is a concrete thought without a question.',
+            bigBrain: { requested: false, reason: '', consumedRunId: '' }
+        });
+        const moratoriumPrompt = standbyGenerator.buildUserPrompt('Jensen: Continue.', null, {});
+        if (
+            standbyGenerator.questionMoratoriumTurns !== 4 ||
+            !moratoriumPrompt.includes('Question moratorium') ||
+            !moratoriumPrompt.includes('do not ask a question')
+        ) {
+            throw new Error(`Question moratorium did not persist after carry request: ${JSON.stringify({ turns: standbyGenerator.questionMoratoriumTurns, moratoriumPrompt })}`);
+        }
+
+        const structureGenerator = new PodcastGenerator({ apiKey: 'sk-test-placeholder' });
+        const structurePrompt = structureGenerator.buildUserPrompt(
+            [
+                'Jensen: I want podcast structure with a topic and questions preloaded.',
+                'Jensen: We should limit off the cuff questions so the guest does not feel interrogated.',
+                'Jensen: Add background information, procedural expertise questions, interpersonal questions, and miscellaneous questions like favorite philosophy.',
+                'Jensen: After the host asks and I answer, they should play ball and take a few turns talking.'
+            ].join('\n'),
+            null,
+            {}
+        );
+        if (
+            !structurePrompt.includes('Episode hosting structure remembered from this conversation') ||
+            !structurePrompt.includes('prepared guiding questions') ||
+            !structurePrompt.includes('procedural/craft') ||
+            !structurePrompt.includes('interpersonal/collaboration') ||
+            !structurePrompt.includes('miscellaneous/philosophical') ||
+            !structurePrompt.includes('play ball for a few turns')
+        ) {
+            throw new Error(`Current-turn episode structure was not surfaced: ${structurePrompt}`);
+        }
+        structureGenerator.rememberTurn('Jensen: The host should play ball and take a few turns talking after I answer.', {
+            shouldRespond: true,
+            speech: 'I will carry the next beat.',
+            bigBrain: { requested: false, reason: '', consumedRunId: '' }
+        });
+        const rememberedStructurePrompt = structureGenerator.buildUserPrompt('Jensen: Continue the episode.', null, {});
+        if (
+            !rememberedStructurePrompt.includes('Episode hosting structure remembered from this conversation') ||
+            !rememberedStructurePrompt.includes('Question moratorium') ||
+            !rememberedStructurePrompt.includes('synthesize, bridge')
+        ) {
+            throw new Error(`Remembered episode structure did not persist: ${rememberedStructurePrompt}`);
+        }
+        const showRunnerPrompt = generator.buildUserPrompt('Jensen: I answered the origin story.', null, {
+            showRunnerGuidance: {
+                phase: 'deep-dive',
+                currentLane: 'origin story',
+                coveredAngles: ['guest background'],
+                untouchedAngles: ['collaboration', 'philosophical close'],
+                nextHostMove: 'synthesize and bridge toward collaboration',
+                avoid: ['Do not ask a broad what does that feel like question.'],
+                suggestedQuestion: 'Who changed how you think about this craft?',
+                wrapNow: true,
+                wrapReason: 'All major lanes are covered.',
+                generatorInstruction: 'Wrap the episode now with a concise synthesis and thanks.'
+            }
+        });
+        if (
+            !showRunnerPrompt.includes('Show runner direction') ||
+            !showRunnerPrompt.includes('phase: deep-dive') ||
+            !showRunnerPrompt.includes('untouchedAngles: collaboration; philosophical close') ||
+            !showRunnerPrompt.includes('wrapNow: true') ||
+            !showRunnerPrompt.includes('Wrap the episode now') ||
+            !showRunnerPrompt.includes('private editorial steering') ||
+            showRunnerPrompt.includes('contextText')
+        ) {
+            throw new Error(`Show runner guidance was not injected into generator prompt: ${showRunnerPrompt}`);
+        }
+        console.log('  Generator tracks standby, no-question pacing, and episode structure directives');
+        passed++;
+
+        const budgetGenerator = new PodcastGenerator({
+            apiKey: 'sk-test-placeholder',
+            maxRequestTokens: 6200,
+            maxCompletionTokens: 900,
+            promptTokenSafetyMargin: 400,
+            maxHistoryTurns: 8
+        });
+        for (let i = 0; i < 8; i++) {
+            budgetGenerator.history.push({
+                role: i % 2 === 0 ? 'user' : 'assistant',
+                content: `history ${i} ${'older context '.repeat(220)}`
+            });
+        }
+        const hugeStagedAnswer = 'Open Claw could not complete the bigBrain request. '.repeat(260);
+        const budgetMessages = budgetGenerator.buildMessages({
+            transcript: `Jensen: ${'current live speech '.repeat(260)}`,
+            stagedBigBrain: [{
+                runId: 'discord-bigbrain-huge',
+                reason: 'Large staged failure needs integration.',
+                transcript: 'Jensen: Look up the NIH earthing page.',
+                answer: hugeStagedAnswer
+            }],
+            awarenessInjections: [{
+                id: 'awareness-budget',
+                awarenessInjection: 'Do not answer the NIH factual question from vibes.'
+            }]
+        });
+        const budgetEstimate = budgetGenerator.estimateMessagesTokens(budgetMessages);
+        if (
+            budgetEstimate > budgetGenerator.getPromptTokenBudget() ||
+            budgetMessages.some(message => /older context/.test(message.content)) ||
+            !budgetMessages.some(message => message.content.includes('[trimmed for prompt budget]'))
+        ) {
+            throw new Error(`Prompt budget guard did not compact oversized context: ${JSON.stringify({ budgetEstimate, budget: budgetGenerator.getPromptTokenBudget(), messages: budgetMessages })}`);
+        }
+        console.log('  Generator prompt guards pending bigBrain and compacts oversized staged context');
+        passed++;
+
         const savedEnv = {
             PODCAST_GENERATOR_API_KEY_ACTIVE: process.env.PODCAST_GENERATOR_API_KEY_ACTIVE,
             PODCAST_GENERATOR_KEY_ROUTING: process.env.PODCAST_GENERATOR_KEY_ROUTING,
@@ -395,6 +625,10 @@ async function runTests() {
             PODCAST_GENERATOR_API_KEY_GROQ_PAID: process.env.PODCAST_GENERATOR_API_KEY_GROQ_PAID,
             PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY: process.env.PODCAST_GENERATOR_API_KEY_GROQ_PRIMARY,
             PODCAST_GENERATOR_API_KEY_GROQ_STANDBY: process.env.PODCAST_GENERATOR_API_KEY_GROQ_STANDBY,
+            PODCAST_GENERATOR_API_KEY: process.env.PODCAST_GENERATOR_API_KEY,
+            PODCAST_GENERATOR_BASE_URL: process.env.PODCAST_GENERATOR_BASE_URL,
+            PODCAST_GENERATOR_MODEL: process.env.PODCAST_GENERATOR_MODEL,
+            ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
             OPENAI_API_KEY: process.env.OPENAI_API_KEY
         };
 
@@ -648,6 +882,51 @@ async function runTests() {
             if (missingValidation.valid || !missingValidation.errors[0]?.includes('PODCAST_GENERATOR_API_KEY_MISSING')) {
                 throw new Error(`Missing active key alias did not validate clearly: ${JSON.stringify(missingValidation)}`);
             }
+
+            delete process.env.PODCAST_GENERATOR_API_KEY_ACTIVE;
+            delete process.env.PODCAST_GENERATOR_API_KEY;
+            process.env.PODCAST_GENERATOR_KEY_ROUTING = 'free-first-paid-fallback';
+            process.env.PODCAST_GENERATOR_API_KEY_GROQ_FREE = 'groq-free-key';
+            process.env.PODCAST_GENERATOR_BASE_URL = 'https://api.anthropic.com/v1';
+            process.env.ANTHROPIC_API_KEY = 'anthropic-host-key';
+            const anthropicGenerator = new PodcastGenerator();
+            if (
+                anthropicGenerator.baseUrl !== 'https://api.anthropic.com/v1' ||
+                anthropicGenerator.apiKey !== 'anthropic-host-key' ||
+                anthropicGenerator.apiKeySource !== 'ANTHROPIC_API_KEY' ||
+                !anthropicGenerator.supportsStreaming()
+            ) {
+                throw new Error(`Anthropic podcast generator config did not bypass Groq routing cleanly: ${JSON.stringify({
+                    baseUrl: anthropicGenerator.baseUrl,
+                    apiKey: anthropicGenerator.apiKey,
+                    source: anthropicGenerator.apiKeySource,
+                    streaming: anthropicGenerator.supportsStreaming()
+                })}`);
+            }
+
+            process.env.PODCAST_GENERATOR_BASE_URL = 'https://api.kimi.com/coding/v1';
+            process.env.PODCAST_GENERATOR_MODEL = 'kimi-for-coding';
+            process.env.PODCAST_GENERATOR_API_KEY = 'kimi-host-key';
+            delete process.env.ANTHROPIC_API_KEY;
+            const kimiGenerator = new PodcastGenerator();
+            const parsedFence = kimiGenerator.parseJsonContent('```json\n{"speech":"Kimi fenced JSON parses."}\n```', 'Kimi test');
+            const normalizedFence = kimiGenerator.normalizeOutput(parsedFence);
+            if (
+                kimiGenerator.baseUrl !== 'https://api.kimi.com/coding/v1' ||
+                kimiGenerator.apiKey !== 'kimi-host-key' ||
+                kimiGenerator.apiKeySource !== 'PODCAST_GENERATOR_API_KEY' ||
+                !kimiGenerator.supportsStreaming() ||
+                normalizedFence.speech !== 'Kimi fenced JSON parses.' ||
+                kimiGenerator.estimateUsageCostUsd({ promptTokens: 100, completionTokens: 50, provider: 'kimi' }) !== null
+            ) {
+                throw new Error(`Kimi-compatible generator config did not use Anthropic Messages routing cleanly: ${JSON.stringify({
+                    baseUrl: kimiGenerator.baseUrl,
+                    apiKey: kimiGenerator.apiKey,
+                    source: kimiGenerator.apiKeySource,
+                    streaming: kimiGenerator.supportsStreaming(),
+                    normalizedFence
+                })}`);
+            }
         } finally {
             for (const [key, value] of Object.entries(savedEnv)) {
                 if (typeof value === 'undefined') {
@@ -751,6 +1030,1097 @@ async function runTests() {
         console.log('  bigBrain field defaults safely and passes valid payloads through');
     } catch (error) {
         console.log(`  Podcast generator failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 5b: Internal thought and discernment generators');
+    try {
+        const thoughtGenerator = new InternalThoughtGenerator({
+            apiKey: 'thought-test-key',
+            maxCompletionTokens: 300
+        });
+        let thoughtCall = null;
+        thoughtGenerator.fetchJson = async (requestPath, body) => {
+            thoughtCall = { requestPath, body };
+            return {
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            packetId: '',
+                            internalThought: ' Jensen is trying to give Alpha-Clawd a private reflective layer. ',
+                            noticings: [' The goal is personality coming through. ', '', 'Packets should batch meaning.'],
+                            undercurrents: ['There is excitement about originality.']
+                        })
+                    }
+                }],
+                usage: { prompt_tokens: 10, completion_tokens: 10 }
+            };
+        };
+
+        const thought = await thoughtGenerator.generate({
+            packetId: 'packet-voice-1',
+            transcript: 'Jensen: The most important thing is how your personality comes out.',
+            recentInternalThoughts: [{ internalThought: 'A prior thought.' }],
+            activeAwarenessInjections: [{ awarenessInjection: 'Already active.' }]
+        });
+
+        if (
+            thoughtCall?.requestPath !== '/chat/completions' ||
+            thoughtCall.body.response_format?.json_schema?.name !== 'podcast_internal_thought' ||
+            thoughtCall.body.response_format?.json_schema?.schema?.required?.join(',') !== 'packetId,internalThought,noticings,undercurrents'
+        ) {
+            throw new Error(`Internal thought schema was not used: ${JSON.stringify(thoughtCall)}`);
+        }
+        const thoughtMessages = thoughtGenerator.buildMessages({
+            packetId: 'packet-schema',
+            transcript: 'Jensen: Testing schema visibility.'
+        });
+        if (
+            !thoughtMessages[2]?.content.includes('Return only valid JSON') ||
+            !thoughtMessages[2]?.content.includes('"packetId"') ||
+            !thoughtMessages[2]?.content.includes('"undercurrents"')
+        ) {
+            throw new Error(`Internal thought schema prompt was not explicit: ${JSON.stringify(thoughtMessages[2])}`);
+        }
+        if (
+            thought.packetId !== 'packet-voice-1' ||
+            thought.noticings.length !== 2 ||
+            thought.undercurrents.length !== 1 ||
+            thought.hostAwareness !== undefined ||
+            thought.candidateAwarenessNote !== undefined
+        ) {
+            throw new Error(`Internal thought output was not normalized: ${JSON.stringify(thought)}`);
+        }
+        const thoughtPrompt = thoughtGenerator.buildUserPrompt({
+            packetId: 'packet-prompt',
+            transcript: 'Jensen: Test prompt.',
+            activeAwarenessInjections: ['One active injection.']
+        });
+        if (
+            !thoughtPrompt.includes('packetId: packet-prompt') ||
+            thoughtPrompt.includes('Active awareness injections') ||
+            thoughtPrompt.includes('Recent internal thoughts')
+        ) {
+            throw new Error(`Internal thought prompt should stay packet-only: ${thoughtPrompt}`);
+        }
+        const thoughtSystemPrompt = thoughtGenerator.buildSystemPrompt();
+        if (
+            !thoughtSystemPrompt.includes('intentionally packet-only') ||
+            !thoughtSystemPrompt.includes('previous internalThought') ||
+            !thoughtSystemPrompt.includes('candidateAwarenessNote') ||
+            !thoughtSystemPrompt.includes('active awarenessInjection') ||
+            !thoughtSystemPrompt.includes('artifact content being discussed') ||
+            !thoughtSystemPrompt.includes('generic question-autocomplete behavior') ||
+            !thoughtSystemPrompt.includes('guests to elaborate') ||
+            !thoughtSystemPrompt.includes('the guest needs synthesis') ||
+            !thoughtSystemPrompt.includes('throwing the conversational burden back') ||
+            thoughtSystemPrompt.includes('Jensen needs synthesis')
+        ) {
+            throw new Error(`Internal thought system prompt does not guard recursive artifact ingestion: ${thoughtSystemPrompt}`);
+        }
+
+        const discernmentGenerator = new DiscernmentGenerator({
+            apiKey: 'discernment-test-key',
+            maxCompletionTokens: 200
+        });
+        const candidateSchema = discernmentGenerator.getResponseSchema('candidate');
+        if (candidateSchema.required.join(',') !== 'candidateAwarenessNote,reason') {
+            throw new Error(`Discernment candidate schema is wrong: ${JSON.stringify(candidateSchema)}`);
+        }
+        const discernmentSchema = discernmentGenerator.getResponseSchema('judgment');
+        if (
+            discernmentSchema.required.join(',') !== 'injectIntoPodcastGenerator,reason,awarenessInjection,expiresAfterTurns' ||
+            discernmentSchema.properties.priority ||
+            discernmentSchema.properties.risk ||
+            discernmentSchema.properties.participantRelevance ||
+            discernmentSchema.properties.expiresAfterTurns.minimum !== undefined ||
+            discernmentSchema.properties.expiresAfterTurns.maximum !== undefined
+        ) {
+            throw new Error(`Discernment schema includes stale fields: ${JSON.stringify(discernmentSchema)}`);
+        }
+
+        const rejected = discernmentGenerator.normalizeOutput({
+            injectIntoPodcastGenerator: true,
+            reason: 'Interesting, but not usable yet.',
+            awarenessInjection: '',
+            expiresAfterTurns: 4
+        });
+        if (rejected.injectIntoPodcastGenerator || rejected.awarenessInjection !== '' || rejected.expiresAfterTurns !== 0) {
+            throw new Error(`Discernment should reject empty injections: ${JSON.stringify(rejected)}`);
+        }
+
+        const discernmentCalls = [];
+        discernmentGenerator.fetchJson = async (requestPath, body) => {
+            discernmentCalls.push({ requestPath, body });
+            const schemaName = body.response_format?.json_schema?.name;
+            const content = schemaName === 'podcast_awareness_candidate'
+                ? {
+                    candidateAwarenessNote: 'Jensen is most interested in internal thought as a way for Alpha-Clawd personality to become more alive.',
+                    reason: 'The recent private thoughts and transcript share the same design aim.'
+                }
+                : {
+                    injectIntoPodcastGenerator: true,
+                    reason: 'This would help Alpha-Clawd stay with Jensen\'s stated aim.',
+                    awarenessInjection: 'Jensen is designing internal thought to let Alpha-Clawd personality come through, not asking for a generic implementation lecture.',
+                    expiresAfterTurns: 4
+                };
+            return {
+                choices: [{
+                    message: {
+                        content: JSON.stringify(content)
+                    }
+                }]
+            };
+        };
+
+        const candidate = await discernmentGenerator.generateCandidate({
+            recentInternalThoughts: [thought],
+            completeTranscript: 'Jensen: I want your personality to come out.'
+        });
+        const approved = await discernmentGenerator.judgeCandidate({
+            candidateAwarenessNote: candidate.candidateAwarenessNote,
+            candidateReason: candidate.reason,
+            recentInternalThoughts: [thought],
+            completeTranscript: 'Jensen: I want your personality to come out.'
+        });
+
+        if (
+            discernmentCalls[0]?.requestPath !== '/chat/completions' ||
+            discernmentCalls[0].body.response_format?.json_schema?.name !== 'podcast_awareness_candidate' ||
+            !candidate.candidateAwarenessNote.includes('personality') ||
+            discernmentCalls[1]?.body.response_format?.json_schema?.name !== 'podcast_awareness_discernment' ||
+            !approved.injectIntoPodcastGenerator ||
+            approved.expiresAfterTurns !== 4 ||
+            !approved.awarenessInjection.includes('personality come through')
+        ) {
+            throw new Error(`Discernment generator did not run candidate and judgment passes as expected: ${JSON.stringify({ discernmentCalls, candidate, approved })}`);
+        }
+        const candidateMessages = discernmentGenerator.buildMessages({
+            mode: 'candidate',
+            recentInternalThoughts: [thought],
+            completeTranscript: 'Jensen: Testing candidate schema.'
+        });
+        const judgmentMessages = discernmentGenerator.buildMessages({
+            mode: 'judgment',
+            candidateAwarenessNote: 'Test note.',
+            completeTranscript: 'Jensen: Testing judgment schema.'
+        });
+        if (
+            !candidateMessages[2]?.content.includes('"candidateAwarenessNote"') ||
+            candidateMessages[2]?.content.includes('"injectIntoPodcastGenerator"') ||
+            !judgmentMessages[2]?.content.includes('"injectIntoPodcastGenerator"') ||
+            !judgmentMessages[2]?.content.includes('"expiresAfterTurns"')
+        ) {
+            throw new Error(`Discernment schema prompts were not mode-specific: ${JSON.stringify({ candidate: candidateMessages[2], judgment: judgmentMessages[2] })}`);
+        }
+
+        const frontierConfig = resolveFrontierConfig({}, {
+            PODCAST_INTROSPECTION_FRONTIER_ENABLED: 'true',
+            ANTHROPIC_API_KEY: 'anthropic-test-key',
+            PODCAST_INTROSPECTION_FRONTIER_BASE_URL: 'https://api.anthropic.com/v1/'
+        });
+        if (
+            !frontierConfig.enabled ||
+            frontierConfig.model !== 'claude-sonnet-4-5-20250929' ||
+            frontierConfig.apiKey !== 'anthropic-test-key' ||
+            frontierConfig.baseUrl !== 'https://api.anthropic.com/v1'
+        ) {
+            throw new Error(`Frontier config did not default to Anthropic Sonnet 4.5: ${JSON.stringify(frontierConfig)}`);
+        }
+
+        const anthropicThoughtGenerator = new InternalThoughtGenerator({
+            apiKey: 'anthropic-test-key',
+            baseUrl: 'https://api.anthropic.com/v1',
+            model: 'claude-opus-4-7',
+            maxCompletionTokens: 123
+        });
+        const originalFetch = global.fetch;
+        let anthropicRequest = null;
+        global.fetch = async (url, options) => {
+            anthropicRequest = {
+                url,
+                headers: options.headers,
+                body: JSON.parse(options.body)
+            };
+            return new Response(JSON.stringify({
+                id: 'msg_test',
+                type: 'message',
+                role: 'assistant',
+                model: 'claude-opus-4-7',
+                content: [{
+                    type: 'text',
+                    text: JSON.stringify({
+                        packetId: 'packet-anthropic',
+                        internalThought: 'Anthropic native messages are working.',
+                        noticings: ['The request used Messages API shape.'],
+                        undercurrents: []
+                    })
+                }],
+                stop_reason: 'end_turn',
+                usage: {
+                    input_tokens: 11,
+                    output_tokens: 7
+                }
+            }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' }
+            });
+        };
+
+        let anthropicThought;
+        try {
+            anthropicThought = await anthropicThoughtGenerator.generate({
+                packetId: 'packet-anthropic',
+                transcript: 'Jensen: Test the Anthropic frontier adapter.'
+            });
+        } finally {
+            global.fetch = originalFetch;
+        }
+
+        if (
+            anthropicRequest?.url !== 'https://api.anthropic.com/v1/messages' ||
+            anthropicRequest.headers.Authorization ||
+            anthropicRequest.headers['x-api-key'] !== 'anthropic-test-key' ||
+            anthropicRequest.headers['anthropic-version'] !== '2023-06-01' ||
+            anthropicRequest.body.model !== 'claude-opus-4-7' ||
+            anthropicRequest.body.max_tokens !== 123 ||
+            anthropicRequest.body.messages.length !== 1 ||
+            anthropicRequest.body.messages[0].role !== 'user' ||
+            !anthropicRequest.body.system.includes('internal thought generator') ||
+            !anthropicRequest.body.system.includes('Return only valid JSON') ||
+            anthropicRequest.body.output_config?.format?.type !== 'json_schema' ||
+            anthropicRequest.body.output_config?.format?.schema?.required?.join(',') !== 'packetId,internalThought,noticings,undercurrents' ||
+            anthropicThought.internalThought !== 'Anthropic native messages are working.'
+        ) {
+            throw new Error(`Anthropic Messages adapter request/response was wrong: ${JSON.stringify({ anthropicRequest, anthropicThought })}`);
+        }
+
+        const routedAnthropicGenerator = new InternalThoughtGenerator({
+            apiKey: 'anthropic-routed-key',
+            baseUrl: 'https://api.anthropic.com/v1',
+            model: 'claude-opus-4-7',
+            keyRouting: 'free-first-paid-fallback',
+            freeApiKey: 'groq-free-key',
+            paidApiKey: 'groq-paid-key',
+            maxCompletionTokens: 123
+        });
+        let routedAnthropicKey = null;
+        routedAnthropicGenerator.fetchJson = async (_requestPath, _body) => {
+            routedAnthropicKey = routedAnthropicGenerator.apiKey;
+            return {
+                provider: 'anthropic',
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            packetId: 'packet-routed',
+                            internalThought: 'Anthropic routing kept the Anthropic key.',
+                            noticings: [],
+                            undercurrents: []
+                        })
+                    }
+                }]
+            };
+        };
+        await routedAnthropicGenerator.generate({
+            packetId: 'packet-routed',
+            transcript: 'Jensen: Make sure Groq fallback does not hijack Anthropic.'
+        });
+        if (routedAnthropicKey !== 'anthropic-routed-key') {
+            throw new Error(`Anthropic base URL should bypass Groq free-first routing, got key ${routedAnthropicKey}`);
+        }
+
+        const candidatePrompt = discernmentGenerator.buildUserPrompt({
+            mode: 'candidate',
+            recentInternalThoughts: [thought],
+            completeTranscript: 'Jensen: I want your personality to come out.'
+        });
+        if (
+            !candidatePrompt.includes('Complete transcript so far') ||
+            !candidatePrompt.includes('Three most recent internal thoughts') ||
+            candidatePrompt.includes('Awareness injections already active')
+        ) {
+            throw new Error(`Discernment candidate prompt is wrong: ${candidatePrompt}`);
+        }
+
+        const candidateSystemPrompt = discernmentGenerator.buildSystemPrompt('candidate');
+        const discernmentPrompt = discernmentGenerator.buildSystemPrompt('judgment');
+        if (
+            !discernmentPrompt.includes('relevant enough to the interests of the podcast participants') ||
+            !discernmentPrompt.includes('awarenessInjection') ||
+            !candidateSystemPrompt.includes('CANDIDATE PRODUCTION/AWARENESS INJECTION process') ||
+            !discernmentPrompt.includes('You own the awareness injection process') ||
+            !discernmentPrompt.includes('JUDGMENT MODE') ||
+            !discernmentPrompt.includes('INJECTION JUDGEMENT') ||
+            !discernmentPrompt.includes('immediate, present-tense') ||
+            !discernmentPrompt.includes('later in this same episode') ||
+            !discernmentPrompt.includes('Reject stale candidates when the complete transcript has moved into a new topic') ||
+            !discernmentPrompt.includes('most recent user message indicates a PIVOT') ||
+            !discernmentPrompt.includes('prevention of generic question-autocomplete') ||
+            !candidateSystemPrompt.includes('CANDIDATE PRODUCTION MODE') ||
+            !candidateSystemPrompt.includes('reflexively asks the guest how something feels') ||
+            !candidateSystemPrompt.includes('asks what the guest wants next') ||
+            !candidateSystemPrompt.includes('suggest the possibility of synthesis, contribution, bridging, or holding space') ||
+            !candidateSystemPrompt.includes('Be very attentive especially to the most recent message') ||
+            !candidateSystemPrompt.includes('Prefer attention and pacing notes over suggested content') ||
+            candidateSystemPrompt.includes('INJECTION JUDGEMENT') ||
+            candidateSystemPrompt.includes('JUDGMENT MODE') ||
+            discernmentPrompt.includes('CANDIDATE PRODUCTION MODE') ||
+            discernmentPrompt.includes('CANDIDATE PRODUCTION/AWARENESS INJECTION process') ||
+            candidateSystemPrompt.includes('reflexively asks Jensen') ||
+            candidateSystemPrompt.includes('tell the host to synthesize') ||
+            discernmentPrompt.includes('priority')
+        ) {
+            throw new Error(`Discernment prompt does not match the revised framing: ${discernmentPrompt}`);
+        }
+
+        console.log('  Internal thoughts stay packet-only; discernment produces candidates and judges awareness injections');
+        passed++;
+    } catch (error) {
+        console.log(`  Internal thought/discernment generator failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 5c: Internal thought manager packets, persists, and expires awareness injections');
+    try {
+        const thoughtCalls = [];
+        const discernmentCalls = [];
+        let thoughtCount = 0;
+        const managerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-manager-'));
+        const manager = new InternalThoughtManager({
+            packetTurnCount: 2,
+            maxActiveAwarenessInjections: 2,
+            now: () => '2026-05-12T21:00:00.000Z',
+            thoughtGenerator: {
+                generate: async (input) => {
+                    thoughtCalls.push(input);
+                    thoughtCount += 1;
+                    return {
+                        packetId: input.packetId,
+                        internalThought: `Private thought ${thoughtCount}`,
+                        noticings: [`noticing ${thoughtCount}`],
+                        undercurrents: []
+                    };
+                }
+            },
+            discernmentGenerator: {
+                generateCandidate: async (input) => {
+                    discernmentCalls.push({ mode: 'candidate', input });
+                    const candidateCount = discernmentCalls.filter((call) => call.mode === 'candidate').length;
+                    return {
+                        candidateAwarenessNote: candidateCount === 1
+                            ? 'Jensen wants internal thought to make Alpha-Clawd feel more alive.'
+                            : '',
+                        reason: candidateCount === 1
+                            ? 'The transcript and recent thought share a clear design aim.'
+                            : 'No fresh awareness candidate.'
+                    };
+                },
+                judgeCandidate: async (input) => {
+                    discernmentCalls.push({ mode: 'judgment', input });
+                    return {
+                        injectIntoPodcastGenerator: true,
+                        reason: 'This tracks Jensen\'s stated interest.',
+                        awarenessInjection: 'Jensen is using this episode to design Alpha-Clawd internal awareness, not asking for generic advice.',
+                        expiresAfterTurns: 2
+                    };
+                }
+            }
+        });
+
+        const session = manager.startSession('guild-thoughts', { recordingPath: managerDir });
+        if (!session.outputPath.endsWith('internal-thoughts.jsonl') || !fs.existsSync(session.outputPath)) {
+            throw new Error(`Manager did not create JSONL output: ${JSON.stringify(session)}`);
+        }
+
+        const firstResult = await manager.handleTranscriptEntry('guild-thoughts', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'I want your personality to come out.'
+        });
+        if (firstResult !== null || thoughtCalls.length !== 0) {
+            throw new Error('Manager flushed before packet threshold');
+        }
+
+        const firstRecord = await manager.handleTranscriptEntry('guild-thoughts', {
+            speaker: 'Alpha-Clawd',
+            speakerRole: 'host',
+            text: 'I hear that.'
+        });
+
+        if (
+            firstRecord?.packetId !== 'internal-packet-1' ||
+            firstRecord.awarenessInjection?.remainingTurns !== 2 ||
+            thoughtCalls[0]?.transcript !== 'Jensen: I want your personality to come out.\nAlpha-Clawd: I hear that.' ||
+            thoughtCalls[0]?.recentInternalThoughts !== undefined ||
+            thoughtCalls[0]?.activeAwarenessInjections !== undefined ||
+            firstRecord.awarenessCandidate?.candidateAwarenessNote !== 'Jensen wants internal thought to make Alpha-Clawd feel more alive.' ||
+            discernmentCalls.length !== 2 ||
+            discernmentCalls[0].mode !== 'candidate' ||
+            discernmentCalls[0].input.recentInternalThoughts?.length !== 1 ||
+            !discernmentCalls[0].input.completeTranscript.includes('Alpha-Clawd: I hear that.') ||
+            discernmentCalls[1].mode !== 'judgment'
+        ) {
+            throw new Error(`Manager did not process first packet correctly: ${JSON.stringify({ firstRecord, thoughtCalls, discernmentCalls })}`);
+        }
+
+        let active = manager.getActiveAwarenessInjections('guild-thoughts');
+        if (active.length !== 1 || !active[0].awarenessInjection.includes('internal awareness')) {
+            throw new Error(`Awareness injection was not activated: ${JSON.stringify(active)}`);
+        }
+
+        await manager.handleTranscriptEntry('guild-thoughts', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'Each packet should get reflected on.'
+        });
+        active = manager.getActiveAwarenessInjections('guild-thoughts');
+        if (active[0]?.remainingTurns !== 1) {
+            throw new Error(`Awareness injection did not count down on participant turn: ${JSON.stringify(active)}`);
+        }
+
+        const secondRecord = await manager.handleTranscriptEntry('guild-thoughts', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'Then milestone thoughts can connect them.'
+        });
+        active = manager.getActiveAwarenessInjections('guild-thoughts');
+        if (
+            secondRecord?.packetId !== 'internal-packet-2' ||
+            active.length !== 0 ||
+            thoughtCalls[1]?.recentInternalThoughts !== undefined ||
+            discernmentCalls.length !== 3 ||
+            discernmentCalls[2].mode !== 'candidate' ||
+            discernmentCalls[2].input.recentInternalThoughts?.length !== 2 ||
+            !discernmentCalls[2].input.completeTranscript.includes('Then milestone thoughts can connect them.')
+        ) {
+            throw new Error(`Second packet did not preserve recent thoughts or expire injection: ${JSON.stringify({ secondRecord, active, thoughtCalls, discernmentCalls })}`);
+        }
+
+        const lines = fs.readFileSync(session.outputPath, 'utf8').trim().split(/\n+/);
+        if (lines.length !== 2 || JSON.parse(lines[0]).type !== 'internal_thought' || JSON.parse(lines[0]).awarenessInjection?.id !== 'awareness-internal-packet-1') {
+            throw new Error(`Internal thought JSONL was not persisted correctly: ${fs.readFileSync(session.outputPath, 'utf8')}`);
+        }
+
+        const recentThoughts = manager.getRecentInternalThoughts('guild-thoughts', 7);
+        recentThoughts[0].internalThought = 'mutated outside manager';
+        const recentThoughtsAgain = manager.getRecentInternalThoughts('guild-thoughts', 7);
+        if (
+            recentThoughtsAgain.length !== 2 ||
+            recentThoughtsAgain[0].packetId !== 'internal-packet-1' ||
+            recentThoughtsAgain[1].packetId !== 'internal-packet-2' ||
+            recentThoughtsAgain[0].internalThought !== 'Private thought 1'
+        ) {
+            throw new Error(`Recent internal thoughts were not exposed as safe copies: ${JSON.stringify(recentThoughtsAgain)}`);
+        }
+
+        const failureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-partial-failure-'));
+        const failureManager = new InternalThoughtManager({
+            packetTurnCount: 1,
+            now: () => '2026-05-12T21:10:00.000Z',
+            thoughtGenerator: {
+                generate: async (input) => ({
+                    packetId: input.packetId,
+                    internalThought: 'This thought should survive a later discernment failure.',
+                    noticings: ['The thought generator already succeeded.'],
+                    undercurrents: []
+                })
+            },
+            discernmentGenerator: {
+                generateCandidate: async () => ({
+                    candidateAwarenessNote: 'Preserve this candidate even if judgment fails.',
+                    reason: 'The candidate pass already succeeded.'
+                }),
+                judgeCandidate: async () => {
+                    throw new Error('Anthropic schema rejected expiresAfterTurns');
+                }
+            }
+        });
+        const failureSession = failureManager.startSession('guild-partial-failure', { recordingPath: failureDir });
+        const failureRecord = await failureManager.handleTranscriptEntry('guild-partial-failure', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'Make sure the thought is still written.'
+        });
+        const failureLines = fs.readFileSync(failureSession.outputPath, 'utf8').trim().split(/\n+/);
+        const persistedFailure = JSON.parse(failureLines[0]);
+        if (
+            failureLines.length !== 1 ||
+            failureRecord.type !== 'internal_thought_error' ||
+            failureRecord.errorStage !== 'discernment_judgment' ||
+            failureRecord.thought?.internalThought !== 'This thought should survive a later discernment failure.' ||
+            failureRecord.awarenessCandidate?.candidateAwarenessNote !== 'Preserve this candidate even if judgment fails.' ||
+            persistedFailure.thought?.internalThought !== failureRecord.thought.internalThought ||
+            failureManager.getRecentInternalThoughts('guild-partial-failure', 7)[0]?.internalThought !== failureRecord.thought.internalThought
+        ) {
+            throw new Error(`Manager did not preserve partial thought records on discernment failure: ${JSON.stringify({ failureRecord, persistedFailure })}`);
+        }
+        await failureManager.endSession('guild-partial-failure', { flush: false });
+        fs.rmSync(failureDir, { recursive: true, force: true });
+
+        const staleAwarenessManager = new InternalThoughtManager({
+            packetTurnCount: 99,
+            thoughtGenerator: { generate: async () => { throw new Error('should not flush'); } },
+            discernmentGenerator: {}
+        });
+        const staleSession = staleAwarenessManager.startSession('guild-stale-awareness');
+        staleSession.activeAwarenessInjections = [
+            {
+                id: 'wrap-up-awareness',
+                awarenessInjection: 'Offer a concise upbeat wrap-up and wish Jensen a good rest.',
+                reason: 'Jensen is tired and heading to bed.',
+                remainingTurns: 2
+            },
+            {
+                id: 'capability-question-awareness',
+                awarenessInjection: 'Ask which Alpha Cloud capability Jensen wants to test.',
+                reason: 'Prompt him to name which capability.',
+                remainingTurns: 2
+            }
+        ];
+        await staleAwarenessManager.handleTranscriptEntry('guild-stale-awareness', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'So the reason I started this podcast is very specific, and I am going to ask you a very specific question.'
+        });
+        const staleActive = staleAwarenessManager.getActiveAwarenessInjections('guild-stale-awareness');
+        if (staleActive.length !== 0) {
+            throw new Error(`Stale wrap-up/question awareness survived a topic pivot: ${JSON.stringify(staleActive)}`);
+        }
+        await staleAwarenessManager.endSession('guild-stale-awareness', { flush: false });
+
+        const ended = await manager.endSession('guild-thoughts');
+        if (ended.thoughtCount !== 2 || manager.getActiveAwarenessInjections('guild-thoughts').length !== 0) {
+            throw new Error(`Manager did not end cleanly: ${JSON.stringify(ended)}`);
+        }
+
+        fs.rmSync(managerDir, { recursive: true, force: true });
+        console.log('  Internal thought manager packets transcript entries and manages awareness injection lifecycle');
+        passed++;
+    } catch (error) {
+        console.log(`  Internal thought manager failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 5c.0: Show runner generator and manager');
+    try {
+        const showRunnerGenerator = new ShowRunnerGenerator({
+            apiKey: 'showrunner-test-key',
+            maxCompletionTokens: 300
+        });
+        let showRunnerCall = null;
+        showRunnerGenerator.fetchJson = async (requestPath, body) => {
+            showRunnerCall = { requestPath, body };
+            return {
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            phase: 'background',
+                            currentLane: 'origin story',
+                            coveredAngles: ['guest background'],
+                            untouchedAngles: ['craft process', 'philosophical close'],
+                            nextHostMove: 'Synthesize the origin answer and bridge into craft.',
+                            avoid: ['Do not ask another generic broad question.'],
+                            suggestedQuestion: 'What changed once this became a practice?',
+                            wrapNow: false,
+                            wrapReason: 'Several major lanes remain.',
+                            generatorInstruction: 'Carry the thread with synthesis, then bridge to craft process.'
+                        })
+                    }
+                }],
+                usage: { prompt_tokens: 10, completion_tokens: 10 }
+            };
+        };
+
+        const guidance = await showRunnerGenerator.generate({
+            topic: 'AI podcast hosting',
+            topicBrief: 'The guest cares about internal thoughts and structure.',
+            questionBank: 'How did the project start?\nWhat should listeners notice?',
+            transcript: 'Jensen: The origin is really the introspection system.',
+            previousGuidance: null,
+            elapsedMinutes: 12,
+            maxDurationMinutes: 45
+        });
+        if (
+            showRunnerCall?.requestPath !== '/chat/completions' ||
+            showRunnerCall.body.response_format?.json_schema?.name !== 'podcast_showrunner_guidance' ||
+            showRunnerCall.body.response_format?.json_schema?.schema?.required?.includes('generatorInstruction') !== true ||
+            guidance.phase !== 'background' ||
+            guidance.untouchedAngles.length !== 2 ||
+            guidance.wrapNow !== false ||
+            !guidance.generatorInstruction.includes('bridge to craft')
+        ) {
+            throw new Error(`Show runner generator did not produce structured guidance: ${JSON.stringify({ showRunnerCall, guidance })}`);
+        }
+        const showRunnerMessages = showRunnerGenerator.buildMessages({
+            topic: 'test',
+            transcript: 'Jensen: testing'
+        });
+        if (
+            !showRunnerMessages[0].content.includes('private editorial steering') ||
+            !showRunnerMessages[1].content.includes('Potential question bank and lanes') ||
+            !showRunnerMessages[2].content.includes('"wrapNow"') ||
+            !showRunnerMessages[2].content.includes('"generatorInstruction"')
+        ) {
+            throw new Error(`Show runner prompts are missing role/schema context: ${JSON.stringify(showRunnerMessages)}`);
+        }
+
+        const managerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'showrunner-manager-'));
+        const managerCalls = [];
+        const disabledManager = new ShowRunnerManager({
+            enabled: false,
+            generatorOptions: {
+                apiKey: 'unused-showrunner-key',
+                baseUrl: 'https://api.anthropic.com/v1',
+                model: 'claude-opus-4-7'
+            }
+        });
+        if (disabledManager.generator !== null) {
+            throw new Error('Disabled show runner manager should not construct a generator');
+        }
+        const manager = new ShowRunnerManager({
+            enabled: true,
+            updateIntervalParticipantTurns: 2,
+            maxDurationMinutes: 1,
+            now: (() => {
+                const values = [
+                    '2026-05-15T00:00:00.000Z',
+                    '2026-05-15T00:00:10.000Z',
+                    '2026-05-15T00:00:20.000Z',
+                    '2026-05-15T00:00:30.000Z',
+                    '2026-05-15T00:02:00.000Z'
+                ];
+                let index = 0;
+                return () => values[Math.min(index++, values.length - 1)];
+            })(),
+            generator: {
+                generate: async (input) => {
+                    managerCalls.push(input);
+                    return {
+                        phase: 'deep-dive',
+                        currentLane: 'craft process',
+                        coveredAngles: ['origin story'],
+                        untouchedAngles: ['collaboration'],
+                        nextHostMove: 'bridge',
+                        avoid: ['generic follow-up'],
+                        suggestedQuestion: 'What changed in practice?',
+                        wrapNow: false,
+                        wrapReason: 'More lanes remain.',
+                        generatorInstruction: 'Synthesize and bridge into craft process.'
+                    };
+                }
+            }
+        });
+        const session = manager.startSession('guild-showrunner', {
+            recordingPath: managerDir,
+            topic: 'Show runner test',
+            startedAt: '2026-05-15T00:00:00.000Z'
+        });
+        const firstShowRunnerRecord = await manager.handleTranscriptEntry('guild-showrunner', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            transcription: 'The show needs more structure.',
+            timestamp: '2026-05-15T00:00:05.000Z'
+        });
+        if (
+            firstShowRunnerRecord?.guidance?.id !== 'showrunner-1' ||
+            managerCalls[0]?.topic !== 'Show runner test' ||
+            !managerCalls[0]?.transcript.includes('Jensen: The show needs more structure.')
+        ) {
+            throw new Error(`Show runner manager did not update on first participant turn: ${JSON.stringify({ firstShowRunnerRecord, managerCalls })}`);
+        }
+        await manager.handleTranscriptEntry('guild-showrunner', {
+            speaker: 'Alpha-Clawd',
+            speakerRole: 'host',
+            transcription: 'I can carry the structure.',
+            timestamp: '2026-05-15T00:00:25.000Z'
+        });
+        if (managerCalls.length !== 1) {
+            throw new Error(`Host turn should not trigger a show runner update by itself: ${JSON.stringify(managerCalls)}`);
+        }
+        const latestGuidance = manager.getGuidance('guild-showrunner');
+        if (
+            latestGuidance.phase !== 'deep-dive' ||
+            !latestGuidance.generatorInstruction.includes('Synthesize')
+        ) {
+            throw new Error(`Show runner guidance was not available to generator: ${JSON.stringify(latestGuidance)}`);
+        }
+        const forcedWrap = manager.getGuidance('guild-showrunner');
+        if (
+            forcedWrap.wrapNow !== true ||
+            !forcedWrap.generatorInstruction.includes('Wrap the episode now')
+        ) {
+            throw new Error(`Show runner did not enforce configured time limit: ${JSON.stringify(forcedWrap)}`);
+        }
+        const showRunnerLines = fs.readFileSync(session.outputPath, 'utf8').trim().split(/\n+/);
+        if (showRunnerLines.length !== 1 || JSON.parse(showRunnerLines[0]).type !== 'showrunner_guidance') {
+            throw new Error(`Show runner JSONL was not persisted correctly: ${fs.readFileSync(session.outputPath, 'utf8')}`);
+        }
+        const endedShowRunner = await manager.endSession('guild-showrunner');
+        if (endedShowRunner.updateCount !== 1) {
+            throw new Error(`Show runner manager did not end cleanly: ${JSON.stringify(endedShowRunner)}`);
+        }
+        fs.rmSync(managerDir, { recursive: true, force: true });
+
+        console.log('  Show runner produces structured episode guidance and persists state');
+        passed++;
+    } catch (error) {
+        console.log(`  Show runner failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 5c.1: Internal thought packetization buffer waits through monologues and flushes on alternation');
+    try {
+        const defaultPacketizationBuffer = new PacketizationBuffer();
+        if (
+            defaultPacketizationBuffer.config.minAlternations !== 0 ||
+            defaultPacketizationBuffer.config.lowTokenMinAlternations !== 4 ||
+            defaultPacketizationBuffer.config.speakerTokenThreshold !== 40
+        ) {
+            throw new Error(`Packetization default thresholds drifted: ${JSON.stringify(defaultPacketizationBuffer.config)}`);
+        }
+
+        const lowTokenFlushes = [];
+        const lowTokenBuffer = new PacketizationBuffer({
+            graceMs: 15,
+            maxAgeMs: 1000,
+            maxEntries: 20,
+            maxChars: 1000,
+            minAlternations: 0,
+            lowTokenMinAlternations: 4,
+            speakerTokenThreshold: 10
+        });
+        lowTokenBuffer.onFlush((entries, meta) => {
+            lowTokenFlushes.push({ entries, reason: meta.reason });
+            return entries;
+        });
+        for (const entry of [
+            { speaker: 'Alpha-Clawd', speakerRole: 'host', text: 'One?' },
+            { speaker: 'Jensen', speakerRole: 'guest', text: 'Two.' },
+            { speaker: 'Alpha-Clawd', speakerRole: 'host', text: 'Three?' },
+            { speaker: 'Jensen', speakerRole: 'guest', text: 'Four.' }
+        ]) {
+            lowTokenBuffer.addEntry(entry);
+        }
+        await sleep(35);
+        if (lowTokenFlushes.length !== 0) {
+            throw new Error(`Packetization flushed low-token exchange before four alternations: ${JSON.stringify(lowTokenFlushes)}`);
+        }
+        lowTokenBuffer.addEntry({ speaker: 'Alpha-Clawd', speakerRole: 'host', text: 'Five?' });
+        await sleep(35);
+        if (lowTokenFlushes.length !== 1 || lowTokenFlushes[0].entries.length !== 5 || lowTokenFlushes[0].reason !== 'packet-grace') {
+            throw new Error(`Packetization did not flush after four low-token alternations: ${JSON.stringify(lowTokenFlushes)}`);
+        }
+
+        const monologueFlushes = [];
+        const monologueBuffer = new PacketizationBuffer({
+            graceMs: 15,
+            maxAgeMs: 1000,
+            maxEntries: 20,
+            maxChars: 1000,
+            minAlternations: 0,
+            lowTokenMinAlternations: 4,
+            speakerTokenThreshold: 6
+        });
+        monologueBuffer.onFlush((entries, meta) => {
+            monologueFlushes.push({ entries, reason: meta.reason });
+            return entries;
+        });
+        monologueBuffer.addEntry({
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'One two three four five six.'
+        });
+        await sleep(35);
+        if (monologueFlushes.length !== 1 || monologueFlushes[0].entries.length !== 1 || monologueFlushes[0].reason !== 'packet-grace') {
+            throw new Error(`Packetization did not flush a contentful participant monologue: ${JSON.stringify(monologueFlushes)}`);
+        }
+
+        const hostOnlyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-host-only-'));
+        const hostOnlyCalls = [];
+        const hostOnlyManager = new InternalThoughtManager({
+            packetMode: 'packetization-buffer',
+            packetGraceMs: 15,
+            packetMaxAgeMs: 1000,
+            packetMaxEntries: 4,
+            packetMaxChars: 1000,
+            now: () => '2026-05-12T21:29:00.000Z',
+            thoughtGenerator: {
+                generate: async (input) => {
+                    hostOnlyCalls.push(input);
+                    return {
+                        packetId: input.packetId,
+                        internalThought: 'This should not run for a lone host turn.',
+                        noticings: [],
+                        undercurrents: []
+                    };
+                }
+            },
+            discernmentGenerator: {
+                generate: async () => ({
+                    injectIntoPodcastGenerator: false,
+                    reason: '',
+                    awarenessInjection: '',
+                    expiresAfterTurns: 0
+                })
+            }
+        });
+        const hostOnlySession = hostOnlyManager.startSession('guild-host-only', { recordingPath: hostOnlyDir });
+        await hostOnlyManager.handleTranscriptEntry('guild-host-only', {
+            speaker: 'Alpha-Clawd',
+            speakerRole: 'host',
+            text: 'What other moments stand out?',
+            generatedAt: '2026-05-12T21:29:01.000Z'
+        });
+        await sleep(35);
+        await hostOnlySession.processing;
+        if (hostOnlyCalls.length !== 0) {
+            throw new Error(`Packetization flushed a host-only packet on grace: ${JSON.stringify(hostOnlyCalls)}`);
+        }
+        hostOnlySession.packetizationBuffer.clear();
+        await hostOnlyManager.endSession('guild-host-only', { flush: false });
+        fs.rmSync(hostOnlyDir, { recursive: true, force: true });
+
+        const managerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-packetization-'));
+        const thoughtCalls = [];
+        const manager = new InternalThoughtManager({
+            packetMode: 'packetization-buffer',
+            packetGraceMs: 15,
+            packetMaxAgeMs: 200,
+            packetMaxEntries: 4,
+            packetMaxChars: 1000,
+            packetMinAlternations: 1,
+            packetSpeakerTokenThreshold: 10,
+            now: () => '2026-05-12T21:30:00.000Z',
+            thoughtGenerator: {
+                generate: async (input) => {
+                    thoughtCalls.push(input);
+                    return {
+                        packetId: input.packetId,
+                        internalThought: 'The packet is ready after a settled alternation.',
+                        noticings: [],
+                        undercurrents: []
+                    };
+                }
+            },
+            discernmentGenerator: {
+                generate: async () => ({
+                    injectIntoPodcastGenerator: false,
+                    reason: '',
+                    awarenessInjection: '',
+                    expiresAfterTurns: 0
+                })
+            }
+        });
+
+        const session = manager.startSession('guild-packetization', { recordingPath: managerDir });
+
+        manager.setUserSpeaking('guild-packetization', 'jensen', true);
+        manager.markAsrPending('guild-packetization', 'jensen');
+        await manager.handleTranscriptEntry('guild-packetization', {
+            userId: 'jensen',
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'This is the first part of a longer thought.',
+            speechStartedAt: '2026-05-12T21:30:01.000Z',
+            speechEndedAt: '2026-05-12T21:30:03.000Z'
+        });
+        manager.setUserSpeaking('guild-packetization', 'jensen', false);
+        await sleep(35);
+        await session.processing;
+        if (thoughtCalls.length !== 0) {
+            throw new Error(`Packetization flushed a single speaker run too early: ${JSON.stringify(thoughtCalls)}`);
+        }
+
+        manager.setUserSpeaking('guild-packetization', 'jensen', true);
+        manager.markAsrPending('guild-packetization', 'jensen');
+        await manager.handleTranscriptEntry('guild-packetization', {
+            userId: 'jensen',
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'This is still the same speaker run.',
+            speechStartedAt: '2026-05-12T21:30:04.000Z',
+            speechEndedAt: '2026-05-12T21:30:06.000Z'
+        });
+        manager.setUserSpeaking('guild-packetization', 'jensen', false);
+        await sleep(35);
+        await session.processing;
+        if (thoughtCalls.length !== 0) {
+            throw new Error(`Packetization split a monologue before a cap or alternation: ${JSON.stringify(thoughtCalls)}`);
+        }
+
+        await manager.handleTranscriptEntry('guild-packetization', {
+            speaker: 'Alpha-Clawd',
+            speakerRole: 'host',
+            text: 'I am with you.',
+            generatedAt: '2026-05-12T21:30:07.000Z'
+        });
+        await sleep(35);
+        await session.processing;
+        if (
+            thoughtCalls.length !== 1 ||
+            thoughtCalls[0].transcript !== [
+                'Jensen: This is the first part of a longer thought.',
+                'Jensen: This is still the same speaker run.',
+                'Alpha-Clawd: I am with you.'
+            ].join('\n')
+        ) {
+            throw new Error(`Packetization did not flush the settled alternation: ${JSON.stringify(thoughtCalls)}`);
+        }
+
+        const packetRecord = JSON.parse(fs.readFileSync(session.outputPath, 'utf8').trim());
+        if (packetRecord.packetReason !== 'packet-grace') {
+            throw new Error(`Alternation packet used unexpected reason: ${packetRecord.packetReason}`);
+        }
+        await manager.endSession('guild-packetization');
+        fs.rmSync(managerDir, { recursive: true, force: true });
+
+        const capDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-packet-cap-'));
+        const capCalls = [];
+        const cappedManager = new InternalThoughtManager({
+            packetMode: 'packetization-buffer',
+            packetGraceMs: 1000,
+            packetMaxAgeMs: 1000,
+            packetMaxEntries: 2,
+            packetMaxChars: 1000,
+            packetMinAlternations: 1,
+            now: () => '2026-05-12T21:31:00.000Z',
+            thoughtGenerator: {
+                generate: async (input) => {
+                    capCalls.push(input);
+                    return {
+                        packetId: input.packetId,
+                        internalThought: 'The monologue hit a deterministic hard cap.',
+                        noticings: [],
+                        undercurrents: []
+                    };
+                }
+            },
+            discernmentGenerator: {
+                generate: async () => ({
+                    injectIntoPodcastGenerator: false,
+                    reason: '',
+                    awarenessInjection: '',
+                    expiresAfterTurns: 0
+                })
+            }
+        });
+        const capSession = cappedManager.startSession('guild-packet-cap', { recordingPath: capDir });
+        const firstCapResult = await cappedManager.handleTranscriptEntry('guild-packet-cap', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'First monologue packet entry.'
+        });
+        const capRecord = await cappedManager.handleTranscriptEntry('guild-packet-cap', {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'Second monologue packet entry.'
+        });
+        if (
+            firstCapResult !== null ||
+            capRecord?.packetId !== 'internal-packet-1' ||
+            !capRecord.packetReason.startsWith('packet-hard-cap') ||
+            capCalls.length !== 1
+        ) {
+            throw new Error(`Monologue hard cap did not flush deterministically: ${JSON.stringify({ firstCapResult, capRecord, capCalls })}`);
+        }
+        await cappedManager.endSession('guild-packet-cap');
+        fs.rmSync(capDir, { recursive: true, force: true });
+
+        console.log('  Packetization requires richer alternation for low-token exchanges, flushes contentful monologues, and preserves hard caps');
+        passed++;
+    } catch (error) {
+        console.log(`  Internal thought packetization buffer failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 5d: BigBrain awareness selector');
+    try {
+        const selector = new BigBrainAwarenessSelector({
+            apiKey: 'selector-test-key',
+            maxCompletionTokens: 200
+        });
+        const selectorSchema = selector.getResponseSchema();
+        if (
+            selectorSchema.required.join(',') !== 'includeAwareness,reason,selectedAwarenessInjections' ||
+            selectorSchema.properties.priority ||
+            selectorSchema.properties.risk ||
+            selectorSchema.properties.participantRelevance ||
+            selectorSchema.properties.contextText
+        ) {
+            throw new Error(`BigBrain selector schema includes stale fields: ${JSON.stringify(selectorSchema)}`);
+        }
+
+        const activeAwarenessInjections = [
+            {
+                id: 'awareness-one',
+                awarenessInjection: 'Jensen is asking about this repo while designing Alpha-Clawd introspection.'
+            },
+            {
+                id: 'awareness-two',
+                awarenessInjection: 'The guest is emotionally tired and may need gentler pacing.'
+            }
+        ];
+        let selectorCall = null;
+        selector.fetchJson = async (requestPath, body) => {
+            selectorCall = { requestPath, body };
+            return {
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            includeAwareness: true,
+                            reason: 'The first note directly frames the filesystem question.',
+                            selectedAwarenessInjections: [{
+                                id: 'awareness-one',
+                                awarenessInjection: 'Jensen is asking about this repo while designing Alpha-Clawd introspection.'
+                            }]
+                        })
+                    }
+                }]
+            };
+        };
+
+        const selection = await selector.generate({
+            requestReason: 'Need to inspect project files accurately.',
+            transcript: 'Jensen: What files implement the internal thought system?',
+            activeAwarenessInjections
+        });
+
+        if (
+            selectorCall?.requestPath !== '/chat/completions' ||
+            selectorCall.body.response_format?.json_schema?.name !== 'podcast_bigbrain_awareness_selection' ||
+            !selection.includeAwareness ||
+            selection.selectedAwarenessInjections.length !== 1 ||
+            selection.selectedAwarenessInjections[0].id !== 'awareness-one'
+        ) {
+            throw new Error(`BigBrain selector did not select the relevant awareness injection: ${JSON.stringify({ selectorCall, selection })}`);
+        }
+
+        const fabricated = selector.normalizeOutput({
+            includeAwareness: true,
+            reason: 'Made up.',
+            selectedAwarenessInjections: [{
+                id: 'fabricated',
+                awarenessInjection: 'A new note that was never active.'
+            }]
+        }, { activeAwarenessInjections });
+
+        if (fabricated.includeAwareness || fabricated.selectedAwarenessInjections.length !== 0) {
+            throw new Error(`BigBrain selector accepted fabricated awareness: ${JSON.stringify(fabricated)}`);
+        }
+
+        const selectorPrompt = selector.buildSystemPrompt();
+        if (
+            !selectorPrompt.includes('request-time judgment') ||
+            !selectorPrompt.includes('should be included as private context for Open Claw') ||
+            selectorPrompt.includes('priority')
+        ) {
+            throw new Error(`BigBrain selector prompt does not match request-time framing: ${selectorPrompt}`);
+        }
+
+        console.log('  BigBrain awareness selector chooses active injections only at request time');
+        passed++;
+    } catch (error) {
+        console.log(`  BigBrain awareness selector failed: ${error.message}`);
         failed++;
     }
 
@@ -990,6 +2360,34 @@ async function runTests() {
         bot.generatorMode = 'direct';
         bot.RecordingState = { RECORDING: 'RECORDING' };
         bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
+        bot.internalThoughtsEnabled = true;
+        bot.showRunnerEnabled = true;
+        const recentThoughtRequests = [];
+        bot.internalThoughtManager = {
+            getActiveAwarenessInjections: (activeGuildId) => activeGuildId === guildId
+                ? [{
+                    id: 'awareness-direct-test',
+                    awarenessInjection: 'Jensen is testing whether private awareness reaches direct turns.'
+                }]
+                : [],
+            getRecentInternalThoughts: (activeGuildId, limit) => {
+                recentThoughtRequests.push({ guildId: activeGuildId, limit });
+                return Array.from({ length: 9 }, (_, index) => ({
+                    packetId: `internal-packet-${index + 1}`,
+                    internalThought: `Recent internal thought ${index + 1}`
+                })).slice(-limit);
+            }
+        };
+        bot.showRunnerManager = {
+            getGuidance: (activeGuildId) => activeGuildId === guildId
+                ? {
+                    phase: 'background',
+                    currentLane: 'origin story',
+                    nextHostMove: 'synthesize and bridge',
+                    generatorInstruction: 'Do not ask another generic question; bridge into the next lane.'
+                }
+                : null
+        };
         bot.lastParticipantSpeechAt = new Map([[guildId, firstSpeechAt]]);
         bot.idleDecisionHandledSpeechAt = new Map();
         bot.directResponseInFlight = new Set();
@@ -1033,12 +2431,18 @@ async function runTests() {
 
         const holdEvents = [];
         let directGenerateCalled = false;
+        let directAwarenessInjections = null;
+        let directRecentInternalThoughts = null;
+        let directShowRunnerGuidance = null;
         bot.conversationBuffer.setFlushHold = (reason, active) => {
             holdEvents.push({ reason, active });
         };
         bot.podcastGenerator = {
-            generate: async () => {
+            generate: async (input) => {
                 directGenerateCalled = true;
+                directAwarenessInjections = input.awarenessInjections || [];
+                directRecentInternalThoughts = input.recentInternalThoughts || [];
+                directShowRunnerGuidance = input.showRunnerGuidance || null;
                 if (!bot.directResponseInFlight.has(guildId)) {
                     throw new Error('Direct response was not marked in-flight during generation');
                 }
@@ -1058,6 +2462,31 @@ async function runTests() {
         }
         if (holdEvents.map(event => event.active).join(',') !== 'true,false') {
             throw new Error(`Direct response did not hold and release buffer flushing: ${JSON.stringify(holdEvents)}`);
+        }
+        if (directAwarenessInjections?.[0]?.id !== 'awareness-direct-test') {
+            throw new Error(`Direct generator did not receive active awareness injections: ${JSON.stringify(directAwarenessInjections)}`);
+        }
+        if (directShowRunnerGuidance?.phase !== 'background' || !directShowRunnerGuidance.generatorInstruction.includes('bridge')) {
+            throw new Error(`Direct generator did not receive show runner guidance: ${JSON.stringify(directShowRunnerGuidance)}`);
+        }
+        if (directRecentInternalThoughts.length !== 0 || recentThoughtRequests.length !== 0) {
+            throw new Error(`Direct generator received recent internal thoughts without a trigger: ${JSON.stringify({ directRecentInternalThoughts, recentThoughtRequests })}`);
+        }
+
+        directGenerateCalled = false;
+        directShowRunnerGuidance = null;
+        directRecentInternalThoughts = null;
+        await bot.handleDirectGeneratorFlush(guildId, [
+            { speaker: 'Jensen', transcription: 'Can we talk about your internal thoughts and self knowledge?' }
+        ], 'Jensen: Can we talk about your internal thoughts and self knowledge?');
+
+        if (
+            !directGenerateCalled ||
+            directRecentInternalThoughts?.length !== 7 ||
+            directRecentInternalThoughts[0]?.packetId !== 'internal-packet-3' ||
+            recentThoughtRequests.at(-1)?.limit !== 7
+        ) {
+            throw new Error(`Direct generator did not receive seven recent internal thoughts on introspection trigger: ${JSON.stringify({ directGenerateCalled, directRecentInternalThoughts, recentThoughtRequests })}`);
         }
 
         directGenerateCalled = false;
@@ -1255,10 +2684,13 @@ async function runTests() {
         const savedEntries = [];
         const remembered = [];
         const stagedInputs = [];
+        const selectorInputs = [];
         let generateCount = 0;
 
         bot.generatorMode = 'direct';
         bot.bigBrainEnabled = true;
+        bot.internalThoughtsEnabled = true;
+        bot.bigBrainAwarenessSelectionEnabled = true;
         bot.bigBrainTimeoutMs = 1000;
         bot.bigBrainThinking = 'high';
         bot.pendingBigBrainResponses = new Map();
@@ -1271,6 +2703,22 @@ async function runTests() {
         bot.participantActivityConfirmDelayMs = 0;
         bot.RecordingState = { RECORDING: 'RECORDING' };
         bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
+        bot.internalThoughtManager = {
+            getActiveAwarenessInjections: () => [{
+                id: 'awareness-bigbrain-test',
+                awarenessInjection: 'Jensen is asking about prior episode details while testing the introspective branch.'
+            }]
+        };
+        bot.bigBrainAwarenessSelector = {
+            generate: async (input) => {
+                selectorInputs.push(input);
+                return {
+                    includeAwareness: true,
+                    reason: 'The awareness note frames the request as an introspective-branch test.',
+                    selectedAwarenessInjections: [input.activeAwarenessInjections[0]]
+                };
+            }
+        };
         bot.voiceId = 'voice-test';
         bot.conversationBuffer = {
             getState: () => ({
@@ -1359,6 +2807,15 @@ async function runTests() {
             !sentChats[0].message.includes('Need to verify prior episode details.') ||
             !sentChats[0].message.includes('Jensen: What was the first episode about?')) {
             throw new Error(`bigBrain prompt missing request context: ${sentChats[0].message}`);
+        }
+        if (
+            selectorInputs[0]?.activeAwarenessInjections?.[0]?.id !== 'awareness-bigbrain-test' ||
+            !sentChats[0].message.includes('\n\nJensen is asking about prior episode details while testing the introspective branch.') ||
+            sentChats[0].message.includes('Selected awareness injection(s) for this Big Brain request:') ||
+            sentChats[0].message.includes('awarenessInjection: Jensen is asking about prior episode details while testing the introspective branch.') ||
+            sentChats[0].message.includes('do not mention awareness injections')
+        ) {
+            throw new Error(`bigBrain prompt missing request-time awareness selection: ${JSON.stringify({ selectorInputs, message: sentChats[0].message })}`);
         }
         const runId = sentChats[0].options.idempotencyKey;
         if (!runId.startsWith('discord-bigbrain-') || !bot.pendingBigBrainResponses.has(runId)) {
@@ -1665,6 +3122,84 @@ async function runTests() {
         }
 
         bot.cleanupPendingBigBrain(specificResult.runId);
+
+        bot.pendingBigBrainResponses.set('discord-bigbrain-existing', {
+            guildId,
+            runId: 'discord-bigbrain-existing',
+            reason: 'Already checking the NIH source.',
+            transcript: 'Jensen: Look up the NIH page.',
+            requestedAt: '2026-05-13T00:00:00.000Z'
+        });
+        const pendingForGenerator = bot.getPendingBigBrainForGenerator(guildId);
+        if (
+            pendingForGenerator.length !== 1 ||
+            pendingForGenerator[0].runId !== 'discord-bigbrain-existing' ||
+            !bot.shouldSuppressDuplicateBigBrainStall(guildId, {
+                bigBrain: { requested: true, reason: 'Duplicate NIH lookup.' }
+            })
+        ) {
+            throw new Error(`Pending bigBrain helper did not expose/suppress existing run: ${JSON.stringify({ pendingForGenerator })}`);
+        }
+        bot.cleanupPendingBigBrain('discord-bigbrain-existing');
+
+        const streamingBot = Object.create(AlphaClawdVoiceBot.prototype);
+        const streamingGuildId = 'guild-streaming-duplicate-bigbrain';
+        const rememberedTurns = [];
+        streamingBot.pendingBigBrainResponses = new Map([[
+            'discord-bigbrain-streaming-existing',
+            {
+                guildId: streamingGuildId,
+                runId: 'discord-bigbrain-streaming-existing',
+                reason: 'Already checking Animorphs canon.',
+                transcript: 'Jensen: Look up the Animorphs example.',
+                requestedAt: '2026-05-13T00:00:00.000Z'
+            }
+        ]]);
+        streamingBot.stagedBigBrainResponses = new Map();
+        streamingBot.directResponseInFlight = new Set();
+        streamingBot.participantActivityVersion = new Map([[streamingGuildId, 0]]);
+        streamingBot.conversationBuffer = {
+            setFlushHold: () => {},
+            requeueUtterances: () => {}
+        };
+        streamingBot.getAwarenessInjectionsForGenerator = () => [];
+        streamingBot.beginGeneratorTurn = async () => ({
+            shouldRespond: true,
+            speech: '',
+            text: '',
+            bigBrain: { requested: false, reason: '', consumedRunId: '' },
+            isStreaming: true,
+            speechStream: (async function* () {})(),
+            completed: Promise.resolve({
+                shouldRespond: true,
+                speech: 'Let me check Animorphs canon.',
+                text: 'Let me check Animorphs canon.',
+                bigBrain: {
+                    requested: true,
+                    reason: 'Need verified Animorphs canon.',
+                    consumedRunId: ''
+                }
+            })
+        });
+        streamingBot.podcastGenerator = {
+            rememberTurn: (rememberedTranscript, output) => rememberedTurns.push({ rememberedTranscript, output })
+        };
+        streamingBot.speakDirectGeneratorResponse = async () => {
+            throw new Error('Duplicate streaming bigBrain stall should have been suppressed before TTS');
+        };
+
+        await streamingBot.handleDirectGeneratorFlush(
+            streamingGuildId,
+            [{ speaker: 'Jensen', transcription: 'Did Big Brain finish the Animorphs thing?' }],
+            'Jensen: Did Big Brain finish the Animorphs thing?'
+        );
+        if (
+            rememberedTurns.length !== 1 ||
+            rememberedTurns[0].output.shouldRespond !== false ||
+            streamingBot.directResponseInFlight.has(streamingGuildId)
+        ) {
+            throw new Error(`Streaming duplicate bigBrain stall was not suppressed cleanly: ${JSON.stringify({ rememberedTurns, inFlight: Array.from(streamingBot.directResponseInFlight) })}`);
+        }
 
         console.log('  Bare handoff cues are deferred, while specific Big Brain questions still dispatch');
         passed++;
@@ -2097,11 +3632,26 @@ async function runTests() {
             throw new Error(`Fallback did not mark idle/cooldown: ${JSON.stringify({ idleMarked, cooldownStarted })}`);
         }
         if (
-            !synthesizedText.includes('Groq 429 rate limit') ||
+            !synthesizedText.includes('Groq rate limit (429)') ||
             !synthesizedText.includes('both configured Groq keys') ||
             !synthesizedText.includes('12 seconds')
         ) {
             throw new Error(`Fallback text was not operationally informative: ${synthesizedText}`);
+        }
+        const requestTooLarge = new Error('OpenAI API error: 413 - Request too large. Requested 8950 tokens, max 8000.');
+        requestTooLarge.status = 413;
+        requestTooLarge.providerError = {
+            status: 413,
+            code: 'request_too_large',
+            type: 'invalid_request_error'
+        };
+        const sizeFallbackText = bot.buildFallbackResponseText(requestTooLarge);
+        if (
+            !sizeFallbackText.includes("request-size limit (413)") ||
+            sizeFallbackText.includes('429') ||
+            sizeFallbackText.includes('rate limit')
+        ) {
+            throw new Error(`413 fallback text was misleading: ${sizeFallbackText}`);
         }
         if (
             savedEntry?.speaker !== 'Alpha-Clawd' ||
@@ -2385,7 +3935,7 @@ async function runTests() {
         });
 
         // Single CJK particles observed as phantoms in real episodes
-        const truthyCases = ['嗯。', '啊', '哎', '哥', '会', '对。'];
+        const truthyCases = ['嗯。', '啊', '哎', '哥', '会', '对。', '\u6211\u4eec\u3002', '\u3046\u3093\u3002', '\u3048\u3048\u3002', '\u3042\u3002'];
         for (const raw of truthyCases) {
             if (!receiver.isLikelyPhantomTranscription(raw)) {
                 throw new Error(`Expected ${JSON.stringify(raw)} to be classified as phantom`);
@@ -2430,7 +3980,16 @@ async function runTests() {
             playbackRequestedAt: '2026-05-03T00:00:02.100Z',
             playbackStartedAt: '2026-05-03T00:00:05.000Z',
             playbackEndedAt: '2026-05-03T00:00:07.000Z',
-            duration: 2000
+            duration: 2000,
+            injectedAwarenessInjections: [{
+                id: 'awareness-test',
+                packetId: 'internal-packet-test',
+                createdAt: '2026-05-03T00:00:01.000Z',
+                awarenessInjection: 'Use the exact playback timing.',
+                reason: 'The viewer should know what was injected.',
+                expiresAfterTurns: 2,
+                remainingTurns: 1
+            }]
         });
 
         fs.appendFileSync(path.join(tempDir, 'transcript.jsonl'), JSON.stringify({
@@ -2447,7 +4006,8 @@ async function runTests() {
         if (
             transcriptEntry.generatedAt !== '2026-05-03T00:00:00.000Z' ||
             transcriptEntry.playbackStartedAt !== '2026-05-03T00:00:05.000Z' ||
-            transcriptEntry.playbackEndedAt !== '2026-05-03T00:00:07.000Z'
+            transcriptEntry.playbackEndedAt !== '2026-05-03T00:00:07.000Z' ||
+            transcriptEntry.injectedAwarenessInjections?.[0]?.awarenessInjection !== 'Use the exact playback timing.'
         ) {
             throw new Error(`Bot timing metadata was not saved: ${JSON.stringify(transcriptEntry)}`);
         }
@@ -2474,6 +4034,178 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Transcript timing failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 10b: Episode transcript viewer maps injected thoughts to host turns');
+    try {
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'episode-viewer-'));
+        const episodeId = 'episode-2026-05-14T16-35-33-316Z';
+        const episodeDir = path.join(tempRoot, episodeId);
+        fs.mkdirSync(episodeDir, { recursive: true });
+        fs.writeFileSync(path.join(episodeDir, 'episode-complete.json'), JSON.stringify({
+            startedAt: '2026-05-14T16:35:00.000Z',
+            duration: 60
+        }));
+
+        const transcriptEntries = [
+            {
+                timestamp: '2026-05-14T16:35:01.000Z',
+                speaker: 'Jensen',
+                speakerRole: 'guest',
+                text: 'I am setting up the topic.'
+            },
+            {
+                timestamp: '2026-05-14T16:35:04.000Z',
+                generatedAt: '2026-05-14T16:35:04.000Z',
+                playbackStartedAt: '2026-05-14T16:35:05.000Z',
+                speaker: 'Alpha-Clawd',
+                speakerRole: 'host',
+                text: 'I am with you.'
+            },
+            {
+                timestamp: '2026-05-14T16:35:12.000Z',
+                speaker: 'Jensen',
+                speakerRole: 'guest',
+                text: 'Please stop asking generic questions.'
+            },
+            {
+                timestamp: '2026-05-14T16:35:15.000Z',
+                generatedAt: '2026-05-14T16:35:15.000Z',
+                playbackStartedAt: '2026-05-14T16:35:16.000Z',
+                speaker: 'Alpha-Clawd',
+                speakerRole: 'host',
+                text: 'Right. I will synthesize instead of tossing it back.'
+            },
+            {
+                timestamp: '2026-05-14T16:35:20.000Z',
+                speaker: 'Jensen',
+                speakerRole: 'guest',
+                text: 'A second guest turn.'
+            },
+            {
+                timestamp: '2026-05-14T16:35:30.000Z',
+                speaker: 'Jensen',
+                speakerRole: 'guest',
+                text: 'A third guest turn.'
+            },
+            {
+                timestamp: '2026-05-14T16:35:35.000Z',
+                generatedAt: '2026-05-14T16:35:35.000Z',
+                playbackStartedAt: '2026-05-14T16:35:36.000Z',
+                speaker: 'Alpha-Clawd',
+                speakerRole: 'host',
+                text: 'This should no longer show the expired thought.'
+            }
+        ];
+        fs.writeFileSync(
+            path.join(episodeDir, 'transcript.jsonl'),
+            transcriptEntries.map((entry) => JSON.stringify(entry)).join('\n') + '\n'
+        );
+        fs.writeFileSync(path.join(episodeDir, 'mixed-audio.wav'), Buffer.from('RIFF-test-audio-WAVE'));
+
+        fs.writeFileSync(path.join(episodeDir, 'internal-thoughts.jsonl'), JSON.stringify({
+            type: 'internal_thought',
+            packetId: 'internal-packet-1',
+            createdAt: '2026-05-14T16:35:10.000Z',
+            processedAt: '2026-05-14T16:35:10.000Z',
+            thought: {
+                packetId: 'internal-packet-1',
+                internalThought: 'Jensen is asking Alpha-Clawd to stop generic question autocomplete and carry the thread.',
+                noticings: ['Generic questions are the problem.'],
+                undercurrents: ['He wants synthesis.']
+            },
+            awarenessInjection: {
+                id: 'awareness-internal-packet-1',
+                packetId: 'internal-packet-1',
+                createdAt: '2026-05-14T16:35:10.000Z',
+                awarenessInjection: 'Do not ask another broad question; synthesize and bridge.',
+                reason: 'Jensen named the pattern directly.',
+                expiresAfterTurns: 2,
+                remainingTurns: 2
+            }
+        }) + '\n');
+
+        const store = new EpisodeTranscriptStore({ recordingDir: tempRoot });
+        const episodes = store.listEpisodes();
+        const episode = store.getEpisode(episodeId);
+        const hostBeforeInjection = episode.utterances.find((entry) => entry.text === 'I am with you.');
+        const hostWithInjection = episode.utterances.find((entry) => entry.text.startsWith('Right.'));
+        const hostAfterExpiration = episode.utterances.find((entry) => entry.text.startsWith('This should'));
+
+        if (
+            episodes.length !== 1 ||
+            episodes[0].id !== episodeId ||
+            episodes[0].hasAudio !== true ||
+            episodes[0].audioFile !== 'mixed-audio.wav' ||
+            hostBeforeInjection.injectedThoughts.length !== 0 ||
+            hostWithInjection.injectedThoughts[0]?.internalThought !== 'Jensen is asking Alpha-Clawd to stop generic question autocomplete and carry the thread.' ||
+            hostWithInjection.injectedThoughts[0]?.awarenessInjection !== 'Do not ask another broad question; synthesize and bridge.' ||
+            hostAfterExpiration.injectedThoughts.length !== 0
+        ) {
+            throw new Error(`Injected thoughts were not mapped correctly: ${JSON.stringify({ episodes, utterances: episode.utterances })}`);
+        }
+
+        const server = createEpisodeTranscriptServer({
+            store,
+            requireAuth: true,
+            authToken: 'viewer-token'
+        });
+        await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+        const { port } = server.address();
+        const unauthorized = await fetch(`http://127.0.0.1:${port}/api/episodes`);
+        const authorized = await fetch(`http://127.0.0.1:${port}/api/episodes/${episodeId}`, {
+            headers: { Authorization: 'Bearer viewer-token' }
+        });
+        const authorizedBody = await authorized.json();
+        const unauthorizedAudio = await fetch(`http://127.0.0.1:${port}/api/episodes/${episodeId}/audio`);
+        const rangedAudio = await fetch(`http://127.0.0.1:${port}/api/episodes/${episodeId}/audio?token=viewer-token`, {
+            headers: { Range: 'bytes=0-3' }
+        });
+        const rangedAudioBody = Buffer.from(await rangedAudio.arrayBuffer()).toString('utf8');
+        await new Promise((resolve) => server.close(resolve));
+
+        if (
+            unauthorized.status !== 401 ||
+            authorized.status !== 200 ||
+            authorizedBody.episode?.hasAudio !== true ||
+            authorizedBody.episode?.audioFile !== 'mixed-audio.wav' ||
+            authorizedBody.utterances.find((entry) => entry.text.startsWith('Right.'))?.injectedThoughts?.length !== 1 ||
+            unauthorizedAudio.status !== 401 ||
+            rangedAudio.status !== 206 ||
+            rangedAudio.headers.get('content-range') !== 'bytes 0-3/20' ||
+            rangedAudioBody !== 'RIFF'
+        ) {
+            throw new Error(`Viewer server auth/API failed: ${JSON.stringify({
+                unauthorized: unauthorized.status,
+                authorized: authorized.status,
+                authorizedBody,
+                unauthorizedAudio: unauthorizedAudio.status,
+                rangedAudio: rangedAudio.status,
+                contentRange: rangedAudio.headers.get('content-range'),
+                rangedAudioBody
+            })}`);
+        }
+
+        const viewerHtml = fs.readFileSync(path.join(__dirname, 'episode-viewer', 'index.html'), 'utf8');
+        const viewerApp = fs.readFileSync(path.join(__dirname, 'episode-viewer', 'app.js'), 'utf8');
+        if (
+            !viewerHtml.includes('id="episode-audio"') ||
+            !viewerApp.includes('consumeTokenFromUrl()') ||
+            !viewerApp.includes('renderAudioPlayer(data.episode)') ||
+            !viewerApp.includes('/audio') ||
+            !viewerApp.includes("localStorage.setItem('episodeTranscriptToken', token)") ||
+            !viewerApp.includes("cleanUrl.hash = ''") ||
+            !viewerApp.includes("params.get('access_token')")
+        ) {
+            throw new Error('Viewer app does not render audio playback or consume shortcut tokens');
+        }
+
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+        console.log('  Episode transcript viewer lists episodes, serves WAV playback, and annotates host turns with injected thoughts');
+        passed++;
+    } catch (error) {
+        console.log(`  Episode transcript viewer failed: ${error.message}`);
         failed++;
     }
 
@@ -2814,6 +4546,7 @@ async function runTests() {
         const { AudioTransmitter } = require('./audio-transmitter');
         const { StreamType } = require('@discordjs/voice');
         const { Readable } = require('stream');
+        const { EventEmitter } = require('events');
 
         const probe = new AudioTransmitter({});
         const cases = [
@@ -2854,7 +4587,36 @@ async function runTests() {
             throw new Error('Expected VolumeTransformer at v=0.5');
         }
 
-        console.log('  Inline volume skipped at unity, applied otherwise');
+        class StopErrorPlayer extends EventEmitter {
+            play(resource) {
+                captured = resource;
+            }
+
+            stop() {
+                this.emit('error', new Error('Premature close'));
+            }
+        }
+
+        let globalErrorCalled = false;
+        let finishCalled = false;
+        const stopErrorPlayer = new StopErrorPlayer();
+        const stopT = new AudioTransmitter({
+            player: stopErrorPlayer,
+            onError: () => { globalErrorCalled = true; }
+        });
+        await stopT.play(Readable.from([Buffer.alloc(0)]), {
+            inputType: StreamType.Raw,
+            onFinish: () => { finishCalled = true; }
+        });
+        stopT.stop();
+        if (globalErrorCalled) {
+            throw new Error('Intentional stop should suppress the follow-up player error');
+        }
+        if (!finishCalled) {
+            throw new Error('Intentional stop should still finish the stopped playback');
+        }
+
+        console.log('  Inline volume skipped at unity, applied otherwise, and intentional stop errors are suppressed');
         passed++;
     } catch (error) {
         console.log(`  Audio Transmitter inline volume failed: ${error.message}`);
@@ -3080,6 +4842,218 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Streaming unhandled-rejection guard failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 16a: Kimi Anthropic-compatible streaming');
+    try {
+        const { PodcastGenerator } = require('./podcast-generator');
+        const originalFetch = globalThis.fetch;
+        let request = null;
+
+        try {
+            globalThis.fetch = async (url, options = {}) => {
+                request = {
+                    url,
+                    headers: options.headers,
+                    body: JSON.parse(options.body)
+                };
+                const data = (event) => `data: ${JSON.stringify(event)}`;
+                const sse = [
+                    'event: message_start',
+                    data({
+                        type: 'message_start',
+                        message: {
+                            usage: {
+                                input_tokens: 21,
+                                cache_read_input_tokens: 3,
+                                output_tokens: 0
+                            }
+                        }
+                    }),
+                    '',
+                    'event: content_block_delta',
+                    data({
+                        type: 'content_block_delta',
+                        delta: {
+                            type: 'text_delta',
+                            text: '```json\n{"speech":"Kimi '
+                        }
+                    }),
+                    '',
+                    'event: content_block_delta',
+                    data({
+                        type: 'content_block_delta',
+                        delta: {
+                            type: 'text_delta',
+                            text: 'streaming works."}\n```'
+                        }
+                    }),
+                    '',
+                    'event: message_delta',
+                    data({
+                        type: 'message_delta',
+                        usage: {
+                            output_tokens: 9
+                        }
+                    }),
+                    '',
+                    'event: message_stop',
+                    data({ type: 'message_stop' }),
+                    ''
+                ].join('\n');
+                return new Response(sse, {
+                    status: 200,
+                    headers: { 'content-type': 'text/event-stream' }
+                });
+            };
+
+            const kimiGenerator = new PodcastGenerator({
+                apiKey: 'kimi-test-key',
+                baseUrl: 'https://api.kimi.com/coding/v1',
+                model: 'kimi-for-coding',
+                timeout: 1000
+            });
+            const stream = await kimiGenerator.generateStreaming({
+                transcript: 'Jensen: Test Kimi streaming.',
+                remember: false
+            });
+
+            const shouldRespond = await stream.shouldRespond;
+            let speech = '';
+            for await (const chunk of stream.speechStream) {
+                speech += chunk;
+            }
+            const completed = await stream.completed;
+
+            if (
+                !shouldRespond ||
+                speech !== 'Kimi streaming works.' ||
+                completed.speech !== 'Kimi streaming works.' ||
+                request?.url !== 'https://api.kimi.com/coding/v1/messages' ||
+                request.headers.Authorization ||
+                request.headers['x-api-key'] !== 'kimi-test-key' ||
+                request.headers['anthropic-version'] !== '2023-06-01' ||
+                request.body.model !== 'kimi-for-coding' ||
+                request.body.stream !== true ||
+                request.body.output_config?.format?.type !== 'json_schema'
+            ) {
+                throw new Error(`Kimi streaming route failed: ${JSON.stringify({ shouldRespond, speech, completed, request })}`);
+            }
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        console.log('  Kimi streaming uses Anthropic Messages SSE and feeds speech chunks to TTS');
+        passed++;
+    } catch (error) {
+        console.log(`  Kimi streaming failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 16b: Anthropic Messages streaming');
+    try {
+        const { PodcastGenerator } = require('./podcast-generator');
+        const originalFetch = globalThis.fetch;
+        let request = null;
+
+        try {
+            globalThis.fetch = async (url, options = {}) => {
+                request = {
+                    url,
+                    headers: options.headers,
+                    body: JSON.parse(options.body)
+                };
+                const data = (event) => `data: ${JSON.stringify(event)}`;
+                const sse = [
+                    'event: message_start',
+                    data({
+                        type: 'message_start',
+                        message: {
+                            usage: {
+                                input_tokens: 18,
+                                cache_read_input_tokens: 0,
+                                output_tokens: 0
+                            }
+                        }
+                    }),
+                    '',
+                    'event: content_block_delta',
+                    data({
+                        type: 'content_block_delta',
+                        delta: {
+                            type: 'text_delta',
+                            text: '```json\n{"speech":"Anthropic '
+                        }
+                    }),
+                    '',
+                    'event: content_block_delta',
+                    data({
+                        type: 'content_block_delta',
+                        delta: {
+                            type: 'text_delta',
+                            text: 'streaming works."}\n```'
+                        }
+                    }),
+                    '',
+                    'event: message_delta',
+                    data({
+                        type: 'message_delta',
+                        usage: {
+                            output_tokens: 8
+                        }
+                    }),
+                    '',
+                    'event: message_stop',
+                    data({ type: 'message_stop' }),
+                    ''
+                ].join('\n');
+                return new Response(sse, {
+                    status: 200,
+                    headers: { 'content-type': 'text/event-stream' }
+                });
+            };
+
+            const anthropicGenerator = new PodcastGenerator({
+                apiKey: 'anthropic-test-key',
+                baseUrl: 'https://api.anthropic.com/v1',
+                model: 'claude-sonnet-4-5-20250929',
+                timeout: 1000
+            });
+            const stream = await anthropicGenerator.generateStreaming({
+                transcript: 'Jensen: Test Anthropic streaming.',
+                remember: false
+            });
+
+            const shouldRespond = await stream.shouldRespond;
+            let speech = '';
+            for await (const chunk of stream.speechStream) {
+                speech += chunk;
+            }
+            const completed = await stream.completed;
+
+            if (
+                !shouldRespond ||
+                speech !== 'Anthropic streaming works.' ||
+                completed.speech !== 'Anthropic streaming works.' ||
+                request?.url !== 'https://api.anthropic.com/v1/messages' ||
+                request.headers.Authorization ||
+                request.headers['x-api-key'] !== 'anthropic-test-key' ||
+                request.headers['anthropic-version'] !== '2023-06-01' ||
+                request.body.model !== 'claude-sonnet-4-5-20250929' ||
+                request.body.stream !== true ||
+                request.body.output_config?.format?.type !== 'json_schema'
+            ) {
+                throw new Error(`Anthropic streaming route failed: ${JSON.stringify({ shouldRespond, speech, completed, request })}`);
+            }
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        console.log('  Anthropic streaming uses Messages SSE and feeds speech chunks to TTS');
+        passed++;
+    } catch (error) {
+        console.log(`  Anthropic streaming failed: ${error.message}`);
         failed++;
     }
 

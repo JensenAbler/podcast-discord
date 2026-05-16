@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Alpha-Clawd Episode Transcripts</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <header class="brand">
+                <div class="mark" aria-hidden="true">A</div>
+                <div>
+                    <h1>Episode Transcripts</h1>
+                    <p id="episode-count">Loading episodes</p>
+                </div>
+            </header>
+
+            <section id="auth-panel" class="auth-panel hidden">
+                <label for="auth-token">Access token</label>
+                <div class="token-row">
+                    <input id="auth-token" type="password" autocomplete="off">
+                    <button id="save-token" type="button">Use</button>
+                </div>
+            </section>
+
+            <label class="search">
+                <span>Filter</span>
+                <input id="episode-filter" type="search" placeholder="episode timestamp">
+            </label>
+
+            <nav id="episode-list" class="episode-list" aria-label="Episodes"></nav>
+        </aside>
+
+        <main class="main">
+            <section class="episode-header">
+                <div>
+                    <p id="episode-meta" class="eyebrow">Choose an episode</p>
+                    <h2 id="episode-title">Transcript viewer</h2>
+                </div>
+                <div class="toolbar">
+                    <label class="search transcript-search">
+                        <span>Search transcript</span>
+                        <input id="transcript-filter" type="search" placeholder="speaker, text, thought">
+                    </label>
+                </div>
+            </section>
+
+            <section id="audio-panel" class="audio-panel hidden">
+                <audio id="episode-audio" controls preload="metadata"></audio>
+            </section>
+
+            <section id="parse-errors" class="parse-errors hidden"></section>
+            <section id="transcript" class="transcript empty">Select an episode from the list.</section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
