@@ -5529,11 +5529,9 @@ async function runTests() {
 
         if (
             !response ||
-            response.length !== 2 ||
+            response.length !== 1 ||
             response[0].value !== 'v002' ||
-            !response[0].name.includes('finalized') ||
-            response[1].value !== 'v001' ||
-            response[1].name.includes('finalized')
+            response[0].name !== 'v002'
         ) {
             throw new Error(`Version autocomplete returned unexpected choices: ${JSON.stringify(response)}`);
         }
@@ -5543,7 +5541,7 @@ async function runTests() {
         await bot.handleAutocomplete({
             commandName: 'podcast-publish',
             options: {
-                getFocused: () => ({ name: 'version', value: 'v001' }),
+                getFocused: () => ({ name: 'version', value: 'v002' }),
                 getInteger: (name) => name === 'episode' ? 5 : null
             },
             respond: async (choices) => {
@@ -5551,7 +5549,7 @@ async function runTests() {
             }
         });
 
-        if (!filteredResponse || filteredResponse.length !== 1 || filteredResponse[0].value !== 'v001') {
+        if (!filteredResponse || filteredResponse.length !== 1 || filteredResponse[0].value !== 'v002') {
             throw new Error(`Version autocomplete filtering failed: ${JSON.stringify(filteredResponse)}`);
         }
 

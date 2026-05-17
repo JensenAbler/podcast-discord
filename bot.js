@@ -1517,11 +1517,8 @@ class AlphaClawdVoiceBot {
                 fs.readdirSync(versionDir, { withFileTypes: true })
                     .some(f => f.isFile() && new RegExp(`^episode-\\d{1,4}-${entry.name}\\.mp3$`, 'i').test(f.name));
 
-            let label = entry.name;
-            if (hasMp3) {
-                label += ' (finalized)';
-            }
-            versions.push({ label, value: entry.name, hasMp3 });
+            if (!hasMp3) continue;
+            versions.push({ label: entry.name, value: entry.name });
         }
 
         // Sort descending by version number
