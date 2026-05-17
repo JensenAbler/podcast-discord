@@ -5366,7 +5366,7 @@ async function runTests() {
         if (limit !== 8) {
             throw new Error(`Expected default upload limit 8 MB, got ${limit}`);
         }
-        if (downloadUrl !== 'https://clawcast.jensenabler.com/episodes/episode-06.mp3') {
+        if (downloadUrl !== 'https://clawcast.jensenabler.com/episodes/episode-06-v004.mp3') {
             throw new Error(`Unexpected download URL: ${downloadUrl}`);
         }
         if (!notice.includes('16.1 MB') || !notice.includes(downloadUrl) || !notice.includes('/tmp/episode-06.mp3')) {
