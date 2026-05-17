@@ -1353,6 +1353,31 @@ class AlphaClawdVoiceBot {
     }
 
     /**
+     * Extract the last JSON object from multi-line stdout output.
+     */
+    extractLastJson(stdout) {
+        const lines = stdout.split('\n');
+        let startIndex = -1;
+        for (let i = lines.length - 1; i >= 0; i--) {
+            if (lines[i].trim().startsWith('{')) {
+                startIndex = i;
+                break;
+            }
+        }
+        if (startIndex === -1) return null;
+
+        for (let endIndex = startIndex; endIndex < lines.length; endIndex++) {
+            const candidate = lines.slice(startIndex, endIndex + 1).join('\n');
+            try {
+                return JSON.parse(candidate);
+            } catch (_e) {
+                // Continue accumulating lines
+            }
+        }
+        return null;
+    }
+
+    /**
      * Handle /podcast-production command
      */
     async handleProductionCommand(interaction) {
@@ -1377,17 +1402,16 @@ class AlphaClawdVoiceBot {
 
         try {
             const result = await this.runProductionProcess(args);
-            const outputLines = result.stdout.split('\n').filter(l => l.trim());
-            const lastJson = outputLines.reverse().find(l => l.trim().startsWith('{'));
+            const data = this.extractLastJson(result.stdout);
+
             let summary = '';
-            if (lastJson) {
-                try {
-                    const data = JSON.parse(lastJson);
-                    summary = `**Episode ${data.episode || episode}** · version ${data.version || '?'}`;
-                    if (data.finalMp3) summary += `\n📁 ${data.finalMp3}`;
-                    if (data.durationSeconds) summary += `\n⏱️ ${Math.round(data.durationSeconds)}s`;
-                } catch (_e) {
-                    summary = `Episode ${episode} produced.`;
+            if (data) {
+                summary = `**Episode ${data.episode || episode}** · version ${data.version || '?'}`;
+                if (data.finalMp3) summary += `\n📁 ${data.finalMp3}`;
+                if (data.durationSeconds) {
+                    const mins = Math.floor(data.durationSeconds / 60);
+                    const secs = Math.round(data.durationSeconds % 60);
+                    summary += `\n⏱️ ${mins}:${secs.toString().padStart(2, '0')}`;
                 }
             } else {
                 summary = `Episode ${episode} production completed.`;
@@ -1397,20 +1421,29 @@ class AlphaClawdVoiceBot {
                 content: `✅ **Podcast Production Complete**\n${summary}`
             };
 
-            if (lastJson) {
+            if (data && data.finalMp3) {
+                const mp3Path = data.finalMp3;
                 try {
-                    const data = JSON.parse(lastJson);
-                    const mp3Path = data.finalMp3;
-                    if (mp3Path && fs.existsSync(mp3Path)) {
-                        const fileName = path.basename(mp3Path);
-                        const attachment = new AttachmentBuilder(mp3Path, { name: fileName });
-                        replyOptions.files = [attachment];
+                    if (fs.existsSync(mp3Path)) {
+                        const stats = fs.statSync(mp3Path);
+                        const fileSizeMB = stats.size / (1024 * 1024);
+                        const DISCORD_LIMIT_MB = 25;
+                        if (fileSizeMB <= DISCORD_LIMIT_MB) {
+                            const fileName = path.basename(mp3Path);
+                            const attachment = new AttachmentBuilder(mp3Path, { name: fileName });
+                            replyOptions.files = [attachment];
+                        } else {
+                            replyOptions.content += `\n\n⚠️ File is **${fileSizeMB.toFixed(1)} MB** — too large for Discord attachment (limit: ${DISCORD_LIMIT_MB} MB). Download from server:` +
+                                `\n\`\`\`\n${mp3Path}\n\`\`\``;
+                        }
                     }
-                } catch (_e) {
-                    /* ignore attachment errors */ }
+                } catch (attachErr) {
+                    console.error('[Bot] Attachment error:', attachErr);
+                }
             }
 
             await interaction.editReply(replyOptions);
+            console.log('[Bot] Production reply sent successfully');
         } catch (error) {
             console.error('[Bot] Production failed:', error);
             await interaction.editReply({
