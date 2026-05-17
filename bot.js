@@ -1665,8 +1665,7 @@ class AlphaClawdVoiceBot {
         const parts = [`/${name}`];
         for (const [key, value] of Object.entries(options)) {
             if (value === undefined || value === null || value === '') continue;
-            const formatted = String(value).includes(' ') ? `"${value}"` : String(value);
-            parts.push(`${key}:${formatted}`);
+            parts.push(`${key}:${value}`);
         }
         return parts.join(' ');
     }
