@@ -1227,18 +1227,18 @@ class AlphaClawdVoiceBot {
                 .addStringOption(option =>
                     option
                         .setName('recording')
-                        .setDescription('Recording to produce (defaults to latest)')
+                        .setDescription('Start typing to see available recordings, or leave blank for latest')
                         .setRequired(false)
                         .setAutocomplete(true))
                 .addBooleanOption(option =>
                     option
-                        .setName('regenerate-copy')
-                        .setDescription('Regenerate intro/outro copy and metadata')
+                        .setName('regenerate-intro-outro')
+                        .setDescription('Regenerate AI intro/outro copy')
                         .setRequired(false))
                 .addBooleanOption(option =>
                     option
                         .setName('regenerate-audio')
-                        .setDescription('Regenerate all rendered audio')
+                        .setDescription('Regenerate all rendered audio (voices, mixes)')
                         .setRequired(false))
         ];
 
@@ -1358,7 +1358,7 @@ class AlphaClawdVoiceBot {
     async handleProductionCommand(interaction) {
         const episode = interaction.options.getInteger('episode');
         const recording = interaction.options.getString('recording') || 'latest';
-        const regenerateCopy = interaction.options.getBoolean('regenerate-copy') || false;
+        const regenerateCopy = interaction.options.getBoolean('regenerate-intro-outro') || false;
         const regenerateAudio = interaction.options.getBoolean('regenerate-audio') || false;
 
         await interaction.deferReply({ ephemeral: false });
