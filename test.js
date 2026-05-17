@@ -5472,13 +5472,13 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 47c.1: Publish episode autocomplete uses podcast episode suggestions');
+    console.log('\nTest 47c.1: Publish episode autocomplete omits next episode and uses podcast episode suggestions');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
-        let focusedValue = null;
+        let passedArgs = null;
         let response = null;
-        bot.getPodcastEpisodeAutocompleteChoices = (value) => {
-            focusedValue = value;
+        bot.getPodcastEpisodeAutocompleteChoices = (...args) => {
+            passedArgs = args;
             return [{ name: 'Latest produced: Episode 6', value: 6 }];
         };
 
@@ -5492,11 +5492,14 @@ async function runTests() {
             }
         });
 
-        if (focusedValue !== '6' || response?.[0]?.value !== 6) {
-            throw new Error(`Publish autocomplete did not use podcast episode suggestions: ${JSON.stringify({ focusedValue, response })}`);
+        if (passedArgs?.[1] !== false) {
+            throw new Error(`Publish autocomplete did not suppress next episode: ${JSON.stringify(passedArgs)}`);
+        }
+        if (passedArgs?.[0] !== '6' || response?.[0]?.value !== 6) {
+            throw new Error(`Publish autocomplete did not use podcast episode suggestions: ${JSON.stringify({ passedArgs, response })}`);
         }
 
-        console.log('  Publish episode autocomplete uses the same episode-state suggestions as production');
+        console.log('  Publish episode autocomplete omits next episode and uses production episode suggestions');
         passed++;
     } catch (error) {
         console.log(`  Publish episode autocomplete failed: ${error.message}`);
@@ -5618,6 +5621,118 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Publish command version test failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 47c.4: Production command defaults to next episode when episode is omitted');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        let capturedArgs = null;
+        let reply = null;
+
+        bot.getProductionEpisodeState = () => ({ next: 42, latestProduced: 41, latestPublished: 40 });
+        bot.runProductionProcess = async (args) => {
+            capturedArgs = args;
+            return { stdout: JSON.stringify({ episode: '42', version: 'v001' }), stderr: '' };
+        };
+        bot.extractLastJson = AlphaClawdVoiceBot.prototype.extractLastJson;
+
+        const interaction = {
+            options: {
+                getInteger: (name) => name === 'episode' ? null : null,
+                getString: (name) => name === 'recording' ? 'latest' : null,
+                getBoolean: () => null
+            },
+            deferReply: async () => {},
+            editReply: async (options) => {
+                reply = options;
+            }
+        };
+
+        await bot.handleProductionCommand(interaction);
+
+        const episodeIndex = capturedArgs.indexOf('--episode');
+        if (episodeIndex === -1 || capturedArgs[episodeIndex + 1] !== '42') {
+            throw new Error(`Production did not default to next episode: ${JSON.stringify(capturedArgs)}`);
+        }
+
+        console.log('  Production command defaults to next episode when omitted');
+        passed++;
+    } catch (error) {
+        console.log(`  Production default episode test failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 47c.5: Publish command defaults to latest produced episode when episode is omitted');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        let capturedArgs = null;
+        let reply = null;
+
+        bot.getProductionEpisodeState = () => ({ next: 43, latestProduced: 42, latestPublished: 41 });
+        bot.runProductionProcess = async (args) => {
+            capturedArgs = args;
+            return { stdout: JSON.stringify({ episode: '42', title: 'Test' }), stderr: '' };
+        };
+        bot.extractLastJson = AlphaClawdVoiceBot.prototype.extractLastJson;
+
+        const interaction = {
+            options: {
+                getInteger: (name) => name === 'episode' ? null : null,
+                getString: () => null,
+                getBoolean: () => null
+            },
+            deferReply: async () => {},
+            editReply: async (options) => {
+                reply = options;
+            }
+        };
+
+        await bot.handlePublishCommand(interaction);
+
+        const episodeIndex = capturedArgs.indexOf('--episode');
+        if (episodeIndex === -1 || capturedArgs[episodeIndex + 1] !== '42') {
+            throw new Error(`Publish did not default to latest produced: ${JSON.stringify(capturedArgs)}`);
+        }
+
+        console.log('  Publish command defaults to latest produced episode when omitted');
+        passed++;
+    } catch (error) {
+        console.log(`  Publish default episode test failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 47c.6: Publish command errors when no episode provided and no produced episodes exist');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+
+        bot.getProductionEpisodeState = () => ({ next: 1, latestProduced: null, latestPublished: null });
+
+        let reply = null;
+        const interaction = {
+            options: {
+                getInteger: (name) => name === 'episode' ? null : null,
+                getString: () => null,
+                getBoolean: () => null
+            },
+            reply: async (options) => {
+                reply = options;
+            },
+            deferReply: async () => {
+                throw new Error('deferReply should not be called when no episodes exist');
+            }
+        };
+
+        await bot.handlePublishCommand(interaction);
+
+        if (!reply?.content?.includes('No produced episodes found')) {
+            throw new Error(`Expected error message for missing produced episodes: ${JSON.stringify(reply)}`);
+        }
+
+        console.log('  Publish command replies with helpful error when no produced episodes exist');
+        passed++;
+    } catch (error) {
+        console.log(`  Publish no-produced-episodes test failed: ${error.message}`);
         failed++;
     }
 

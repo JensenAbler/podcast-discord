@@ -1223,8 +1223,8 @@ class AlphaClawdVoiceBot {
                 .addIntegerOption(option =>
                     option
                         .setName('episode')
-                        .setDescription('Episode number to assign')
-                        .setRequired(true)
+                        .setDescription('Episode number to assign (defaults to next episode)')
+                        .setRequired(false)
                         .setMinValue(1)
                         .setAutocomplete(true))
                 .addStringOption(option =>
@@ -1245,8 +1245,8 @@ class AlphaClawdVoiceBot {
                 .addIntegerOption(option =>
                     option
                         .setName('episode')
-                        .setDescription('Episode number to publish')
-                        .setRequired(true)
+                        .setDescription('Episode number to publish (defaults to latest produced)')
+                        .setRequired(false)
                         .setMinValue(1)
                         .setAutocomplete(true))
                 .addStringOption(option =>
@@ -1341,7 +1341,8 @@ class AlphaClawdVoiceBot {
 
         try {
             if (focused.name === 'episode') {
-                await interaction.respond(this.getPodcastEpisodeAutocompleteChoices(focused.value));
+                const includeNext = interaction.commandName === 'podcast-production';
+                await interaction.respond(this.getPodcastEpisodeAutocompleteChoices(focused.value, includeNext));
                 return;
             }
 
@@ -1380,7 +1381,7 @@ class AlphaClawdVoiceBot {
     /**
      * Return episode-number suggestions for podcast production/publish commands.
      */
-    getPodcastEpisodeAutocompleteChoices(focusedValue = '') {
+    getPodcastEpisodeAutocompleteChoices(focusedValue = '', includeNext = true) {
         const state = this.getProductionEpisodeState();
         const suggestions = [];
         const seen = new Set();
@@ -1397,9 +1398,13 @@ class AlphaClawdVoiceBot {
             state.latestProduced === state.latestPublished
         ) {
             addChoice(`Latest published: Episode ${state.latestPublished}`, state.latestPublished);
-            addChoice(`Next episode: Episode ${state.next}`, state.next);
+            if (includeNext) {
+                addChoice(`Next episode: Episode ${state.next}`, state.next);
+            }
         } else {
-            addChoice(`Next episode: Episode ${state.next}`, state.next);
+            if (includeNext) {
+                addChoice(`Next episode: Episode ${state.next}`, state.next);
+            }
             addChoice(`Latest produced: Episode ${state.latestProduced}`, state.latestProduced);
             addChoice(`Latest published: Episode ${state.latestPublished}`, state.latestPublished);
         }
@@ -1657,7 +1662,10 @@ class AlphaClawdVoiceBot {
      * Handle /podcast-production command
      */
     async handleProductionCommand(interaction) {
-        const episode = interaction.options.getInteger('episode');
+        let episode = interaction.options.getInteger('episode');
+        if (!episode) {
+            episode = this.getProductionEpisodeState().next;
+        }
         const recording = interaction.options.getString('recording') || 'latest';
         const creativeDirection = (interaction.options.getString('intro-outro-creative-direction') || '').trim();
 
@@ -1755,7 +1763,14 @@ class AlphaClawdVoiceBot {
      * Handle /podcast-publish command
      */
     async handlePublishCommand(interaction) {
-        const episode = interaction.options.getInteger('episode');
+        let episode = interaction.options.getInteger('episode');
+        if (!episode) {
+            episode = this.getProductionEpisodeState().latestProduced;
+            if (!episode) {
+                await interaction.reply({ content: 'No produced episodes found. Run `/podcast-production` first.', ephemeral: true });
+                return;
+            }
+        }
         const version = interaction.options.getString('version');
         const title = interaction.options.getString('title');
         const description = interaction.options.getString('description');
