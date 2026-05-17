@@ -1428,12 +1428,17 @@ class AlphaClawdVoiceBot {
                         const stats = fs.statSync(mp3Path);
                         const fileSizeMB = stats.size / (1024 * 1024);
                         const DISCORD_LIMIT_MB = 25;
+                        const downloadBase = process.env.PODCAST_DOWNLOAD_BASE_URL || 'https://clawcast.jensenabler.com/episodes';
+                        const fileName = path.basename(mp3Path);
+                        // Prefer the episodesCopy filename (episode-05.mp3) for clean URLs
+                        const downloadName = data.episodesCopy ? path.basename(data.episodesCopy) : fileName;
+                        const downloadUrl = `${downloadBase}/${downloadName}`;
                         if (fileSizeMB <= DISCORD_LIMIT_MB) {
-                            const fileName = path.basename(mp3Path);
                             const attachment = new AttachmentBuilder(mp3Path, { name: fileName });
                             replyOptions.files = [attachment];
                         } else {
-                            replyOptions.content += `\n\n⚠️ File is **${fileSizeMB.toFixed(1)} MB** — too large for Discord attachment (limit: ${DISCORD_LIMIT_MB} MB). Download from server:` +
+                            replyOptions.content += `\n\n⚠️ File is **${fileSizeMB.toFixed(1)} MB** — too large for Discord attachment (limit: ${DISCORD_LIMIT_MB} MB).` +
+                                `\n🔗 [Download](${downloadUrl}) or use \`scp\`:` +
                                 `\n\`\`\`\n${mp3Path}\n\`\`\``;
                         }
                     }
