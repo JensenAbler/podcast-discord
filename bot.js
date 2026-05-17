@@ -68,7 +68,7 @@ if (fs.existsSync(envPath)) {
     });
 }
 
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, AttachmentBuilder } = require('discord.js');
 const { VoiceManager } = require('./voice-manager');
 const { VoiceProvider } = require('./voice-provider');
 const { GatewayBridge } = require('./gateway-bridge');
@@ -1393,9 +1393,24 @@ class AlphaClawdVoiceBot {
                 summary = `Episode ${episode} production completed.`;
             }
 
-            await interaction.editReply({
-                content: `✅ **Podcast Production Complete**\n${summary}\n\n\`\`\`\n${result.stdout.slice(-1500)}\n\`\`\``
-            });
+            const replyOptions = {
+                content: `✅ **Podcast Production Complete**\n${summary}`
+            };
+
+            if (lastJson) {
+                try {
+                    const data = JSON.parse(lastJson);
+                    const mp3Path = data.finalMp3;
+                    if (mp3Path && fs.existsSync(mp3Path)) {
+                        const fileName = path.basename(mp3Path);
+                        const attachment = new AttachmentBuilder(mp3Path, { name: fileName });
+                        replyOptions.files = [attachment];
+                    }
+                } catch (_e) {
+                    /* ignore attachment errors */ }
+            }
+
+            await interaction.editReply(replyOptions);
         } catch (error) {
             console.error('[Bot] Production failed:', error);
             await interaction.editReply({
