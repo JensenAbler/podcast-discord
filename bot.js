@@ -1661,6 +1661,15 @@ class AlphaClawdVoiceBot {
     /**
      * Handle /podcast-production command
      */
+    formatShellCommand(args) {
+        return args.map(arg => {
+            if (/[\s"'\\|&;<>$`]/.test(arg)) {
+                return "'" + arg.replace(/'/g, "'\"'\"'") + "'";
+            }
+            return arg;
+        }).join(' ');
+    }
+
     async handleProductionCommand(interaction) {
         let episode = interaction.options.getInteger('episode');
         if (!episode) {
@@ -1682,6 +1691,7 @@ class AlphaClawdVoiceBot {
             args.push('--regenerate-copy', '--intro-outro-creative-direction', creativeDirection);
         }
 
+        const commandBlock = `\n\`\`\`bash\n${this.formatShellCommand(args)}\n\`\`\``;
         console.log(`[Bot] Starting podcast production: episode=${episode} recording=${recording} creativeDirection=${creativeDirection ? 'yes' : 'no'}`);
 
         try {
@@ -1702,7 +1712,7 @@ class AlphaClawdVoiceBot {
             }
 
             const replyOptions = {
-                content: `✅ **Podcast Production Complete**\n${summary}`
+                content: `✅ **Podcast Production Complete**\n${summary}${commandBlock}`
             };
 
             if (data && data.finalMp3) {
@@ -1754,7 +1764,7 @@ class AlphaClawdVoiceBot {
         } catch (error) {
             console.error('[Bot] Production failed:', error);
             await interaction.editReply({
-                content: `❌ **Production failed for episode ${episode}**\n\`\`\`\n${error.message}\n${error.stderr || ''}\n\`\`\``
+                content: `❌ **Production failed for episode ${episode}**${commandBlock}\n\`\`\`\n${error.message}\n${error.stderr || ''}\n\`\`\``
             });
         }
     }
