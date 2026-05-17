@@ -1661,13 +1661,14 @@ class AlphaClawdVoiceBot {
     /**
      * Handle /podcast-production command
      */
-    formatShellCommand(args) {
-        return args.map(arg => {
-            if (/[\s"'\\|&;<>$`]/.test(arg)) {
-                return "'" + arg.replace(/'/g, "'\"'\"'") + "'";
-            }
-            return arg;
-        }).join(' ');
+    formatDiscordCommand(name, options) {
+        const parts = [`/${name}`];
+        for (const [key, value] of Object.entries(options)) {
+            if (value === undefined || value === null || value === '') continue;
+            const formatted = String(value).includes(' ') ? `"${value}"` : String(value);
+            parts.push(`${key}:${formatted}`);
+        }
+        return parts.join(' ');
     }
 
     async handleProductionCommand(interaction) {
@@ -1691,7 +1692,12 @@ class AlphaClawdVoiceBot {
             args.push('--regenerate-copy', '--intro-outro-creative-direction', creativeDirection);
         }
 
-        const commandBlock = `\n\`\`\`bash\n${this.formatShellCommand(args)}\n\`\`\``;
+        const discordCommand = this.formatDiscordCommand('podcast-production', {
+            episode,
+            recording: recording !== 'latest' ? recording : undefined,
+            'intro-outro-creative-direction': creativeDirection || undefined
+        });
+        const commandBlock = `\n\`\`\`\n${discordCommand}\n\`\`\``;
         console.log(`[Bot] Starting podcast production: episode=${episode} recording=${recording} creativeDirection=${creativeDirection ? 'yes' : 'no'}`);
 
         try {
