@@ -28,6 +28,11 @@ const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { GatewayWsClient, verifyDeviceSignature } = require('./gateway-ws-client');
 const { EpisodePostProcessor } = require('./post-processor');
 const { resolveFrontierConfig } = require('./introspection-frontier');
+const {
+    getContractRecordingDir,
+    getRecordingDir,
+    isLegacyEpisodesRecordingDir
+} = require('./paths');
 const { PassThrough } = require('stream');
 const fs = require('fs');
 const os = require('os');
@@ -249,6 +254,57 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Gateway WebSocket scope test failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 4b: Recording directory honors shared content contract');
+    try {
+        const previousContentRoot = process.env.CLAWCAST_CONTENT_ROOT;
+        const previousPodcastRoot = process.env.PODCAST_ROOT;
+        const previousRecordingDir = process.env.RECORDING_DIR;
+        const previousAllowLegacy = process.env.ALLOW_LEGACY_RECORDING_DIR;
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'clawcast-content-contract-'));
+
+        try {
+            delete process.env.PODCAST_ROOT;
+            delete process.env.ALLOW_LEGACY_RECORDING_DIR;
+            process.env.CLAWCAST_CONTENT_ROOT = tempRoot;
+            delete process.env.RECORDING_DIR;
+
+            const contractDir = path.join(tempRoot, 'recordings');
+            if (getContractRecordingDir() !== contractDir || getRecordingDir() !== contractDir) {
+                throw new Error(`Default recording dir did not use content/recordings: ${getRecordingDir()}`);
+            }
+
+            const legacyDir = path.join(tempRoot, 'episodes', 'recordings');
+            process.env.RECORDING_DIR = legacyDir;
+            if (!isLegacyEpisodesRecordingDir(legacyDir)) {
+                throw new Error('Legacy episodes/recordings path was not detected');
+            }
+            if (getRecordingDir() !== contractDir) {
+                throw new Error(`Legacy recording dir was not corrected: ${getRecordingDir()}`);
+            }
+
+            process.env.ALLOW_LEGACY_RECORDING_DIR = 'true';
+            if (getRecordingDir() !== legacyDir) {
+                throw new Error('Explicit legacy opt-in was not honored');
+            }
+        } finally {
+            if (previousContentRoot === undefined) delete process.env.CLAWCAST_CONTENT_ROOT;
+            else process.env.CLAWCAST_CONTENT_ROOT = previousContentRoot;
+            if (previousPodcastRoot === undefined) delete process.env.PODCAST_ROOT;
+            else process.env.PODCAST_ROOT = previousPodcastRoot;
+            if (previousRecordingDir === undefined) delete process.env.RECORDING_DIR;
+            else process.env.RECORDING_DIR = previousRecordingDir;
+            if (previousAllowLegacy === undefined) delete process.env.ALLOW_LEGACY_RECORDING_DIR;
+            else process.env.ALLOW_LEGACY_RECORDING_DIR = previousAllowLegacy;
+            fs.rmSync(tempRoot, { recursive: true, force: true });
+        }
+
+        console.log('  Recording dir defaults to content/recordings and corrects the legacy episodes path');
+        passed++;
+    } catch (error) {
+        console.log(`  Recording contract path failed: ${error.message}`);
         failed++;
     }
 
@@ -628,11 +684,26 @@ async function runTests() {
             PODCAST_GENERATOR_API_KEY: process.env.PODCAST_GENERATOR_API_KEY,
             PODCAST_GENERATOR_BASE_URL: process.env.PODCAST_GENERATOR_BASE_URL,
             PODCAST_GENERATOR_MODEL: process.env.PODCAST_GENERATOR_MODEL,
+            OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+            OPENAI_API_KEY_GROQ_FREE: process.env.OPENAI_API_KEY_GROQ_FREE,
+            OPENAI_API_KEY_GROQ_PAID: process.env.OPENAI_API_KEY_GROQ_PAID,
+            OPENAI_API_KEY_GROQ_PRIMARY: process.env.OPENAI_API_KEY_GROQ_PRIMARY,
+            OPENAI_API_KEY_GROQ_STANDBY: process.env.OPENAI_API_KEY_GROQ_STANDBY,
             ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
             OPENAI_API_KEY: process.env.OPENAI_API_KEY
         };
 
         try {
+            delete process.env.PODCAST_GENERATOR_API_KEY;
+            delete process.env.PODCAST_GENERATOR_BASE_URL;
+            delete process.env.PODCAST_GENERATOR_MODEL;
+            delete process.env.OPENAI_BASE_URL;
+            delete process.env.OPENAI_API_KEY_GROQ_FREE;
+            delete process.env.OPENAI_API_KEY_GROQ_PAID;
+            delete process.env.OPENAI_API_KEY_GROQ_PRIMARY;
+            delete process.env.OPENAI_API_KEY_GROQ_STANDBY;
+            delete process.env.ANTHROPIC_API_KEY;
+
             process.env.PODCAST_GENERATOR_API_KEY_ACTIVE = 'groq-primary';
             delete process.env.PODCAST_GENERATOR_KEY_ROUTING;
             delete process.env.PODCAST_GENERATOR_API_KEY_GROQ_FREE;
@@ -2125,7 +2196,14 @@ async function runTests() {
     }
 
     console.log('\nTest 6: Conversation Buffer ASR-aware state machine');
+    const savedConversationBufferEnv = {
+        CONVERSATION_BUFFER_GRACE_PERIOD_MS: process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS,
+        CONVERSATION_BUFFER_DYNAMIC_GRACE: process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE
+    };
     try {
+        delete process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS;
+        delete process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE;
+
         const dynamicGraceProbe = new ConversationBuffer();
         const graceCases = [
             [100, 50],
@@ -2350,6 +2428,14 @@ async function runTests() {
     } catch (error) {
         console.log(`  Conversation buffer failed: ${error.message}`);
         failed++;
+    } finally {
+        for (const [key, value] of Object.entries(savedConversationBufferEnv)) {
+            if (typeof value === 'undefined') {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
+        }
     }
 
     console.log('\nTest 7: Idle decision respects in-flight direct responses');

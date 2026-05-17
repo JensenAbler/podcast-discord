@@ -1,4 +1,4 @@
----
+﻿---
 name: podcast-discord
 description: Participate in live Alpha-Clawd Discord voice podcast sessions. During an active session, text replies are automatically spoken in the voice channel.
 ---
@@ -36,4 +36,4 @@ Mode directives may be included in spoken responses when useful:
 
 ## Recordings
 
-Sessions are saved under `$CLAWCAST_CONTENT_ROOT/recordings/episode-<timestamp>/` with mixed audio and transcript metadata. Default content root is `../clawcast-network/content`. Recording consent, cron pause/resume, filler clips, and bot playback are handled by the Discord bot.
+Sessions are saved under `$CLAWCAST_CONTENT_ROOT/recordings/episode-<timestamp>/` with mixed audio and transcript metadata. Default content root is `../clawcast-network/content`. The old `$CLAWCAST_CONTENT_ROOT/episodes/recordings` location is treated as a legacy path and corrected unless `ALLOW_LEGACY_RECORDING_DIR=true`. Recording consent, cron pause/resume, filler clips, and bot playback are handled by the Discord bot.
