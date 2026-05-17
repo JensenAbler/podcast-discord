@@ -1174,11 +1174,14 @@ class AlphaClawdVoiceBot {
         });
 
         this.client.on('interactionCreate', async (interaction) => {
-            console.log(`[Bot] Interaction received: ${interaction.type}, isCommand: ${interaction.isChatInputCommand()}`);
-            if (!interaction.isChatInputCommand()) return;
-            console.log(`[Bot] Handling command: ${interaction.commandName}`);
+            console.log(`[Bot] Interaction received: ${interaction.type}, isCommand: ${interaction.isChatInputCommand()}, isAutocomplete: ${interaction.isAutocomplete()}`);
             try {
-                await this.handleCommand(interaction);
+                if (interaction.isAutocomplete()) {
+                    await this.handleAutocomplete(interaction);
+                } else if (interaction.isChatInputCommand()) {
+                    console.log(`[Bot] Handling command: ${interaction.commandName}`);
+                    await this.handleCommand(interaction);
+                }
             } catch (error) {
                 console.error(`[Bot] Error in interaction handler:`, error);
                 if (!interaction.replied && !interaction.deferred) {
@@ -1213,43 +1216,30 @@ class AlphaClawdVoiceBot {
                 .setName('podcast-leave')
                 .setDescription('Stop recording and leave voice channel'),
             new SlashCommandBuilder()
-                .setName('podcast-status')
-                .setDescription('Check podcast status'),
-            new SlashCommandBuilder()
-                .setName('podcast-reset')
-                .setDescription('Reset bot state (emergency cleanup)'),
-            new SlashCommandBuilder()
-                .setName('podcast-debug')
-                .setDescription('Toggle debug modes')
-                .addBooleanOption(option =>
+                .setName('podcast-production')
+                .setDescription('Produce a publish-ready episode from a recording')
+                .addIntegerOption(option =>
                     option
-                        .setName('inject')
-                        .setDescription('Inject individual utterances for Gateway UI')
-                        .setRequired(false)
-                )
-                .addBooleanOption(option =>
-                    option
-                        .setName('flush')
-                        .setDescription('Immediate flush mode (bypass timing)')
-                        .setRequired(false)
-                ),
-            new SlashCommandBuilder()
-                .setName('podcast-tts')
-                .setDescription('Switch voice mode (TTS + STT)')
+                        .setName('episode')
+                        .setDescription('Episode number to assign')
+                        .setRequired(true)
+                        .setMinValue(1))
                 .addStringOption(option =>
                     option
-                        .setName('mode')
-                        .setDescription('Voice mode configuration')
-                        .setRequired(true)
-                        .addChoices(
-                            { name: 'Fish Audio (TTS + ASR)', value: 'fish' },
-                            { name: 'Fish Audio + OpenAI Whisper STT', value: 'fish-whisper' },
-                            { name: 'Premium (ElevenLabs TTS + STT)', value: 'elevenlabs' },
-                            { name: 'Free (Edge TTS + OpenAI Whisper STT)', value: 'free' },
-                            { name: 'Hybrid (ElevenLabs TTS + OpenAI Whisper STT)', value: 'hybrid' },
-                            { name: 'Local (Edge TTS + whisper.cpp STT)', value: 'local' }
-                        )
-                )
+                        .setName('recording')
+                        .setDescription('Recording to produce (defaults to latest)')
+                        .setRequired(false)
+                        .setAutocomplete(true))
+                .addBooleanOption(option =>
+                    option
+                        .setName('regenerate-copy')
+                        .setDescription('Regenerate intro/outro copy and metadata')
+                        .setRequired(false))
+                .addBooleanOption(option =>
+                    option
+                        .setName('regenerate-audio')
+                        .setDescription('Regenerate all rendered audio')
+                        .setRequired(false))
         ];
 
         const rest = new REST({ version: '10' }).setToken(this.token);
@@ -1291,76 +1281,9 @@ class AlphaClawdVoiceBot {
                 case 'podcast-leave':
                     await this.handleLeaveCommand(interaction);
                     break;
-                case 'podcast-status':
-                    await this.handleStatusCommand(interaction);
+                case 'podcast-production':
+                    await this.handleProductionCommand(interaction);
                     break;
-                case 'podcast-reset':
-                    await this.handleResetCommand(interaction);
-                    break;
-                case 'podcast-debug': {
-                    const inject = interaction.options.getBoolean('inject');
-                    const flush = interaction.options.getBoolean('flush');
-                    
-                    if (inject !== null) {
-                        this.debugInject = inject;
-                    }
-                    if (flush !== null) {
-                        this.conversationBuffer.setDebug(flush);
-                    }
-                    
-                    await interaction.reply({
-                        content: `Debug: inject=${this.debugInject}, flush=${this.conversationBuffer.debugMode}`,
-                        ephemeral: true
-                    });
-                    break;
-                }
-                case 'podcast-tts': {
-                    const mode = interaction.options.getString('mode');
-                    const oldMode = this.voiceProvider.getMode();
-                    
-                    if (mode === oldMode) {
-                        await interaction.reply({
-                            content: `Voice mode is already set to **${mode}**.`,
-                            ephemeral: true
-                        });
-                        break;
-                    }
-                    
-                    // Defer reply to give time for mode switch
-                    await interaction.deferReply({ ephemeral: true });
-                    
-                    try {
-                        this.voiceProvider.switchMode(mode);
-                        this.voiceId = this.voiceProvider.voiceId;
-                        
-                        const info = this.voiceProvider.getInfo();
-                        const modeDescription = {
-                            'fish': 'Fish Audio (TTS + ASR)',
-                            'fish-whisper': 'Fish Audio + OpenAI Whisper STT',
-                            'elevenlabs': 'Premium (ElevenLabs TTS + STT)',
-                            'free': 'Free (Edge TTS + OpenAI Whisper STT)',
-                            'hybrid': 'Hybrid (ElevenLabs TTS + OpenAI Whisper STT)',
-                            'local': 'Local (Edge TTS + whisper.cpp STT)'
-                        };
-                        
-                        await interaction.editReply({
-                            content: `🎙️ Voice mode switched from **${oldMode}** to **${mode}**\n` +
-                                     `**Configuration:** ${modeDescription[mode]}\n` +
-                                     `TTS: ${info.tts.provider} | STT: ${info.stt.provider}`
-                        });
-                        console.log(`[Bot] Voice mode switched from ${oldMode} to ${mode}`);
-                    } catch (error) {
-                        console.error(`[Bot] Error switching voice mode:`, error);
-                        try {
-                            await interaction.editReply({
-                                content: `❌ Error switching voice mode: ${error.message}`
-                            });
-                        } catch (replyError) {
-                            console.error(`[Bot] Failed to send error reply:`, replyError);
-                        }
-                    }
-                    break;
-                }
             }
         } catch (error) {
             console.error(`[Bot] Error handling command ${commandName}:`, error);
@@ -1372,6 +1295,158 @@ class AlphaClawdVoiceBot {
                 });
             }
         }
+    }
+
+    /**
+     * Handle autocomplete interactions for podcast-production recording option
+     */
+    async handleAutocomplete(interaction) {
+        if (interaction.commandName !== 'podcast-production') return;
+        if (interaction.options.getFocused(true).name !== 'recording') return;
+
+        try {
+            const recordings = this.listAvailableRecordings();
+            const choices = recordings.slice(0, 25).map(r => ({
+                name: r.label,
+                value: r.value
+            }));
+            await interaction.respond(choices);
+        } catch (error) {
+            console.error('[Bot] Autocomplete failed:', error);
+            await interaction.respond([]);
+        }
+    }
+
+    /**
+     * List available recordings from the content root recordings directory
+     */
+    listAvailableRecordings() {
+        const recordingDir = getRecordingDir();
+        if (!fs.existsSync(recordingDir)) {
+            return [{ label: 'latest (no recordings yet)', value: 'latest' }];
+        }
+
+        const entries = fs.readdirSync(recordingDir, { withFileTypes: true })
+            .filter(d => d.isDirectory() && d.name.startsWith('episode-'))
+            .map(d => {
+                const dirPath = path.join(recordingDir, d.name);
+                let meta = {};
+                const metaPath = path.join(dirPath, 'episode-metadata.json');
+                const completePath = path.join(dirPath, 'episode-complete.json');
+                try {
+                    meta = JSON.parse(fs.readFileSync(fs.existsSync(metaPath) ? metaPath : completePath, 'utf8'));
+                } catch (_e) {
+                    /* ignore */ }
+
+                const started = meta.startedAt ? new Date(meta.startedAt).toLocaleString('en-US', {
+                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                }) : d.name;
+                const duration = meta.duration ? `${Math.round(meta.duration)}s` : '';
+                const label = duration ? `${started} · ${duration}` : started;
+                return { label, value: d.name, startedAt: meta.startedAt || 0 };
+            })
+            .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+
+        const choices = entries.map(e => ({ label: e.label, value: e.value }));
+        choices.unshift({ label: 'latest (most recent)', value: 'latest' });
+        return choices;
+    }
+
+    /**
+     * Handle /podcast-production command
+     */
+    async handleProductionCommand(interaction) {
+        const episode = interaction.options.getInteger('episode');
+        const recording = interaction.options.getString('recording') || 'latest';
+        const regenerateCopy = interaction.options.getBoolean('regenerate-copy') || false;
+        const regenerateAudio = interaction.options.getBoolean('regenerate-audio') || false;
+
+        await interaction.deferReply({ ephemeral: false });
+
+        const args = [
+            '/opt/podcast-production/tools/podcast-tool.py',
+            'produce-recording',
+            '--episode', String(episode),
+            '--recording', recording,
+            '--resume'
+        ];
+        if (regenerateCopy) args.push('--regenerate-copy');
+        if (regenerateAudio) args.push('--regenerate-audio');
+
+        console.log(`[Bot] Starting podcast production: episode=${episode} recording=${recording}`);
+
+        try {
+            const result = await this.runProductionProcess(args);
+            const outputLines = result.stdout.split('\n').filter(l => l.trim());
+            const lastJson = outputLines.reverse().find(l => l.trim().startsWith('{'));
+            let summary = '';
+            if (lastJson) {
+                try {
+                    const data = JSON.parse(lastJson);
+                    summary = `**Episode ${data.episode || episode}** · version ${data.version || '?'}`;
+                    if (data.finalMp3) summary += `\n📁 ${data.finalMp3}`;
+                    if (data.durationSeconds) summary += `\n⏱️ ${Math.round(data.durationSeconds)}s`;
+                } catch (_e) {
+                    summary = `Episode ${episode} produced.`;
+                }
+            } else {
+                summary = `Episode ${episode} production completed.`;
+            }
+
+            await interaction.editReply({
+                content: `✅ **Podcast Production Complete**\n${summary}\n\n\`\`\`\n${result.stdout.slice(-1500)}\n\`\`\``
+            });
+        } catch (error) {
+            console.error('[Bot] Production failed:', error);
+            await interaction.editReply({
+                content: `❌ **Production failed for episode ${episode}**\n\`\`\`\n${error.message}\n${error.stderr || ''}\n\`\`\``
+            });
+        }
+    }
+
+    /**
+     * Spawn the podcast-production tool and capture output
+     */
+    runProductionProcess(args) {
+        return new Promise((resolve, reject) => {
+            const proc = spawn('python3', args, {
+                cwd: '/opt/podcast-production',
+                env: { ...process.env },
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+
+            let stdout = '';
+            let stderr = '';
+
+            proc.stdout.on('data', (data) => {
+                const chunk = data.toString('utf8');
+                stdout += chunk;
+                console.log('[Production]', chunk.trimEnd());
+            });
+
+            proc.stderr.on('data', (data) => {
+                const chunk = data.toString('utf8');
+                stderr += chunk;
+                console.error('[Production]', chunk.trimEnd());
+            });
+
+            proc.on('close', (code) => {
+                if (code === 0) {
+                    resolve({ stdout, stderr });
+                } else {
+                    const err = new Error(`Production process exited with code ${code}`);
+                    err.stdout = stdout;
+                    err.stderr = stderr;
+                    reject(err);
+                }
+            });
+
+            proc.on('error', (error) => {
+                error.stdout = stdout;
+                error.stderr = stderr;
+                reject(error);
+            });
+        });
     }
 
     /**
