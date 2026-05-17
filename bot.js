@@ -74,7 +74,7 @@ const { VoiceProvider } = require('./voice-provider');
 const { GatewayBridge } = require('./gateway-bridge');
 const { GatewayWsClient } = require('./gateway-ws-client');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
-const { getRecordingDir } = require('./paths');
+const { getPodcastRoot, getRecordingDir } = require('./paths');
 const { PodcastGenerator } = require('./podcast-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
 const { ShowRunnerManager } = require('./showrunner-manager');
@@ -210,7 +210,9 @@ class AlphaClawdVoiceBot {
             model: process.env.PODCAST_GENERATOR_MODEL,
             timeout: process.env.PODCAST_GENERATOR_TIMEOUT_MS,
             maxCompletionTokens: process.env.PODCAST_GENERATOR_MAX_TOKENS,
-            maxHistoryTurns: process.env.PODCAST_GENERATOR_HISTORY_TURNS
+            maxHistoryTurns: process.env.PODCAST_GENERATOR_HISTORY_TURNS,
+            voiceMode: this.voiceProvider.mode,
+            fishAudioModel: this.voiceProvider.tts?.model || process.env.FISH_AUDIO_MODEL || 's2-pro'
         };
 
         if (options.generatorApiKey) {
@@ -1223,22 +1225,52 @@ class AlphaClawdVoiceBot {
                         .setName('episode')
                         .setDescription('Episode number to assign')
                         .setRequired(true)
-                        .setMinValue(1))
+                        .setMinValue(1)
+                        .setAutocomplete(true))
                 .addStringOption(option =>
                     option
                         .setName('recording')
                         .setDescription('Start typing to see available recordings, or leave blank for latest')
                         .setRequired(false)
                         .setAutocomplete(true))
+                .addStringOption(option =>
+                    option
+                        .setName('intro-outro-creative-direction')
+                        .setDescription('Creative direction for regenerating AI intro/outro copy')
+                        .setMaxLength(1000)
+                        .setRequired(false)),
+            new SlashCommandBuilder()
+                .setName('podcast-publish')
+                .setDescription('Publish a produced episode to the podcast feed')
+                .addIntegerOption(option =>
+                    option
+                        .setName('episode')
+                        .setDescription('Episode number to publish')
+                        .setRequired(true)
+                        .setMinValue(1)
+                        .setAutocomplete(true))
+                .addStringOption(option =>
+                    option
+                        .setName('version')
+                        .setDescription('Produced version to publish (defaults to latest)')
+                        .setRequired(false)
+                        .setAutocomplete(true))
+                .addStringOption(option =>
+                    option
+                        .setName('title')
+                        .setDescription('Override the feed title')
+                        .setRequired(false)
+                        .setMaxLength(160))
+                .addStringOption(option =>
+                    option
+                        .setName('description')
+                        .setDescription('Override the feed description')
+                        .setRequired(false)
+                        .setMaxLength(1500))
                 .addBooleanOption(option =>
                     option
-                        .setName('regenerate-intro-outro')
-                        .setDescription('Regenerate AI intro/outro copy')
-                        .setRequired(false))
-                .addBooleanOption(option =>
-                    option
-                        .setName('regenerate-audio')
-                        .setDescription('Regenerate all rendered audio (voices, mixes)')
+                        .setName('dry-run')
+                        .setDescription('Preview the feed update without publishing')
                         .setRequired(false))
         ];
 
@@ -1284,6 +1316,9 @@ class AlphaClawdVoiceBot {
                 case 'podcast-production':
                     await this.handleProductionCommand(interaction);
                     break;
+                case 'podcast-publish':
+                    await this.handlePublishCommand(interaction);
+                    break;
             }
         } catch (error) {
             console.error(`[Bot] Error handling command ${commandName}:`, error);
@@ -1298,23 +1333,205 @@ class AlphaClawdVoiceBot {
     }
 
     /**
-     * Handle autocomplete interactions for podcast-production recording option
+     * Handle autocomplete interactions for podcast production/publish options
      */
     async handleAutocomplete(interaction) {
-        if (interaction.commandName !== 'podcast-production') return;
-        if (interaction.options.getFocused(true).name !== 'recording') return;
+        if (!['podcast-production', 'podcast-publish'].includes(interaction.commandName)) return;
+        const focused = interaction.options.getFocused(true);
 
         try {
-            const recordings = this.listAvailableRecordings();
-            const choices = recordings.slice(0, 25).map(r => ({
-                name: r.label,
-                value: r.value
-            }));
-            await interaction.respond(choices);
+            if (focused.name === 'episode') {
+                await interaction.respond(this.getPodcastEpisodeAutocompleteChoices(focused.value));
+                return;
+            }
+
+            if (interaction.commandName === 'podcast-production' && focused.name === 'recording') {
+                const recordings = this.listAvailableRecordings();
+                const choices = recordings.slice(0, 25).map(r => ({
+                    name: r.label,
+                    value: r.value
+                }));
+                await interaction.respond(choices);
+                return;
+            }
+
+            if (interaction.commandName === 'podcast-publish' && focused.name === 'version') {
+                const episode = interaction.options.getInteger('episode');
+                if (!episode) {
+                    await interaction.respond([{ name: 'Select an episode first', value: '' }]);
+                    return;
+                }
+                const query = String(focused.value ?? '').trim().toLowerCase();
+                const versions = this.listAvailableVersions(episode)
+                    .filter(v => !query || v.value.toLowerCase().includes(query) || v.label.toLowerCase().includes(query))
+                    .slice(0, 25)
+                    .map(v => ({ name: v.label, value: v.value }));
+                await interaction.respond(versions.length ? versions : [{ name: 'No versions found', value: '' }]);
+                return;
+            }
+
+            await interaction.respond([]);
         } catch (error) {
             console.error('[Bot] Autocomplete failed:', error);
             await interaction.respond([]);
         }
+    }
+
+    /**
+     * Return episode-number suggestions for podcast production/publish commands.
+     */
+    getPodcastEpisodeAutocompleteChoices(focusedValue = '') {
+        const state = this.getProductionEpisodeState();
+        const suggestions = [];
+        const seen = new Set();
+
+        const addChoice = (label, value) => {
+            if (!Number.isInteger(value) || value < 1 || seen.has(value)) return;
+            seen.add(value);
+            suggestions.push({ name: label, value });
+        };
+
+        if (
+            Number.isInteger(state.latestProduced) &&
+            Number.isInteger(state.latestPublished) &&
+            state.latestProduced === state.latestPublished
+        ) {
+            addChoice(`Latest published: Episode ${state.latestPublished}`, state.latestPublished);
+            addChoice(`Next episode: Episode ${state.next}`, state.next);
+        } else {
+            addChoice(`Next episode: Episode ${state.next}`, state.next);
+            addChoice(`Latest produced: Episode ${state.latestProduced}`, state.latestProduced);
+            addChoice(`Latest published: Episode ${state.latestPublished}`, state.latestPublished);
+        }
+
+        const query = String(focusedValue ?? '').trim().toLowerCase();
+        return suggestions
+            .filter(choice => !query || String(choice.value).startsWith(query) || choice.name.toLowerCase().includes(query))
+            .slice(0, 25);
+    }
+
+    getProductionEpisodeAutocompleteChoices(focusedValue = '') {
+        return this.getPodcastEpisodeAutocompleteChoices(focusedValue);
+    }
+
+    getProductionEpisodeState() {
+        const latestProduced = this.getLatestProducedEpisodeNumber();
+        const latestPublished = this.getLatestPublishedEpisodeNumber();
+        const latestKnown = Math.max(latestProduced || 0, latestPublished || 0);
+
+        return {
+            latestProduced,
+            latestPublished,
+            next: latestKnown + 1 || 1
+        };
+    }
+
+    getLatestProducedEpisodeNumber() {
+        const root = getPodcastRoot();
+        const numbers = new Set();
+
+        const episodesDir = path.join(root, 'episodes');
+        if (fs.existsSync(episodesDir)) {
+            for (const entry of fs.readdirSync(episodesDir, { withFileTypes: true })) {
+                if (!entry.isFile()) continue;
+                const match = entry.name.match(/^episode-(\d{1,4})\.mp3$/i);
+                if (match) numbers.add(Number.parseInt(match[1], 10));
+            }
+        }
+
+        const productionDir = path.join(root, 'production');
+        if (fs.existsSync(productionDir)) {
+            for (const entry of fs.readdirSync(productionDir, { withFileTypes: true })) {
+                if (!entry.isDirectory()) continue;
+                const match = entry.name.match(/^episode-(\d{1,4})$/i);
+                if (!match) continue;
+
+                const episodeNumber = Number.parseInt(match[1], 10);
+                const episodeDir = path.join(productionDir, entry.name);
+                if (this.productionEpisodeHasFinalMp3(episodeDir, episodeNumber)) {
+                    numbers.add(episodeNumber);
+                }
+            }
+        }
+
+        return this.maxEpisodeNumber(numbers);
+    }
+
+    productionEpisodeHasFinalMp3(episodeDir, episodeNumber) {
+        if (!fs.existsSync(episodeDir)) return false;
+        const padded = String(episodeNumber).padStart(2, '0');
+
+        for (const entry of fs.readdirSync(episodeDir, { withFileTypes: true })) {
+            if (!entry.isDirectory() || !/^v\d+/i.test(entry.name)) continue;
+            const versionDir = path.join(episodeDir, entry.name);
+            const expected = path.join(versionDir, `episode-${padded}-${entry.name}.mp3`);
+            if (fs.existsSync(expected)) return true;
+
+            const hasAnyEpisodeMp3 = fs.readdirSync(versionDir, { withFileTypes: true })
+                .some(file => file.isFile() && /^episode-\d{1,4}-v\d+\.mp3$/i.test(file.name));
+            if (hasAnyEpisodeMp3) return true;
+        }
+
+        return false;
+    }
+
+    getLatestPublishedEpisodeNumber() {
+        const feedPath = path.join(getPodcastRoot(), 'feed.xml');
+        if (!fs.existsSync(feedPath)) return null;
+
+        try {
+            const feedXml = fs.readFileSync(feedPath, 'utf8');
+            const numbers = new Set();
+            for (const match of feedXml.matchAll(/episode-(\d{1,4})\.mp3/gi)) {
+                numbers.add(Number.parseInt(match[1], 10));
+            }
+            return this.maxEpisodeNumber(numbers);
+        } catch (error) {
+            console.error(`[Bot] Failed to read podcast feed for episode autocomplete: ${error.message}`);
+            return null;
+        }
+    }
+
+    maxEpisodeNumber(numbers) {
+        const values = Array.from(numbers || []).filter(n => Number.isInteger(n) && n > 0);
+        return values.length ? Math.max(...values) : null;
+    }
+
+    /**
+     * List available produced versions for an episode.
+     */
+    listAvailableVersions(episodeNumber) {
+        const root = getPodcastRoot();
+        const episodeDir = path.join(root, 'production', `episode-${String(episodeNumber).padStart(2, '0')}`);
+        if (!fs.existsSync(episodeDir)) {
+            return [];
+        }
+
+        const versions = [];
+        for (const entry of fs.readdirSync(episodeDir, { withFileTypes: true })) {
+            if (!entry.isDirectory() || !/^v\d+$/i.test(entry.name)) continue;
+            const versionDir = path.join(episodeDir, entry.name);
+            const padded = String(episodeNumber).padStart(2, '0');
+            const expectedMp3 = path.join(versionDir, `episode-${padded}-${entry.name}.mp3`);
+            const hasMp3 = fs.existsSync(expectedMp3) ||
+                fs.readdirSync(versionDir, { withFileTypes: true })
+                    .some(f => f.isFile() && new RegExp(`^episode-\\d{1,4}-${entry.name}\\.mp3$`, 'i').test(f.name));
+
+            let label = entry.name;
+            if (hasMp3) {
+                label += ' (finalized)';
+            }
+            versions.push({ label, value: entry.name, hasMp3 });
+        }
+
+        // Sort descending by version number
+        versions.sort((a, b) => {
+            const numA = parseInt(a.value.replace(/^v/i, ''), 10);
+            const numB = parseInt(b.value.replace(/^v/i, ''), 10);
+            return numB - numA;
+        });
+
+        return versions;
     }
 
     /**
@@ -1356,25 +1573,87 @@ class AlphaClawdVoiceBot {
      * Extract the last JSON object from multi-line stdout output.
      */
     extractLastJson(stdout) {
-        const lines = stdout.split('\n');
-        let startIndex = -1;
-        for (let i = lines.length - 1; i >= 0; i--) {
-            if (lines[i].trim().startsWith('{')) {
-                startIndex = i;
-                break;
-            }
-        }
-        if (startIndex === -1) return null;
+        if (!stdout) return null;
 
-        for (let endIndex = startIndex; endIndex < lines.length; endIndex++) {
-            const candidate = lines.slice(startIndex, endIndex + 1).join('\n');
-            try {
-                return JSON.parse(candidate);
-            } catch (_e) {
-                // Continue accumulating lines
+        let best = null;
+        let bestEnd = -1;
+        let bestStart = -1;
+
+        for (let start = 0; start < stdout.length; start++) {
+            if (stdout[start] !== '{') continue;
+
+            let depth = 0;
+            let inString = false;
+            let escaped = false;
+
+            for (let end = start; end < stdout.length; end++) {
+                const char = stdout[end];
+
+                if (inString) {
+                    if (escaped) {
+                        escaped = false;
+                    } else if (char === '\\') {
+                        escaped = true;
+                    } else if (char === '"') {
+                        inString = false;
+                    }
+                    continue;
+                }
+
+                if (char === '"') {
+                    inString = true;
+                } else if (char === '{') {
+                    depth++;
+                } else if (char === '}') {
+                    depth--;
+                    if (depth === 0) {
+                        try {
+                            const parsed = JSON.parse(stdout.slice(start, end + 1));
+                            if (end > bestEnd || (end === bestEnd && (bestStart === -1 || start < bestStart))) {
+                                best = parsed;
+                                bestEnd = end;
+                                bestStart = start;
+                            }
+                        } catch (_e) {
+                            // Keep scanning for the last complete JSON object.
+                        }
+                        break;
+                    }
+                }
             }
         }
-        return null;
+
+        return best;
+    }
+
+    getDiscordAttachmentLimitMB() {
+        const configured = Number(
+            process.env.PODCAST_DISCORD_ATTACHMENT_LIMIT_MB ||
+            process.env.DISCORD_ATTACHMENT_LIMIT_MB ||
+            8
+        );
+        return Number.isFinite(configured) && configured > 0 ? configured : 8;
+    }
+
+    buildEpisodeDownloadUrl(data, mp3Path) {
+        const downloadBase = (process.env.PODCAST_DOWNLOAD_BASE_URL || 'https://clawcast.jensenabler.com/episodes').replace(/\/+$/, '');
+        const fileName = path.basename(data?.episodesCopy || mp3Path || '');
+        return fileName ? `${downloadBase}/${fileName}` : null;
+    }
+
+    appendDownloadNotice(content, fileSizeMB, limitMB, downloadUrl, mp3Path, reason = 'too large for Discord attachment') {
+        let next = content + `\n\nFile is **${fileSizeMB.toFixed(1)} MB** (${reason}; limit: ${limitMB} MB).`;
+        if (downloadUrl) {
+            next += `\nDownload: ${downloadUrl}`;
+        }
+        if (mp3Path) {
+            next += `\nPath:\n\`\`\`\n${mp3Path}\n\`\`\``;
+        }
+        return next;
+    }
+
+    isDiscordRequestTooLarge(error) {
+        return error?.code === 40005 || /request entity too large/i.test(error?.message || '');
     }
 
     /**
@@ -1383,8 +1662,7 @@ class AlphaClawdVoiceBot {
     async handleProductionCommand(interaction) {
         const episode = interaction.options.getInteger('episode');
         const recording = interaction.options.getString('recording') || 'latest';
-        const regenerateCopy = interaction.options.getBoolean('regenerate-intro-outro') || false;
-        const regenerateAudio = interaction.options.getBoolean('regenerate-audio') || false;
+        const creativeDirection = (interaction.options.getString('intro-outro-creative-direction') || '').trim();
 
         await interaction.deferReply({ ephemeral: false });
 
@@ -1395,10 +1673,11 @@ class AlphaClawdVoiceBot {
             '--recording', recording,
             '--resume'
         ];
-        if (regenerateCopy) args.push('--regenerate-copy');
-        if (regenerateAudio) args.push('--regenerate-audio');
+        if (creativeDirection) {
+            args.push('--regenerate-copy', '--intro-outro-creative-direction', creativeDirection);
+        }
 
-        console.log(`[Bot] Starting podcast production: episode=${episode} recording=${recording}`);
+        console.log(`[Bot] Starting podcast production: episode=${episode} recording=${recording} creativeDirection=${creativeDirection ? 'yes' : 'no'}`);
 
         try {
             const result = await this.runProductionProcess(args);
@@ -1427,12 +1706,9 @@ class AlphaClawdVoiceBot {
                     if (fs.existsSync(mp3Path)) {
                         const stats = fs.statSync(mp3Path);
                         const fileSizeMB = stats.size / (1024 * 1024);
-                        const DISCORD_LIMIT_MB = 25;
-                        const downloadBase = process.env.PODCAST_DOWNLOAD_BASE_URL || 'https://clawcast.jensenabler.com/episodes';
+                        const DISCORD_LIMIT_MB = this.getDiscordAttachmentLimitMB();
                         const fileName = path.basename(mp3Path);
-                        // Prefer the episodesCopy filename (episode-05.mp3) for clean URLs
-                        const downloadName = data.episodesCopy ? path.basename(data.episodesCopy) : fileName;
-                        const downloadUrl = `${downloadBase}/${downloadName}`;
+                        const downloadUrl = this.buildEpisodeDownloadUrl(data, mp3Path);
                         if (fileSizeMB <= DISCORD_LIMIT_MB) {
                             const attachment = new AttachmentBuilder(mp3Path, { name: fileName });
                             replyOptions.files = [attachment];
@@ -1447,12 +1723,98 @@ class AlphaClawdVoiceBot {
                 }
             }
 
-            await interaction.editReply(replyOptions);
+            try {
+                await interaction.editReply(replyOptions);
+            } catch (replyErr) {
+                if (replyOptions.files?.length && this.isDiscordRequestTooLarge(replyErr)) {
+                    console.warn('[Bot] Discord rejected production attachment as too large; retrying with download link only');
+                    const mp3Path = data?.finalMp3;
+                    const stats = mp3Path && fs.existsSync(mp3Path) ? fs.statSync(mp3Path) : null;
+                    const fileSizeMB = stats ? stats.size / (1024 * 1024) : 0;
+                    replyOptions.files = [];
+                    replyOptions.content = this.appendDownloadNotice(
+                        replyOptions.content,
+                        fileSizeMB,
+                        this.getDiscordAttachmentLimitMB(),
+                        this.buildEpisodeDownloadUrl(data, mp3Path),
+                        mp3Path,
+                        'Discord rejected the attachment'
+                    );
+                    await interaction.editReply(replyOptions);
+                } else {
+                    throw replyErr;
+                }
+            }
             console.log('[Bot] Production reply sent successfully');
         } catch (error) {
             console.error('[Bot] Production failed:', error);
             await interaction.editReply({
                 content: `❌ **Production failed for episode ${episode}**\n\`\`\`\n${error.message}\n${error.stderr || ''}\n\`\`\``
+            });
+        }
+    }
+
+    /**
+     * Handle /podcast-publish command
+     */
+    async handlePublishCommand(interaction) {
+        const episode = interaction.options.getInteger('episode');
+        const version = interaction.options.getString('version');
+        const title = interaction.options.getString('title');
+        const description = interaction.options.getString('description');
+        const dryRun = interaction.options.getBoolean('dry-run') || false;
+
+        await interaction.deferReply({ ephemeral: false });
+
+        const args = [
+            '/opt/podcast-production/tools/podcast-tool.py',
+            'publish',
+            '--episode', String(episode)
+        ];
+
+        if (version) args.push('--version', version);
+        if (title) args.push('--title', title);
+        if (description) args.push('--description', description);
+        if (dryRun) args.push('--dry-run');
+
+        const syncTarget = process.env.PODCAST_PUBLISH_SYNC_TARGET;
+        if (syncTarget) args.push('--sync-target', syncTarget);
+
+        const baseUrl = process.env.PODCAST_BASE_URL || process.env.PODCAST_DOWNLOAD_BASE_URL;
+        if (baseUrl) args.push('--base-url', baseUrl.replace(/\/episodes\/?$/, ''));
+
+        console.log(`[Bot] Starting podcast publish: episode=${episode} version=${version || 'latest'} dryRun=${dryRun}`);
+
+        try {
+            const result = await this.runProductionProcess(args);
+            const data = this.extractLastJson(result.stdout);
+
+            let content;
+            if (data) {
+                const status = data.dryRun ? 'Podcast Publish Dry Run' : 'Podcast Published';
+                const syncSummary = data.syncTarget
+                    ? (data.syncResults || []).map(r => r.returnCode === 0 || r.dryRun ? 'ok' : `failed:${r.returnCode}`).join(', ')
+                    : 'not configured';
+                content = `**${status}**\n` +
+                    `Episode ${data.episode || episode}: ${data.title || 'Untitled'}\n` +
+                    `Duration: ${data.duration || 'unknown'}\n` +
+                    `Episode: ${data.episodeUrl || data.mp3 || 'unknown'}\n` +
+                    `Feed: ${data.feedUrl || data.feed || 'unknown'}\n` +
+                    `RSS item: ${data.replacedExistingItem ? 'replaced existing item' : 'added new item'}\n` +
+                    `Sync: ${syncSummary}`;
+            } else {
+                content = `**Podcast Publish Complete**\nEpisode ${episode}`;
+                if (result.stdout.trim()) {
+                    content += `\n\`\`\`\n${result.stdout.trim().slice(-1200)}\n\`\`\``;
+                }
+            }
+
+            await interaction.editReply({ content });
+            console.log('[Bot] Publish reply sent successfully');
+        } catch (error) {
+            console.error('[Bot] Publish failed:', error);
+            await interaction.editReply({
+                content: `**Publish failed for episode ${episode}**\n\`\`\`\n${error.message}\n${error.stderr || ''}\n\`\`\``
             });
         }
     }
@@ -1675,6 +2037,15 @@ class AlphaClawdVoiceBot {
                         'No markdown, bullet points, or structured formatting',
                         'Listeners hear your FULL response as voice — there is no "silent" text channel'
                     ];
+                    if (/^(fish|fish-whisper)$/i.test(this.voiceProvider.mode || '')) {
+                        if (String(this.voiceProvider.tts?.model || process.env.FISH_AUDIO_MODEL || '').toLowerCase().startsWith('s1')) {
+                            PODCAST_GUIDELINES.push('Fish Audio S1 is active: sparse (break) or (long-break) controls are allowed when they improve spoken pacing');
+                        } else {
+                            PODCAST_GUIDELINES.push('Fish Audio S2 is active: sparse controls like [short pause], [pause], [long pause], [soft voice], [emphasis], or [sigh] are allowed when they improve spoken pacing');
+                        }
+                    } else {
+                        PODCAST_GUIDELINES.push('Use punctuation and wording for pacing; do not include Fish control tags because Fish Audio is not the active TTS mode');
+                    }
                     
                     await this.wsClient.injectPodcastEvent({
                         event: 'session_start',
@@ -2359,8 +2730,11 @@ class AlphaClawdVoiceBot {
         const startPlayback = () => {
             bed.timer = null;
             this.playBigBrainAmbientChunk(guildId, bed).catch((error) => {
+                if (!this.isBigBrainAmbientBedCurrent(guildId, bed)) {
+                    return;
+                }
                 console.warn(`[Bot] bigBrain ambient bed failed runId=${bed.runId}: ${error.message}`);
-                this.stopBigBrainAmbientBed(guildId, 'ambient playback failed', { runId: bed.runId });
+                this.stopBigBrainAmbientBed(guildId, 'ambient playback failed', { runId: bed.runId, bed });
             });
         };
 
@@ -2391,8 +2765,11 @@ class AlphaClawdVoiceBot {
             bed.timer = setTimeout(() => {
                 bed.timer = null;
                 this.playBigBrainAmbientChunk(guildId, bed).catch((error) => {
+                    if (!this.isBigBrainAmbientBedCurrent(guildId, bed)) {
+                        return;
+                    }
                     console.warn(`[Bot] bigBrain ambient bed retry failed runId=${bed.runId}: ${error.message}`);
-                    this.stopBigBrainAmbientBed(guildId, 'ambient retry failed', { runId: bed.runId });
+                    this.stopBigBrainAmbientBed(guildId, 'ambient retry failed', { runId: bed.runId, bed });
                 });
             }, 500);
             if (typeof bed.timer.unref === 'function') {
@@ -2422,6 +2799,11 @@ class AlphaClawdVoiceBot {
             });
 
             await ambientPlayback.finished;
+        } catch (error) {
+            if (!this.isBigBrainAmbientBedCurrent(guildId, bed)) {
+                return;
+            }
+            throw error;
         } finally {
             bed.playbackActive = false;
         }
@@ -2441,8 +2823,11 @@ class AlphaClawdVoiceBot {
         bed.timer = setTimeout(() => {
             bed.timer = null;
             this.playBigBrainAmbientChunk(guildId, bed).catch((error) => {
+                if (!this.isBigBrainAmbientBedCurrent(guildId, bed)) {
+                    return;
+                }
                 console.warn(`[Bot] bigBrain ambient bed loop failed runId=${bed.runId}: ${error.message}`);
-                this.stopBigBrainAmbientBed(guildId, 'ambient loop failed', { runId: bed.runId });
+                this.stopBigBrainAmbientBed(guildId, 'ambient loop failed', { runId: bed.runId, bed });
             });
         }, 100);
         if (typeof bed.timer.unref === 'function') {
@@ -2456,6 +2841,9 @@ class AlphaClawdVoiceBot {
             return false;
         }
         if (options.runId && bed.runId !== options.runId) {
+            return false;
+        }
+        if (options.bed && bed !== options.bed) {
             return false;
         }
 
@@ -2914,6 +3302,7 @@ class AlphaClawdVoiceBot {
             '',
             'Answer the guest request using any server memory, files, tools, web access, or runtime context available to you. If you cannot verify something, say that plainly.',
             'Return only the concise spoken answer. No markdown, bullets, code blocks, URLs unless essential, file paths unless asked, or stage directions.',
+            'Do not add Fish TTS control tags here; the live host generator owns final delivery and may add pacing controls when it speaks your staged answer.',
             'Aim for one to three natural sentences unless the guest explicitly asked for a longer result.',
             '',
             `Trigger source: ${source}`,

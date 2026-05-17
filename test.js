@@ -112,6 +112,25 @@ async function runTests() {
         } else {
             throw new Error('WAV conversion failed');
         }
+
+        const s2Text = fishAudio.preprocessText('Hold <break time="2.2s" /> the thought.');
+        const fishS1 = new FishAudioProvider({
+            apiKey: process.env.FISH_AUDIO_API_KEY || 'test_fish_audio_key_placeholder',
+            defaultVoice: process.env.FISH_AUDIO_VOICE_ID || 'e127c1a13d0b415da7d6c4c16861295f',
+            model: 's1'
+        });
+        const s1Text = fishS1.preprocessText('Hold <break time="2.2s" /> the thought.');
+        if (
+            s2Text === 'Hold [long pause] the thought.' &&
+            fishAudio.hasFishInlineControls(s2Text) &&
+            s1Text === 'Hold (long-break) the thought.' &&
+            fishS1.hasFishInlineControls(s1Text)
+        ) {
+            console.log('  Fish pause controls are model-family aware');
+            passed++;
+        } else {
+            throw new Error(`Fish pause preprocessing failed: ${JSON.stringify({ s2Text, s1Text })}`);
+        }
     } catch (error) {
         console.log(`  Fish Audio provider failed: ${error.message}`);
         failed++;
@@ -330,6 +349,14 @@ async function runTests() {
             throw new Error(`Unexpected normalized output: ${JSON.stringify(output)}`);
         }
 
+        const fishTaggedOutput = generator.normalizeOutput({
+            shouldRespond: true,
+            speech: '[soft voice] That lands. [pause] Keep going.'
+        });
+        if (fishTaggedOutput.speech !== '[soft voice] That lands. [pause] Keep going.') {
+            throw new Error(`Fish TTS controls should survive speech sanitization: ${JSON.stringify(fishTaggedOutput)}`);
+        }
+
         const messages = generator.buildMessages({
             transcript: 'Jensen: Testing the turn decision prompt'
         });
@@ -403,6 +430,10 @@ async function runTests() {
             systemPrompt.includes('Do not ask a question every turn') &&
             systemPrompt.includes('When in doubt, choose silence or the smaller move') &&
             systemPrompt.includes('Minimal backchannel is allowed but should be rare') &&
+            systemPrompt.includes('Fish TTS performance controls:') &&
+            systemPrompt.includes('Fish S2-family') &&
+            systemPrompt.includes('[short pause]') &&
+            systemPrompt.includes('bigBrain.reason') &&
             systemPrompt.includes('meta-comment naming a missed signal') &&
             !systemPrompt.includes('Structured hosting:') &&
             !systemPrompt.includes('Screen exploration and standby') &&
@@ -417,6 +448,21 @@ async function runTests() {
             passed++;
         } else {
             throw new Error('System prompt is missing nuanced turn-taking instructions');
+        }
+
+        const nonFishGenerator = new PodcastGenerator({
+            apiKey: 'sk-test-placeholder',
+            voiceMode: 'free'
+        });
+        const nonFishPrompt = nonFishGenerator.buildSystemPrompt();
+        if (
+            nonFishPrompt.includes('active TTS mode is not Fish Audio') &&
+            nonFishPrompt.includes('do not include Fish control tags')
+        ) {
+            console.log('  System prompt adapts TTS-control guidance to non-Fish voice modes');
+            passed++;
+        } else {
+            throw new Error('System prompt did not adapt TTS-control guidance for non-Fish mode');
         }
 
         const silentGenerator = new PodcastGenerator({
@@ -3645,6 +3691,118 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 7g.1: Stale ambient stop cannot kill resumed bed');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-bigbrain-ambient-race';
+        const runId = 'discord-bigbrain-ambient-race';
+        const pending = {
+            guildId,
+            runId,
+            reason: 'Need tool help.',
+            transcript: 'Jensen: Look this up.',
+            requestedAt: '2026-05-09T00:00:00.000Z',
+            sessionKey: 'agent:main:main'
+        };
+        let ambientStarts = 0;
+        let tonePlays = 0;
+        let stopCalls = 0;
+        const ambientRejectors = [];
+
+        bot.bigBrainAmbientEnabled = true;
+        bot.bigBrainAmbientStartDelayMs = 0;
+        bot.bigBrainAmbientChunkMs = 2000;
+        bot.bigBrainAmbientVolume = 0.2;
+        bot.bigBrainAmbientBeds = new Map();
+        bot.bigBrainToolToneActive = new Map();
+        bot.pendingBigBrainResponses = new Map([[runId, pending]]);
+        bot.RecordingState = { RECORDING: 'RECORDING' };
+        bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
+        bot.getBigBrainAmbientBedBuffer = async () => Buffer.from('ambient-bed-audio');
+        bot.getBigBrainToolToneBuffer = async () => Buffer.from('tool-tone-audio');
+        bot.voiceManager = {
+            getPlaybackStatus: () => ({ isPlaying: false, queueLength: 0 }),
+            speakWithTiming: async (_guildId, audio, options) => {
+                const label = audio.toString();
+                options.onStart?.({ playbackStartedAt: '2026-05-09T00:00:04.000Z' });
+                if (label === 'ambient-bed-audio') {
+                    ambientStarts++;
+                    return {
+                        timing: {
+                            playbackRequestedAt: '2026-05-09T00:00:03.900Z',
+                            playbackStartedAt: '2026-05-09T00:00:04.000Z',
+                            playbackEndedAt: null
+                        },
+                        finished: new Promise((_resolve, reject) => {
+                            ambientRejectors.push(reject);
+                        })
+                    };
+                }
+                if (label === 'tool-tone-audio') {
+                    tonePlays++;
+                    return {
+                        timing: {
+                            playbackRequestedAt: '2026-05-09T00:00:04.100Z',
+                            playbackStartedAt: '2026-05-09T00:00:04.120Z',
+                            playbackEndedAt: null
+                        },
+                        finished: Promise.resolve({
+                            playbackStartedAt: '2026-05-09T00:00:04.120Z',
+                            playbackEndedAt: '2026-05-09T00:00:04.240Z'
+                        })
+                    };
+                }
+                throw new Error(`Unexpected audio: ${label}`);
+            },
+            stopPlayback: () => {
+                stopCalls++;
+                const rejectAmbient = ambientRejectors.shift();
+                if (rejectAmbient) {
+                    setTimeout(() => rejectAmbient(new Error('ambient playback stopped')), 10);
+                }
+                return true;
+            },
+            addBotAudioToRecording: () => {}
+        };
+
+        bot.startBigBrainAmbientBed(guildId, pending, { delayMs: 0 });
+        await new Promise(resolve => setTimeout(resolve, 5));
+        if (ambientStarts !== 1 || !bot.bigBrainAmbientBeds.has(guildId)) {
+            throw new Error(`Initial ambient bed did not start: ${JSON.stringify({ ambientStarts, hasBed: bot.bigBrainAmbientBeds.has(guildId) })}`);
+        }
+
+        await bot.playBigBrainToolTone(guildId, pending, {
+            key: 'tool:start:ok:1',
+            frequency: 261.63,
+            phase: 'start',
+            isError: false,
+            toolName: 'web_fetch',
+            toolCallId: 'tool-1',
+            toneType: 'tool',
+            sourceStream: 'tool'
+        });
+        await new Promise(resolve => setTimeout(resolve, 30));
+
+        if (tonePlays !== 1) {
+            throw new Error(`Tool tone did not play exactly once: ${tonePlays}`);
+        }
+        if (ambientStarts < 2) {
+            throw new Error(`Ambient bed did not restart after tool tone: ${ambientStarts}`);
+        }
+        if (!bot.bigBrainAmbientBeds.has(guildId)) {
+            throw new Error('Resumed ambient bed was stopped by stale playback failure');
+        }
+        if (stopCalls !== 1) {
+            throw new Error(`Expected only the original ambient stop, got ${stopCalls}`);
+        }
+
+        console.log('  Stale ambient playback failures cannot stop the freshly resumed bed');
+        passed++;
+    } catch (error) {
+        console.log(`  Ambient resume race failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\nTest 7h: Generator fallback is honest and transcripted');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
@@ -5140,6 +5298,398 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Anthropic streaming failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 47a: Bot extracts outer publish JSON');
+    try {
+        const stdout = [
+            'starting publish',
+            '{',
+            '  "episode": "05",',
+            '  "title": "Cabbage, Self-Awareness, and the Cost of Thinking",',
+            '  "duration": "19:41",',
+            '  "episodeUrl": "https://clawcast.jensenabler.com/episodes/episode-05.mp3",',
+            '  "syncTarget": "/var/www/podcast",',
+            '  "syncResults": [',
+            '    {',
+            '      "command": ["rsync", "episode-05.mp3", "/var/www/podcast/episodes/"],',
+            '      "returnCode": 0',
+            '    },',
+            '    {',
+            '      "command": ["rsync", "feed.xml", "/var/www/podcast/feed.xml"],',
+            '      "returnCode": 0',
+            '    }',
+            '  ]',
+            '}',
+            ''
+        ].join('\n');
+
+        const parsed = AlphaClawdVoiceBot.prototype.extractLastJson(stdout);
+        if (
+            parsed?.episode !== '05' ||
+            parsed.title !== 'Cabbage, Self-Awareness, and the Cost of Thinking' ||
+            parsed.duration !== '19:41' ||
+            parsed.syncTarget !== '/var/www/podcast' ||
+            parsed.syncResults?.length !== 2
+        ) {
+            throw new Error(`Parsed wrong JSON object: ${JSON.stringify(parsed)}`);
+        }
+
+        console.log('  Bot keeps the outer publish result instead of a nested sync object');
+        passed++;
+    } catch (error) {
+        console.log(`  Publish JSON extraction failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 47b: Production downloads replace oversized attachments');
+    try {
+        const originalLimit = process.env.PODCAST_DISCORD_ATTACHMENT_LIMIT_MB;
+        const originalDownloadBase = process.env.PODCAST_DOWNLOAD_BASE_URL;
+        process.env.PODCAST_DISCORD_ATTACHMENT_LIMIT_MB = '';
+        process.env.PODCAST_DOWNLOAD_BASE_URL = 'https://clawcast.jensenabler.com/episodes/';
+
+        const limit = AlphaClawdVoiceBot.prototype.getDiscordAttachmentLimitMB();
+        const downloadUrl = AlphaClawdVoiceBot.prototype.buildEpisodeDownloadUrl(
+            { episodesCopy: '/opt/clawcast-network/content/episodes/episode-06.mp3' },
+            '/opt/clawcast-network/content/production/episode-06/v004/episode-06-v004.mp3'
+        );
+        const notice = AlphaClawdVoiceBot.prototype.appendDownloadNotice(
+            'done',
+            16.1,
+            limit,
+            downloadUrl,
+            '/tmp/episode-06.mp3'
+        );
+
+        if (limit !== 8) {
+            throw new Error(`Expected default upload limit 8 MB, got ${limit}`);
+        }
+        if (downloadUrl !== 'https://clawcast.jensenabler.com/episodes/episode-06.mp3') {
+            throw new Error(`Unexpected download URL: ${downloadUrl}`);
+        }
+        if (!notice.includes('16.1 MB') || !notice.includes(downloadUrl) || !notice.includes('/tmp/episode-06.mp3')) {
+            throw new Error(`Notice omitted expected publish details: ${notice}`);
+        }
+        if (!AlphaClawdVoiceBot.prototype.isDiscordRequestTooLarge({ code: 40005, message: 'Request entity too large' })) {
+            throw new Error('Request-too-large detection failed');
+        }
+
+        if (originalLimit === undefined) {
+            delete process.env.PODCAST_DISCORD_ATTACHMENT_LIMIT_MB;
+        } else {
+            process.env.PODCAST_DISCORD_ATTACHMENT_LIMIT_MB = originalLimit;
+        }
+        if (originalDownloadBase === undefined) {
+            delete process.env.PODCAST_DOWNLOAD_BASE_URL;
+        } else {
+            process.env.PODCAST_DOWNLOAD_BASE_URL = originalDownloadBase;
+        }
+
+        console.log('  Oversized production renders use the hosted episode URL instead of attachment failure');
+        passed++;
+    } catch (error) {
+        console.log(`  Oversized attachment fallback failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 47c: Production episode autocomplete suggests next/latest state');
+    try {
+        const previousContentRoot = process.env.CLAWCAST_CONTENT_ROOT;
+        const previousPodcastRoot = process.env.PODCAST_ROOT;
+        const previousPodcastContentRoot = process.env.PODCAST_CONTENT_ROOT;
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'production-episode-autocomplete-'));
+
+        try {
+            process.env.CLAWCAST_CONTENT_ROOT = tempRoot;
+            delete process.env.PODCAST_ROOT;
+            delete process.env.PODCAST_CONTENT_ROOT;
+
+            fs.mkdirSync(path.join(tempRoot, 'episodes'), { recursive: true });
+            fs.mkdirSync(path.join(tempRoot, 'production', 'episode-06', 'v004'), { recursive: true });
+            fs.writeFileSync(path.join(tempRoot, 'episodes', 'episode-05.mp3'), Buffer.from('published mp3'));
+            fs.writeFileSync(
+                path.join(tempRoot, 'production', 'episode-06', 'v004', 'episode-06-v004.mp3'),
+                Buffer.from('produced mp3')
+            );
+            fs.writeFileSync(
+                path.join(tempRoot, 'feed.xml'),
+                '<rss><channel><item><enclosure url="https://clawcast.jensenabler.com/episodes/episode-05.mp3"/></item></channel></rss>'
+            );
+
+            const normalState = AlphaClawdVoiceBot.prototype.getProductionEpisodeState();
+            const normalChoices = AlphaClawdVoiceBot.prototype.getPodcastEpisodeAutocompleteChoices('');
+            const focusedChoices = AlphaClawdVoiceBot.prototype.getPodcastEpisodeAutocompleteChoices('6');
+
+            if (
+                normalState.next !== 7 ||
+                normalState.latestProduced !== 6 ||
+                normalState.latestPublished !== 5 ||
+                normalChoices.length !== 3 ||
+                normalChoices[0].name !== 'Next episode: Episode 7' ||
+                normalChoices[0].value !== 7 ||
+                normalChoices[1].name !== 'Latest produced: Episode 6' ||
+                normalChoices[1].value !== 6 ||
+                normalChoices[2].name !== 'Latest published: Episode 5' ||
+                normalChoices[2].value !== 5 ||
+                focusedChoices.length !== 1 ||
+                focusedChoices[0].value !== 6
+            ) {
+                throw new Error(`Unexpected normal choices: ${JSON.stringify({ normalState, normalChoices, focusedChoices })}`);
+            }
+
+            fs.writeFileSync(
+                path.join(tempRoot, 'feed.xml'),
+                '<rss><channel><item><enclosure url="https://clawcast.jensenabler.com/episodes/episode-06.mp3"/></item></channel></rss>'
+            );
+
+            const duplicateChoices = AlphaClawdVoiceBot.prototype.getPodcastEpisodeAutocompleteChoices('');
+            if (
+                duplicateChoices.length !== 2 ||
+                duplicateChoices[0].name !== 'Latest published: Episode 6' ||
+                duplicateChoices[0].value !== 6 ||
+                duplicateChoices[1].name !== 'Next episode: Episode 7' ||
+                duplicateChoices[1].value !== 7 ||
+                duplicateChoices.some(choice => choice.name.startsWith('Latest produced'))
+            ) {
+                throw new Error(`Produced/published duplicate was not collapsed: ${JSON.stringify(duplicateChoices)}`);
+            }
+        } finally {
+            if (previousContentRoot === undefined) delete process.env.CLAWCAST_CONTENT_ROOT;
+            else process.env.CLAWCAST_CONTENT_ROOT = previousContentRoot;
+            if (previousPodcastRoot === undefined) delete process.env.PODCAST_ROOT;
+            else process.env.PODCAST_ROOT = previousPodcastRoot;
+            if (previousPodcastContentRoot === undefined) delete process.env.PODCAST_CONTENT_ROOT;
+            else process.env.PODCAST_CONTENT_ROOT = previousPodcastContentRoot;
+            fs.rmSync(tempRoot, { recursive: true, force: true });
+        }
+
+        console.log('  Production episode autocomplete lists next, latest produced, and latest published without duplicate roles');
+        passed++;
+    } catch (error) {
+        console.log(`  Production episode autocomplete failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 47c.1: Publish episode autocomplete uses podcast episode suggestions');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        let focusedValue = null;
+        let response = null;
+        bot.getPodcastEpisodeAutocompleteChoices = (value) => {
+            focusedValue = value;
+            return [{ name: 'Latest produced: Episode 6', value: 6 }];
+        };
+
+        await bot.handleAutocomplete({
+            commandName: 'podcast-publish',
+            options: {
+                getFocused: () => ({ name: 'episode', value: '6' })
+            },
+            respond: async (choices) => {
+                response = choices;
+            }
+        });
+
+        if (focusedValue !== '6' || response?.[0]?.value !== 6) {
+            throw new Error(`Publish autocomplete did not use podcast episode suggestions: ${JSON.stringify({ focusedValue, response })}`);
+        }
+
+        console.log('  Publish episode autocomplete uses the same episode-state suggestions as production');
+        passed++;
+    } catch (error) {
+        console.log(`  Publish episode autocomplete failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 47c.2: Publish version autocomplete lists available versions for selected episode');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'podcast-publish-version-test-'));
+        const previousPodcastRoot = process.env.PODCAST_ROOT;
+        process.env.PODCAST_ROOT = tempRoot;
+
+        const prodDir = path.join(tempRoot, 'production', 'episode-05');
+        fs.mkdirSync(path.join(prodDir, 'v001'), { recursive: true });
+        fs.mkdirSync(path.join(prodDir, 'v002'), { recursive: true });
+        fs.writeFileSync(path.join(prodDir, 'v002', 'episode-05-v002.mp3'), 'fake');
+
+        let response = null;
+        await bot.handleAutocomplete({
+            commandName: 'podcast-publish',
+            options: {
+                getFocused: () => ({ name: 'version', value: '' }),
+                getInteger: (name) => name === 'episode' ? 5 : null
+            },
+            respond: async (choices) => {
+                response = choices;
+            }
+        });
+
+        if (
+            !response ||
+            response.length !== 2 ||
+            response[0].value !== 'v002' ||
+            !response[0].name.includes('finalized') ||
+            response[1].value !== 'v001' ||
+            response[1].name.includes('finalized')
+        ) {
+            throw new Error(`Version autocomplete returned unexpected choices: ${JSON.stringify(response)}`);
+        }
+
+        // Test filtering
+        let filteredResponse = null;
+        await bot.handleAutocomplete({
+            commandName: 'podcast-publish',
+            options: {
+                getFocused: () => ({ name: 'version', value: 'v001' }),
+                getInteger: (name) => name === 'episode' ? 5 : null
+            },
+            respond: async (choices) => {
+                filteredResponse = choices;
+            }
+        });
+
+        if (!filteredResponse || filteredResponse.length !== 1 || filteredResponse[0].value !== 'v001') {
+            throw new Error(`Version autocomplete filtering failed: ${JSON.stringify(filteredResponse)}`);
+        }
+
+        if (previousPodcastRoot === undefined) delete process.env.PODCAST_ROOT;
+        else process.env.PODCAST_ROOT = previousPodcastRoot;
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+
+        console.log('  Publish version autocomplete lists versions with finalized indicator and supports filtering');
+        passed++;
+    } catch (error) {
+        console.log(`  Publish version autocomplete failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 47c.3: Publish command passes version option to podcast-production CLI');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        let capturedArgs = null;
+        let reply = null;
+
+        bot.runProductionProcess = async (args) => {
+            capturedArgs = args;
+            return {
+                stdout: JSON.stringify({
+                    episode: '05',
+                    version: 'v002',
+                    title: 'Test Episode',
+                    duration: '10:00'
+                }),
+                stderr: ''
+            };
+        };
+        bot.extractLastJson = AlphaClawdVoiceBot.prototype.extractLastJson;
+
+        const interaction = {
+            options: {
+                getInteger: (name) => name === 'episode' ? 5 : null,
+                getString: (name) => {
+                    if (name === 'version') return 'v002';
+                    if (name === 'title') return null;
+                    if (name === 'description') return null;
+                    throw new Error(`Unexpected string option ${name}`);
+                },
+                getBoolean: (name) => name === 'dry-run' ? false : null
+            },
+            deferReply: async () => {},
+            editReply: async (options) => {
+                reply = options;
+            }
+        };
+
+        await bot.handlePublishCommand(interaction);
+
+        if (!capturedArgs) {
+            throw new Error('Publish process was not invoked');
+        }
+        const versionIndex = capturedArgs.indexOf('--version');
+        if (versionIndex === -1 || capturedArgs[versionIndex + 1] !== 'v002') {
+            throw new Error(`Version option was not passed correctly: ${JSON.stringify(capturedArgs)}`);
+        }
+        if (!reply?.content?.includes('Podcast Published')) {
+            throw new Error(`Publish reply was not sent: ${JSON.stringify(reply)}`);
+        }
+
+        console.log('  Publish command passes version option to CLI');
+        passed++;
+    } catch (error) {
+        console.log(`  Publish command version test failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 47d: Podcast command contract passes creative direction without audio regenerate');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        let capturedArgs = null;
+        let reply = null;
+
+        bot.runProductionProcess = async (args) => {
+            capturedArgs = args;
+            return {
+                stdout: JSON.stringify({
+                    episode: '06',
+                    version: 'v005',
+                    durationSeconds: 90,
+                    finalMp3: '/tmp/missing.mp3'
+                }),
+                stderr: ''
+            };
+        };
+        bot.extractLastJson = AlphaClawdVoiceBot.prototype.extractLastJson;
+
+        const interaction = {
+            options: {
+                getInteger: (name) => {
+                    if (name !== 'episode') throw new Error(`Unexpected integer option ${name}`);
+                    return 6;
+                },
+                getString: (name) => {
+                    if (name === 'recording') return 'latest';
+                    if (name === 'intro-outro-creative-direction') return 'Make it warmer, stranger, and less recap-heavy.';
+                    throw new Error(`Unexpected string option ${name}`);
+                },
+                getBoolean: (name) => {
+                    throw new Error(`Production handler should not read boolean option ${name}`);
+                }
+            },
+            deferReply: async () => {},
+            editReply: async (options) => {
+                reply = options;
+            }
+        };
+
+        await bot.handleProductionCommand(interaction);
+
+        if (!capturedArgs) {
+            throw new Error('Production process was not invoked');
+        }
+        if (!capturedArgs.includes('--regenerate-copy')) {
+            throw new Error(`Creative direction did not imply regenerate-copy: ${JSON.stringify(capturedArgs)}`);
+        }
+        const directionIndex = capturedArgs.indexOf('--intro-outro-creative-direction');
+        if (
+            directionIndex === -1 ||
+            capturedArgs[directionIndex + 1] !== 'Make it warmer, stranger, and less recap-heavy.'
+        ) {
+            throw new Error(`Creative direction was not passed to podcast-production: ${JSON.stringify(capturedArgs)}`);
+        }
+        if (capturedArgs.includes('--regenerate-audio')) {
+            throw new Error(`Removed regenerate-audio option still reached CLI: ${JSON.stringify(capturedArgs)}`);
+        }
+        if (!reply?.content?.includes('Podcast Production Complete')) {
+            throw new Error(`Production reply was not sent: ${JSON.stringify(reply)}`);
+        }
+
+        console.log('  Production command passes intro/outro creative direction and omits regenerate-audio');
+        passed++;
+    } catch (error) {
+        console.log(`  Production command contract failed: ${error.message}`);
         failed++;
     }
 
