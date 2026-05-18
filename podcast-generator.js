@@ -142,6 +142,38 @@ class IncrementalSpeechReader {
     }
 }
 
+function normalizeSpokenSeparators(text) {
+    return String(text || '').replace(/\s+\/+\s+/g, (match, offset, whole) => {
+        const before = whole.slice(0, offset).match(/\S\s*$/)?.[0]?.trim() || '';
+        return /[.!?,;:]/.test(before) ? ' ' : ', ';
+    });
+}
+
+class StreamingSpeechSanitizer {
+    constructor(options = {}) {
+        this.pending = '';
+        this.lookbehindChars = Number(options.lookbehindChars || 32);
+    }
+
+    push(text) {
+        this.pending += String(text || '');
+        if (this.pending.length <= this.lookbehindChars) {
+            return '';
+        }
+
+        const readyLength = this.pending.length - this.lookbehindChars;
+        const ready = this.pending.slice(0, readyLength);
+        this.pending = this.pending.slice(readyLength);
+        return normalizeSpokenSeparators(ready);
+    }
+
+    flush() {
+        const ready = this.pending;
+        this.pending = '';
+        return normalizeSpokenSeparators(ready);
+    }
+}
+
 /**
  * Async generator that yields parsed event objects from a fetch() Response
  * whose body is an OpenAI/Groq-style server-sent-events stream of chat
@@ -344,6 +376,8 @@ class PodcastGenerator {
 
         const startTime = Date.now();
         const reader = new IncrementalSpeechReader();
+        const speechSanitizer = new StreamingSpeechSanitizer();
+        let speechSanitizerFlushed = false;
 
         const queue = [];
         let waiter = null;
@@ -367,6 +401,16 @@ class PodcastGenerator {
                 await new Promise(resolve => { waiter = resolve; });
             }
         })();
+        const queueSanitizedSpeech = (text, flush = false) => {
+            const sanitized = flush ? speechSanitizer.flush() : speechSanitizer.push(text);
+            if (flush) {
+                speechSanitizerFlushed = true;
+            }
+            if (sanitized) {
+                queue.push(sanitized);
+                wakeWaiter();
+            }
+        };
 
         let resolveShould, rejectShould, resolveCompleted, rejectCompleted;
         let shouldSettled = false;
@@ -439,14 +483,14 @@ class PodcastGenerator {
                         }
                         if (result.chunks.length > 0) {
                             for (const chunk of result.chunks) {
-                                queue.push(chunk);
+                                queueSanitizedSpeech(chunk);
                             }
                             if (result.shouldRespond === null) {
                                 resolveShould(true);
                             }
-                            wakeWaiter();
                         }
                         if (result.speechComplete && !finished) {
+                            queueSanitizedSpeech('', true);
                             finished = true;
                             wakeWaiter();
                         }
@@ -463,6 +507,9 @@ class PodcastGenerator {
                 clearTimeout(idleTimeoutId);
             }
 
+            if (!speechSanitizerFlushed) {
+                queueSanitizedSpeech('', true);
+            }
             const final = reader.finalize();
             const output = this.normalizeOutput(final);
             if (input.remember !== false) {
@@ -752,6 +799,7 @@ class PodcastGenerator {
             '- If shouldRespond=true, speech is exactly what the TTS should say out loud.',
             ...this.buildSpeechControlGuidance(),
             '- Keep speech to 1-3 natural sentences unless a direct question needs slightly more.',
+            '- Do not use slash-delimited line breaks. If reciting a poem, lyric-like passage, or list-like text, use speakable punctuation instead of visual separators like " / ".',
             '- Use no markdown, bullets, code, URLs, file paths, tables, or stage directions.',
             '',
             'bigBrain (escape hatch to the deeper Open Claw agent):',
@@ -1872,7 +1920,7 @@ class PodcastGenerator {
     }
 
     sanitizeSpeech(text) {
-        return String(text || '')
+        return normalizeSpokenSeparators(String(text || '')
             .replace(/```[\s\S]*?```/g, '')
             .replace(/\[ACTION:mode:[^\]]+\]/gi, '')
             .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi, '$1')
@@ -1880,7 +1928,7 @@ class PodcastGenerator {
             .replace(/`([^`]+)`/g, '$1')
             .replace(/^\s*[-*+]\s+/gm, '')
             .replace(/^\s{0,3}#{1,6}\s+/gm, '')
-            .replace(/[*_~>]+/g, '')
+            .replace(/[*_~>]+/g, ''))
             .replace(/\s+/g, ' ')
             .trim();
     }
@@ -2397,4 +2445,4 @@ class PodcastGenerator {
     }
 }
 
-module.exports = { PodcastGenerator, IncrementalSpeechReader };
+module.exports = { PodcastGenerator, IncrementalSpeechReader, StreamingSpeechSanitizer, normalizeSpokenSeparators };

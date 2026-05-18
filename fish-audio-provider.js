@@ -27,6 +27,13 @@ function toWebSocketBaseUrl(baseUrl) {
     return baseUrl.replace(/\/+$/, '');
 }
 
+function normalizeSpokenSeparators(text) {
+    return String(text || '').replace(/\s+\/+\s+/g, (match, offset, whole) => {
+        const before = whole.slice(0, offset).match(/\S\s*$/)?.[0]?.trim() || '';
+        return /[.!?,;:]/.test(before) ? ' ' : ', ';
+    });
+}
+
 class FishAudioProvider {
     constructor(options = {}) {
         this.apiKey = options.apiKey || process.env.FISH_AUDIO_API_KEY || process.env.FISH_API_KEY;
@@ -44,7 +51,7 @@ class FishAudioProvider {
         this.model = options.model || process.env.FISH_AUDIO_MODEL || 's2-pro';
         this.format = options.format || process.env.FISH_AUDIO_FORMAT || 'mp3';
         this.latency = options.latency || process.env.FISH_AUDIO_LATENCY || 'balanced';
-        this.mp3Bitrate = Number(options.mp3Bitrate || process.env.FISH_AUDIO_MP3_BITRATE || 128);
+        this.mp3Bitrate = Number(options.mp3Bitrate || process.env.FISH_AUDIO_MP3_BITRATE || 192);
         this.chunkLength = Number(options.chunkLength || process.env.FISH_AUDIO_CHUNK_LENGTH || 200);
         this.normalize = options.normalize;
         if (this.normalize === undefined && process.env.FISH_AUDIO_NORMALIZE !== undefined) {
@@ -63,7 +70,8 @@ class FishAudioProvider {
 
     async synthesize(text, options = {}) {
         const startTime = Date.now();
-        const processedText = this.preprocessText(text);
+        const model = options.model || this.model;
+        const processedText = this.preprocessText(text, { model });
         const voiceId = options.voiceId || options.referenceId || this.voiceId;
 
         console.log(`[Fish Audio] Synthesizing: "${processedText.substring(0, 50)}..."`);
@@ -74,7 +82,7 @@ class FishAudioProvider {
             format: options.format || this.format,
             latency: options.latency || this.latency,
             chunk_length: Number(options.chunkLength || this.chunkLength),
-            normalize: options.normalize ?? this.normalize ?? !this.hasFishInlineControls(processedText),
+            normalize: options.normalize ?? this.normalize ?? !this.hasFishInlineControls(processedText, model),
             mp3_bitrate: Number(options.mp3Bitrate || this.mp3Bitrate),
             prosody: {
                 speed: Number(options.speed || process.env.FISH_AUDIO_SPEED || 1),
@@ -88,7 +96,7 @@ class FishAudioProvider {
             headers: {
                 Authorization: `Bearer ${this.apiKey}`,
                 'Content-Type': 'application/json',
-                model: options.model || this.model
+                model
             },
             body: JSON.stringify(body)
         });
@@ -125,7 +133,8 @@ class FishAudioProvider {
     async *createStreamingAudio(textChunks, options = {}) {
         const startedAt = Date.now();
         const iterator = this.getTextIterator(textChunks);
-        const firstChunk = await this.readFirstProcessedTextChunk(iterator);
+        const model = options.model || this.model;
+        const firstChunk = await this.readFirstProcessedTextChunk(iterator, { model });
 
         if (!firstChunk) {
             throw new Error('Fish Audio streaming TTS requires at least one non-empty text chunk.');
@@ -138,7 +147,8 @@ class FishAudioProvider {
             latency: options.latency || this.latency || 'balanced',
             chunkLength: Number(options.chunkLength || this.chunkLength),
             referenceId: voiceId,
-            normalize: options.normalize ?? this.normalize ?? !this.hasFishInlineControls(firstChunk),
+            modelId: model,
+            normalize: options.normalize ?? this.normalize ?? !this.hasFishInlineControls(firstChunk, model),
             mp3Bitrate: Number(options.mp3Bitrate || this.mp3Bitrate),
             prosody: {
                 speed: Number(options.speed || process.env.FISH_AUDIO_SPEED || 1),
@@ -153,7 +163,7 @@ class FishAudioProvider {
         console.log(`[Fish Audio WS] Streaming synthesis: "${firstChunk.substring(0, 50)}..."`);
 
         try {
-            const processedTextStream = this.createProcessedTextStream(firstChunk, iterator);
+            const processedTextStream = this.createProcessedTextStream(firstChunk, iterator, { model });
 
             for await (const audioChunk of this.streamWebSocketAudio(request.toJSON(), processedTextStream)) {
                 const buffer = Buffer.from(audioChunk);
@@ -381,25 +391,33 @@ class FishAudioProvider {
         throw new Error('Fish Audio streaming TTS requires text chunks as an async iterable, iterable, or string.');
     }
 
-    async readFirstProcessedTextChunk(iterator) {
+    async readFirstProcessedTextChunk(iterator, options = {}) {
         while (true) {
             const next = await iterator.next();
             if (next.done) return '';
 
-            const processed = this.preprocessText(next.value);
-            if (processed) return processed;
+            const processed = this.preprocessText(next.value, {
+                ...options,
+                preserveBoundaryWhitespace: true
+            });
+            if (processed.trim()) {
+                return processed.replace(/^\s+/, '');
+            }
         }
     }
 
-    async *createProcessedTextStream(firstChunk, iterator) {
+    async *createProcessedTextStream(firstChunk, iterator, options = {}) {
         yield firstChunk;
 
         while (true) {
             const next = await iterator.next();
             if (next.done) return;
 
-            const processed = this.preprocessText(next.value);
-            if (processed) {
+            const processed = this.preprocessText(next.value, {
+                ...options,
+                preserveBoundaryWhitespace: true
+            });
+            if (processed.trim()) {
                 yield processed;
             }
         }
@@ -477,20 +495,37 @@ class FishAudioProvider {
         return [];
     }
 
-    preprocessText(text) {
+    fishModelFamily(modelName = this.model) {
+        return String(modelName || '').trim().toLowerCase().startsWith('s1') ? 's1' : 's2';
+    }
+
+    fishPauseTag(seconds, modelName = this.model) {
+        if (this.fishModelFamily(modelName) === 's1') {
+            return Number(seconds) >= 2 ? '(long-break)' : '(break)';
+        }
+        if (Number(seconds) < 0.8) return '[short pause]';
+        return Number(seconds) >= 2 ? '[long pause]' : '[pause]';
+    }
+
+    preprocessText(text, options = {}) {
         if (!text) return '';
 
-        return text
+        const model = options.model || this.model;
+        const processed = normalizeSpokenSeparators(String(text))
             .replace(/<break\s+time=["']?([\d.]+)s["']?\s*\/?>/gi, (_, seconds) => {
-                return Number(seconds) >= 2 ? '[long pause]' : '[pause]';
+                return this.fishPauseTag(Number(seconds), model);
             })
             .replace(/<[^>]+>/g, '')
             .replace(/\*([^*]+)\*/g, '$1')
-            .replace(/\s+/g, ' ')
-            .trim();
+            .replace(/\s+/g, ' ');
+
+        return options.preserveBoundaryWhitespace ? processed : processed.trim();
     }
 
-    hasFishInlineControls(text) {
+    hasFishInlineControls(text, modelName = this.model) {
+        if (this.fishModelFamily(modelName) === 's1') {
+            return /\((?:long-)?break\)/i.test(text);
+        }
         return /\[[^\]]+\]/.test(text);
     }
 

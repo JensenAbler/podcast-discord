@@ -120,16 +120,28 @@ async function runTests() {
             model: 's1'
         });
         const s1Text = fishS1.preprocessText('Hold <break time="2.2s" /> the thought.');
+        const slashText = fishAudio.preprocessText('First line / second line / third line.');
+        const streamIterator = (async function* () {
+            yield 'Hello ';
+            yield 'world / again.';
+        })();
+        const firstStreamChunk = await fishAudio.readFirstProcessedTextChunk(streamIterator, { model: 's2-pro' });
+        const processedStreamChunks = [];
+        for await (const chunk of fishAudio.createProcessedTextStream(firstStreamChunk, streamIterator, { model: 's2-pro' })) {
+            processedStreamChunks.push(chunk);
+        }
         if (
             s2Text === 'Hold [long pause] the thought.' &&
             fishAudio.hasFishInlineControls(s2Text) &&
             s1Text === 'Hold (long-break) the thought.' &&
-            fishS1.hasFishInlineControls(s1Text)
+            fishS1.hasFishInlineControls(s1Text) &&
+            slashText === 'First line, second line, third line.' &&
+            processedStreamChunks.join('') === 'Hello world, again.'
         ) {
-            console.log('  Fish pause controls are model-family aware');
+            console.log('  Fish pause controls are model-family aware and stream text stays speakable');
             passed++;
         } else {
-            throw new Error(`Fish pause preprocessing failed: ${JSON.stringify({ s2Text, s1Text })}`);
+            throw new Error(`Fish preprocessing failed: ${JSON.stringify({ s2Text, s1Text, slashText, processedStreamChunks })}`);
         }
     } catch (error) {
         console.log(`  Fish Audio provider failed: ${error.message}`);
@@ -357,6 +369,21 @@ async function runTests() {
             throw new Error(`Fish TTS controls should survive speech sanitization: ${JSON.stringify(fishTaggedOutput)}`);
         }
 
+        const poetryOutput = generator.normalizeOutput({
+            shouldRespond: true,
+            speech: 'First sonnet line / second sonnet line. / Third sonnet line / fourth sonnet line.'
+        });
+        if (poetryOutput.speech !== 'First sonnet line, second sonnet line. Third sonnet line, fourth sonnet line.') {
+            throw new Error(`Poetry slash separators should become speakable punctuation: ${JSON.stringify(poetryOutput)}`);
+        }
+        const commandOutput = generator.normalizeOutput({
+            shouldRespond: true,
+            speech: 'Use /podcast-production for production and and/or for alternatives.'
+        });
+        if (commandOutput.speech !== 'Use /podcast-production for production and and/or for alternatives.') {
+            throw new Error(`Non-separator slashes should survive speech sanitization: ${JSON.stringify(commandOutput)}`);
+        }
+
         const messages = generator.buildMessages({
             transcript: 'Jensen: Testing the turn decision prompt'
         });
@@ -434,6 +461,8 @@ async function runTests() {
             systemPrompt.includes('Fish S2-family') &&
             systemPrompt.includes('[short pause]') &&
             systemPrompt.includes('bigBrain.reason') &&
+            systemPrompt.includes('Do not use slash-delimited line breaks') &&
+            systemPrompt.includes('visual separators like " / "') &&
             systemPrompt.includes('meta-comment naming a missed signal') &&
             !systemPrompt.includes('Structured hosting:') &&
             !systemPrompt.includes('Screen exploration and standby') &&
@@ -5089,7 +5118,70 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 16a: Kimi Anthropic-compatible streaming');
+    console.log('\nTest 16a: generateStreaming normalizes spoken slash separators');
+    try {
+        const { PodcastGenerator } = require('./podcast-generator');
+        const originalFetch = globalThis.fetch;
+
+        try {
+            globalThis.fetch = async () => {
+                const data = (event) => `data: ${JSON.stringify(event)}`;
+                const sse = [
+                    data({
+                        choices: [{
+                            delta: {
+                                content: '{"shouldRespond":true,"speech":"First sonnet line '
+                            }
+                        }]
+                    }),
+                    '',
+                    data({
+                        choices: [{
+                            delta: {
+                                content: '/ second sonnet line. / Third sonnet line","bigBrain":{"requested":false,"reason":"","consumedRunId":""}}'
+                            }
+                        }]
+                    }),
+                    '',
+                    'data: [DONE]',
+                    ''
+                ].join('\n');
+                return new Response(sse, {
+                    status: 200,
+                    headers: { 'content-type': 'text/event-stream' }
+                });
+            };
+
+            const gen = new PodcastGenerator({
+                apiKey: 'test-key',
+                timeout: 1000
+            });
+            const stream = await gen.generateStreaming({
+                transcript: 'Jensen: Please recite a sonnet.',
+                remember: false
+            });
+            const shouldRespond = await stream.shouldRespond;
+            let streamedSpeech = '';
+            for await (const chunk of stream.speechStream) {
+                streamedSpeech += chunk;
+            }
+            const completed = await stream.completed;
+            const expected = 'First sonnet line, second sonnet line. Third sonnet line';
+            if (!shouldRespond || streamedSpeech !== expected || completed.speech !== expected) {
+                throw new Error(`Streaming slash normalization mismatch: ${JSON.stringify({ shouldRespond, streamedSpeech, completed })}`);
+            }
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        console.log('  Streaming speech and final transcript normalize visual slash separators');
+        passed++;
+    } catch (error) {
+        console.log(`  Streaming slash normalization failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 16b: Kimi Anthropic-compatible streaming');
     try {
         const { PodcastGenerator } = require('./podcast-generator');
         const originalFetch = globalThis.fetch;
@@ -5195,7 +5287,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 16b: Anthropic Messages streaming');
+    console.log('\nTest 16c: Anthropic Messages streaming');
     try {
         const { PodcastGenerator } = require('./podcast-generator');
         const originalFetch = globalThis.fetch;
@@ -5351,8 +5443,15 @@ async function runTests() {
         process.env.PODCAST_DOWNLOAD_BASE_URL = 'https://clawcast.jensenabler.com/episodes/';
 
         const limit = AlphaClawdVoiceBot.prototype.getDiscordAttachmentLimitMB();
-        const downloadUrl = AlphaClawdVoiceBot.prototype.buildEpisodeDownloadUrl(
+        const legacyDownloadUrl = AlphaClawdVoiceBot.prototype.buildEpisodeDownloadUrl(
             { episodesCopy: '/opt/clawcast-network/content/episodes/episode-06.mp3' },
+            '/opt/clawcast-network/content/production/episode-06/v004/episode-06-v004.mp3'
+        );
+        const downloadUrl = AlphaClawdVoiceBot.prototype.buildEpisodeDownloadUrl(
+            {
+                episodesCopy: '/opt/clawcast-network/content/episodes/episode-06.mp3',
+                versionedEpisodesCopy: '/opt/clawcast-network/content/episodes/episode-06-v004.mp3'
+            },
             '/opt/clawcast-network/content/production/episode-06/v004/episode-06-v004.mp3'
         );
         const notice = AlphaClawdVoiceBot.prototype.appendDownloadNotice(
@@ -5365,6 +5464,9 @@ async function runTests() {
 
         if (limit !== 8) {
             throw new Error(`Expected default upload limit 8 MB, got ${limit}`);
+        }
+        if (legacyDownloadUrl !== 'https://clawcast.jensenabler.com/episodes/episode-06.mp3') {
+            throw new Error(`Expected legacy episodesCopy URL fallback, got ${legacyDownloadUrl}`);
         }
         if (downloadUrl !== 'https://clawcast.jensenabler.com/episodes/episode-06-v004.mp3') {
             throw new Error(`Unexpected download URL: ${downloadUrl}`);

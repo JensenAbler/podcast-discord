@@ -1639,7 +1639,7 @@ class AlphaClawdVoiceBot {
 
     buildEpisodeDownloadUrl(data, mp3Path) {
         const downloadBase = (process.env.PODCAST_DOWNLOAD_BASE_URL || 'https://clawcast.jensenabler.com/episodes').replace(/\/+$/, '');
-        const fileName = path.basename(data?.versionedEpisodesCopy || mp3Path || data?.episodesCopy || '');
+        const fileName = path.basename(data?.versionedEpisodesCopy || data?.episodesCopy || mp3Path || '');
         return fileName ? `${downloadBase}/${fileName}` : null;
     }
 
