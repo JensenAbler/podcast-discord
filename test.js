@@ -1255,8 +1255,9 @@ async function runTests() {
             !thoughtSystemPrompt.includes('transcript packet that you are presented with') ||
             !thoughtSystemPrompt.includes('part of an evolving conversation') ||
             !thoughtSystemPrompt.includes('participant\'s interests, emotional motion') ||
+            !thoughtSystemPrompt.includes('Alpha-Clawd\'s behavioral choices depicted in the packet') ||
             !thoughtSystemPrompt.includes('your own personal reaction') ||
-            !thoughtSystemPrompt.includes('neutral observation and awareness') ||
+            !thoughtSystemPrompt.includes('All fields of the internal thoughts and noticings JSON') ||
             thoughtSystemPrompt.includes('awarenessInjection')
         ) {
             throw new Error(`Internal thought system prompt does not match scratchpad framing: ${thoughtSystemPrompt}`);
@@ -1420,6 +1421,12 @@ async function runTests() {
             global.fetch = originalFetch;
         }
 
+        const anthropicSystemText = Array.isArray(anthropicRequest?.body?.system)
+            ? anthropicRequest.body.system.map((block) => block?.text || '').join('\n\n')
+            : String(anthropicRequest?.body?.system || '');
+        const anthropicSystemCacheBlock = Array.isArray(anthropicRequest?.body?.system)
+            ? anthropicRequest.body.system[anthropicRequest.body.system.length - 1]
+            : null;
         if (
             anthropicRequest?.url !== 'https://api.anthropic.com/v1/messages' ||
             anthropicRequest.headers.Authorization ||
@@ -1429,8 +1436,10 @@ async function runTests() {
             anthropicRequest.body.max_tokens !== 123 ||
             anthropicRequest.body.messages.length !== 1 ||
             anthropicRequest.body.messages[0].role !== 'user' ||
-            !anthropicRequest.body.system.includes('internal thought generator') ||
-            !anthropicRequest.body.system.includes('Return only valid JSON') ||
+            !Array.isArray(anthropicRequest.body.system) ||
+            !anthropicSystemText.includes('internal thought generator') ||
+            !anthropicSystemText.includes('Return only valid JSON') ||
+            anthropicSystemCacheBlock?.cache_control?.type !== 'ephemeral' ||
             anthropicRequest.body.output_config?.format?.type !== 'json_schema' ||
             anthropicRequest.body.output_config?.format?.schema?.required?.join(',') !== 'packetId,internalThought,noticings,undercurrents' ||
             anthropicThought.internalThought !== 'Anthropic native messages are working.'
@@ -1494,10 +1503,14 @@ async function runTests() {
             !discernmentPrompt.includes('You own the awareness injection process') ||
             !discernmentPrompt.includes('JUDGMENT MODE') ||
             !discernmentPrompt.includes('INJECTION JUDGEMENT') ||
-            !discernmentPrompt.includes('immediate, present-tense') ||
             !discernmentPrompt.includes('value add') ||
-            !discernmentPrompt.includes('interesting, poetic, clever, or true') ||
+            !discernmentPrompt.includes('what does Alpha-Clawd, as a podcast host, seem to be missing?') ||
+            !discernmentPrompt.includes('If there is not a good answer to this question, then the candidate is weak') ||
+            !discernmentPrompt.includes('framed in first person, present-tense') ||
             !discernmentPrompt.includes('somewhat "evergreen," in its form') ||
+            !discernmentPrompt.includes('I asked a question recently') ||
+            !discernmentPrompt.includes('Only observational content and instructive content') ||
+            !discernmentPrompt.includes('include reasoning only in the reasoning field') ||
             !discernmentPrompt.includes('Reject stale candidates when the complete transcript has moved into a new topic') ||
             !discernmentPrompt.includes('most recent user message indicates a PIVOT') ||
             !candidateSystemPrompt.includes('CANDIDATE PRODUCTION MODE') ||
@@ -4232,6 +4245,62 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 9d: Audio Receiver surfaces ASR provider errors');
+    try {
+        const utterances = [];
+        const asrErrors = [];
+        const sttError = new Error('Fish Audio ASR API error: 402 - {"message":"Insufficient Balance","status":402}');
+        sttError.status = 402;
+        sttError.provider = 'fish-audio';
+        sttError.operation = 'ASR';
+        sttError.fishCreditDepleted = true;
+
+        const receiver = new AudioReceiver({
+            stt: {
+                transcribe: async () => {
+                    throw sttError;
+                }
+            },
+            onUtterance: (utterance) => utterances.push(utterance),
+            onAsrError: (userId, metadata) => asrErrors.push({ userId, metadata })
+        });
+
+        await receiver.processUtteranceSnapshot({
+            userId: 'user-asr-error',
+            speakerInfo: {
+                name: 'Jensen',
+                role: 'guest'
+            },
+            audioBuffer: Buffer.alloc(48000),
+            startTime: Date.now(),
+            duration: 500,
+            timestamp: '2026-05-18T00:00:00.000Z',
+            speechStartedAt: '2026-05-18T00:00:00.000Z',
+            speechEndedAt: '2026-05-18T00:00:00.500Z',
+            speechDuration: 500
+        });
+
+        if (asrErrors.length !== 1 || asrErrors[0].userId !== 'user-asr-error') {
+            throw new Error(`Expected one ASR error callback, got ${JSON.stringify(asrErrors)}`);
+        }
+        if (!asrErrors[0].metadata.error?.fishCreditDepleted || asrErrors[0].metadata.error.status !== 402) {
+            throw new Error(`ASR error metadata did not preserve Fish credit status: ${JSON.stringify(asrErrors[0])}`);
+        }
+        if (
+            utterances.length !== 1 ||
+            utterances[0].transcription !== '' ||
+            !utterances[0].providerError?.fishCreditDepleted
+        ) {
+            throw new Error(`Utterance did not carry provider error metadata: ${JSON.stringify(utterances[0])}`);
+        }
+
+        console.log('  ASR errors are emitted and preserved on the empty utterance');
+        passed++;
+    } catch (error) {
+        console.log(`  ASR error surfacing failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\nTest 10: Transcript timing uses bot playback metadata');
     try {
         const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'podcast-discord-transcript-'));
@@ -5055,6 +5124,68 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 15b: Fish credit fallback uses Edge TTS without Fish voice options');
+    try {
+        const { VoiceProvider, isFishCreditError } = require('./voice-provider');
+        const { EdgeTTSProvider } = require('./edge-tts-provider');
+        const provider = new VoiceProvider({
+            mode: 'fish',
+            fishApiKey: 'test_fish_audio_key_placeholder',
+            fishCreditFallback: true,
+            fishAsrFallback: 'none'
+        });
+        let fishCalls = 0;
+        let edgeCalls = 0;
+        provider.tts = {
+            synthesize: async () => {
+                fishCalls++;
+                const error = new Error('Fish Audio TTS API error: 402 - {"message":"Insufficient Balance","status":402}');
+                error.status = 402;
+                throw error;
+            },
+            isStreamingEnabled: () => true
+        };
+        provider.fallbackTts = {
+            synthesize: async (text, options = {}) => {
+                edgeCalls++;
+                if (options.voiceId || options.referenceId || options.model || options.format) {
+                    throw new Error(`Fish-only options leaked to Edge fallback: ${JSON.stringify(options)}`);
+                }
+                return Buffer.from(`edge:${text}`);
+            }
+        };
+
+        const audio = await provider.synthesize('Hello [short pause] there.', {
+            voiceId: 'fish-voice-id',
+            model: 's2-pro',
+            format: 'mp3'
+        });
+        const edge = new EdgeTTSProvider();
+        const processed = edge.preprocessText('Hello [short pause] there (long-break) <break time="1s" /> [emphasis]');
+
+        if (!Buffer.isBuffer(audio) || audio.toString() !== 'edge:Hello [short pause] there.') {
+            throw new Error(`Fallback did not return Edge audio buffer: ${audio && audio.toString()}`);
+        }
+        if (fishCalls !== 1 || edgeCalls !== 1 || !provider.fishCreditDepleted) {
+            throw new Error(`Fallback counters/state wrong: ${JSON.stringify({ fishCalls, edgeCalls, depleted: provider.fishCreditDepleted })}`);
+        }
+        if (provider.isStreamingEnabled()) {
+            throw new Error('Streaming should be disabled after Fish credit depletion');
+        }
+        if (!isFishCreditError(new Error('Fish Audio ASR API error: 402 - {"message":"Insufficient Balance"}'))) {
+            throw new Error('Fish credit error helper did not recognize 402 insufficient balance');
+        }
+        if (processed !== 'Hello ... there ... ...') {
+            throw new Error(`Edge preprocessing did not remove Fish controls: ${JSON.stringify(processed)}`);
+        }
+
+        console.log('  Fish 402 switches to Edge TTS fallback and strips Fish controls for Edge');
+        passed++;
+    } catch (error) {
+        console.log(`  Fish credit fallback failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\nTest 16: generateStreaming 429 does not leak unhandled rejections');
     try {
         const { PodcastGenerator } = require('./podcast-generator');
@@ -5269,7 +5400,8 @@ async function runTests() {
                 request.headers['anthropic-version'] !== '2023-06-01' ||
                 request.body.model !== 'kimi-for-coding' ||
                 request.body.stream !== true ||
-                request.body.output_config?.format?.type !== 'json_schema'
+                request.body.output_config?.format?.type !== 'json_schema' ||
+                JSON.stringify(request.body).includes('cache_control')
             ) {
                 throw new Error(`Kimi streaming route failed: ${JSON.stringify({ shouldRespond, speech, completed, request })}`);
             }
@@ -5364,6 +5496,9 @@ async function runTests() {
                 speech += chunk;
             }
             const completed = await stream.completed;
+            const systemCacheBlock = Array.isArray(request?.body?.system)
+                ? request.body.system[request.body.system.length - 1]
+                : null;
 
             if (
                 !shouldRespond ||
@@ -5375,6 +5510,8 @@ async function runTests() {
                 request.headers['anthropic-version'] !== '2023-06-01' ||
                 request.body.model !== 'claude-sonnet-4-5-20250929' ||
                 request.body.stream !== true ||
+                !Array.isArray(request.body.system) ||
+                systemCacheBlock?.cache_control?.type !== 'ephemeral' ||
                 request.body.output_config?.format?.type !== 'json_schema'
             ) {
                 throw new Error(`Anthropic streaming route failed: ${JSON.stringify({ shouldRespond, speech, completed, request })}`);

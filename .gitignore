@@ -6,6 +6,7 @@
 
 # Dependencies and caches
 node_modules/
+.claude/
 cached-audio/*.mp3
 logs/
 *.log

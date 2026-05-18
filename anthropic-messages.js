@@ -27,6 +27,10 @@ function normalizeBaseUrl(baseUrl = '') {
     return String(baseUrl || '').trim().replace(/\/+$/, '');
 }
 
+function shouldUseAnthropicPromptCache(baseUrl = '') {
+    return isAnthropicBaseUrl(baseUrl) && getAnthropicCompatibleProvider(baseUrl) === 'anthropic';
+}
+
 function mergeAdjacentMessages(messages = []) {
     const merged = [];
     for (const message of messages) {
@@ -45,7 +49,28 @@ function mergeAdjacentMessages(messages = []) {
     return merged;
 }
 
-function buildAnthropicMessagesBody(body = {}) {
+function buildAnthropicSystem(systemParts = [], options = {}) {
+    const parts = systemParts
+        .map((part) => String(part || '').trim())
+        .filter(Boolean);
+    if (parts.length === 0) {
+        return null;
+    }
+
+    if (!options.cacheControl) {
+        return parts.join('\n\n');
+    }
+
+    return parts.map((text, index) => {
+        const block = { type: 'text', text };
+        if (index === parts.length - 1) {
+            block.cache_control = { type: 'ephemeral' };
+        }
+        return block;
+    });
+}
+
+function buildAnthropicMessagesBody(body = {}, options = {}) {
     const systemParts = [];
     const conversationMessages = [];
 
@@ -75,7 +100,7 @@ function buildAnthropicMessagesBody(body = {}) {
     };
 
     if (systemParts.length > 0) {
-        anthropicBody.system = systemParts.join('\n\n');
+        anthropicBody.system = buildAnthropicSystem(systemParts, options);
     }
 
     if (body.temperature !== undefined && Number.isFinite(Number(body.temperature))) {
@@ -174,7 +199,9 @@ async function fetchAnthropicMessages({
                 'anthropic-version': version,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(buildAnthropicMessagesBody(body)),
+            body: JSON.stringify(buildAnthropicMessagesBody(body, {
+                cacheControl: shouldUseAnthropicPromptCache(baseUrl)
+            })),
             signal: controller.signal
         });
 
@@ -203,9 +230,11 @@ async function fetchAnthropicMessages({
 module.exports = {
     DEFAULT_ANTHROPIC_VERSION,
     buildAnthropicMessagesBody,
+    buildAnthropicSystem,
     fetchAnthropicMessages,
     getAnthropicCompatibleProvider,
     isAnthropicBaseUrl,
     normalizeBaseUrl,
-    normalizeAnthropicResponse
+    normalizeAnthropicResponse,
+    shouldUseAnthropicPromptCache
 };

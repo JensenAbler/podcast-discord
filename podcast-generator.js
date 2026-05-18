@@ -13,7 +13,8 @@ const {
     fetchAnthropicMessages,
     getAnthropicCompatibleProvider,
     isAnthropicBaseUrl,
-    normalizeBaseUrl
+    normalizeBaseUrl,
+    shouldUseAnthropicPromptCache
 } = require('./anthropic-messages');
 
 /**
@@ -565,7 +566,9 @@ class PodcastGenerator {
                     'Content-Type': 'application/json'
                 },
                 body: {
-                    ...buildAnthropicMessagesBody(body),
+                    ...buildAnthropicMessagesBody(body, {
+                        cacheControl: shouldUseAnthropicPromptCache(this.baseUrl)
+                    }),
                     stream: true
                 }
             };

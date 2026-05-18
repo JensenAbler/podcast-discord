@@ -120,6 +120,7 @@ class VoiceManager {
             onSpeakingStop: (userId) => this.handleSpeakingStop(guildId, userId),
             onEndpointing: (userId, metadata) => this.handleEndpointing(guildId, userId, metadata),
             onAsrDispatched: (userId, metadata) => this.handleAsrDispatched(guildId, userId, metadata),
+            onAsrError: (userId, metadata) => this.handleAsrError(guildId, userId, metadata),
             onError: (error) => console.error('[VoiceManager] Receiver error:', error)
         });
         this.receivers.set(guildId, receiver);
@@ -345,6 +346,18 @@ class VoiceManager {
     handleAsrDispatched(guildId, userId, metadata = {}) {
         if (this.onAsrDispatched) {
             this.onAsrDispatched(guildId, userId, metadata);
+        }
+    }
+
+    /**
+     * Handle a receiver-announced ASR failure.
+     * @param {string} guildId - Discord guild ID
+     * @param {string} userId - Discord user ID
+     * @param {Object} metadata - { reason, audioBytes, speechDuration, error }
+     */
+    handleAsrError(guildId, userId, metadata = {}) {
+        if (this.onAsrError) {
+            this.onAsrError(guildId, userId, metadata);
         }
     }
 
@@ -596,9 +609,10 @@ class VoiceManager {
         if (!recordingPath) return;
         const transcriptionText = (utterance.transcription || '').trim();
         const audioEvents = utterance.audioEvents || [];
+        const providerError = utterance.providerError || null;
         // Preserve forensic record of audio events (phantom mic-feedback
         // transcripts, etc.) even when normalized transcription is empty.
-        if (!transcriptionText && audioEvents.length === 0) return;
+        if (!transcriptionText && audioEvents.length === 0 && !providerError) return;
 
         const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
         
@@ -627,7 +641,7 @@ class VoiceManager {
             playbackEndedAt: utterance.playbackEndedAt || null,
             source: utterance.source || null,
             fallbackReason: utterance.fallbackReason || null,
-            providerError: utterance.providerError || null,
+            providerError,
             injectedAwarenessInjections: Array.isArray(utterance.injectedAwarenessInjections)
                 ? utterance.injectedAwarenessInjections.map((item) => ({
                     id: item.id || '',
@@ -789,6 +803,14 @@ class VoiceManager {
      */
     setAsrDispatchedHandler(handler) {
         this.onAsrDispatched = handler;
+    }
+
+    /**
+     * Set the ASR-error handler callback.
+     * @param {Function} handler - (guildId, userId, { reason, audioBytes, speechDuration, error }) => void
+     */
+    setAsrErrorHandler(handler) {
+        this.onAsrError = handler;
     }
 
     /**

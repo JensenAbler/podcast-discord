@@ -39,10 +39,11 @@ class EdgeTTSProvider {
      */
     async synthesize(text, options = {}) {
         const startTime = Date.now();
+        const processedText = this.preprocessText(text);
         
         const voiceId = options.voiceId || this.voices.default;
         
-        console.log(`[Edge TTS] Synthesizing: "${text.substring(0, 50)}..."`);
+        console.log(`[Edge TTS] Synthesizing: "${processedText.substring(0, 50)}..."`);
 
         try {
             // Create temp file for output
@@ -61,7 +62,7 @@ class EdgeTTSProvider {
             });
 
             // Generate speech
-            await tts.ttsPromise(text, outputPath);
+            await tts.ttsPromise(processedText, outputPath);
 
             // Read the generated audio file
             const audioBuffer = fs.readFileSync(outputPath);
@@ -99,7 +100,13 @@ class EdgeTTSProvider {
         let processed = text;
 
         // Remove SSML break tags and replace with text cues
-        processed = processed.replace(/<break\s+time="[\d.]+s"\s*\/?>/gi, '...');
+        processed = processed.replace(/<break\s+time=["']?[\d.]+s["']?\s*\/?>/gi, '...');
+
+        // Fish Audio inline controls should not be spoken when Edge is the fallback.
+        processed = processed
+            .replace(/\[(?:short\s+pause|pause|long\s+pause)\]/gi, '...')
+            .replace(/\[(?:soft\s+voice|emphasis|sigh)\]/gi, '')
+            .replace(/\((?:long-)?break\)/gi, '...');
 
         // Remove other SSML tags
         processed = processed.replace(/<[^>]+>/g, '');

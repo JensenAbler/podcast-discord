@@ -16,12 +16,38 @@ const { EdgeTTSProvider } = require('./edge-tts-provider');
 const { WhisperSTTProvider } = require('./whisper-stt-provider');
 const { WhisperCppSTTProvider } = require('./whisper-cpp-stt-provider');
 
+function envFlagEnabled(value, defaultValue = true) {
+    if (value === undefined || value === null || value === '') {
+        return defaultValue;
+    }
+
+    return !['false', '0', 'no', 'off'].includes(String(value).toLowerCase());
+}
+
+function isFishCreditError(error) {
+    const status = Number(error?.status || error?.statusCode || error?.response?.status);
+    const message = String(error?.message || '');
+    const body = String(error?.bodyText || error?.body || '');
+
+    return status === 402 ||
+        /Fish Audio .*API error:\s*402/i.test(message) ||
+        /Insufficient Balance/i.test(message) ||
+        /Insufficient Balance/i.test(body);
+}
+
 class VoiceProvider {
     constructor(options = {}) {
         this.mode = options.mode || process.env.VOICE_MODE || 'fish';
+        this.fishCreditDepleted = false;
+        this.fishCreditWarningLogged = false;
+        this.fishCreditFallbackEnabled = envFlagEnabled(
+            options.fishCreditFallback ?? process.env.VOICE_FISH_CREDIT_FALLBACK,
+            true
+        );
         
         // Initialize the appropriate providers
         this.initializeProviders(options);
+        this.initializeFishCreditFallbacks(options);
     }
 
     /**
@@ -127,6 +153,126 @@ class VoiceProvider {
         }
     }
 
+    initializeFishCreditFallbacks(options = {}) {
+        this.fallbackTts = null;
+        this.fallbackStt = null;
+        this.fallbackSttProviderName = null;
+
+        if (!this.fishCreditFallbackEnabled || !this.usesFishTts()) {
+            return;
+        }
+
+        this.fallbackTts = new EdgeTTSProvider({
+            voice: options.edgeVoice || process.env.EDGE_TTS_VOICE || 'en-US-MichelleNeural',
+            lang: options.edgeLang || process.env.EDGE_TTS_LANG || 'en-US',
+            pitch: options.edgePitch || process.env.EDGE_TTS_PITCH,
+            rate: options.edgeRate || process.env.EDGE_TTS_RATE,
+            volume: options.edgeVolume || process.env.EDGE_TTS_VOLUME
+        });
+
+        if (this.mode !== 'fish') {
+            return;
+        }
+
+        const fallbackMode = String(
+            options.fishAsrFallback ||
+            process.env.VOICE_FISH_ASR_FALLBACK ||
+            'auto'
+        ).toLowerCase();
+
+        if (fallbackMode === 'none' || fallbackMode === 'off' || fallbackMode === 'false') {
+            return;
+        }
+
+        if (fallbackMode === 'local' || fallbackMode === 'whisper.cpp') {
+            this.fallbackStt = new WhisperCppSTTProvider({
+                whisperPath: options.whisperCppPath || process.env.WHISPER_CPP_PATH,
+                modelPath: options.whisperCppModel || process.env.WHISPER_CPP_MODEL,
+                threads: options.whisperCppThreads || process.env.WHISPER_CPP_THREADS,
+                language: options.whisperCppLanguage || process.env.WHISPER_CPP_LANGUAGE || 'en'
+            });
+            this.fallbackSttProviderName = 'whisper.cpp';
+            return;
+        }
+
+        if (fallbackMode === 'openai' || fallbackMode === 'openai-whisper' || fallbackMode === 'whisper') {
+            this.fallbackStt = new WhisperSTTProvider({
+                apiKey: options.openaiKey || process.env.OPENAI_API_KEY,
+                model: options.whisperModel || process.env.WHISPER_MODEL || 'whisper-1',
+                language: options.whisperLanguage || process.env.WHISPER_LANGUAGE || 'en'
+            });
+            this.fallbackSttProviderName = 'openai-whisper';
+            return;
+        }
+
+        if (fallbackMode === 'auto' && (options.openaiKey || process.env.OPENAI_API_KEY)) {
+            this.fallbackStt = new WhisperSTTProvider({
+                apiKey: options.openaiKey || process.env.OPENAI_API_KEY,
+                model: options.whisperModel || process.env.WHISPER_MODEL || 'whisper-1',
+                language: options.whisperLanguage || process.env.WHISPER_LANGUAGE || 'en'
+            });
+            this.fallbackSttProviderName = 'openai-whisper';
+        }
+    }
+
+    usesFishTts() {
+        return this.mode === 'fish' || this.mode === 'fish-whisper';
+    }
+
+    noteFishCreditDepleted(error, operation) {
+        this.fishCreditDepleted = true;
+
+        if (!this.fishCreditWarningLogged) {
+            console.warn(`[VoiceProvider] Fish Audio ${operation} returned insufficient balance; using configured fallback where possible.`);
+            this.fishCreditWarningLogged = true;
+        }
+
+        if (error && typeof error === 'object') {
+            error.fishCreditDepleted = true;
+        }
+    }
+
+    shouldUseFallbackTts() {
+        return Boolean(this.fallbackTts && this.fishCreditDepleted);
+    }
+
+    fallbackTtsOptions(options = {}) {
+        const {
+            voiceId,
+            referenceId,
+            model,
+            latency,
+            format,
+            chunkLength,
+            normalize,
+            mp3Bitrate,
+            speed,
+            normalizeLoudness,
+            ...fallbackOptions
+        } = options;
+        return fallbackOptions;
+    }
+
+    async collectText(textChunks) {
+        if (typeof textChunks === 'string') {
+            return textChunks;
+        }
+
+        if (textChunks && typeof textChunks[Symbol.asyncIterator] === 'function') {
+            let text = '';
+            for await (const chunk of textChunks) {
+                text += chunk;
+            }
+            return text;
+        }
+
+        if (textChunks && typeof textChunks[Symbol.iterator] === 'function') {
+            return Array.from(textChunks).join('');
+        }
+
+        return String(textChunks || '');
+    }
+
     /**
      * Get the current mode
      * @returns {string}
@@ -147,7 +293,10 @@ class VoiceProvider {
         
         const oldMode = this.mode;
         this.mode = mode;
+        this.fishCreditDepleted = false;
+        this.fishCreditWarningLogged = false;
         this.initializeProviders({ ...options, mode });
+        this.initializeFishCreditFallbacks({ ...options, mode });
         
         console.log(`[VoiceProvider] Switched from ${oldMode} to ${mode}`);
     }
@@ -160,7 +309,20 @@ class VoiceProvider {
      * @returns {Promise<Buffer>} - Audio buffer
      */
     async synthesize(text, options = {}) {
-        return this.tts.synthesize(text, options);
+        if (this.shouldUseFallbackTts()) {
+            console.warn('[VoiceProvider] Using Edge TTS fallback because Fish Audio credit is depleted.');
+            return this.fallbackTts.synthesize(text, this.fallbackTtsOptions(options));
+        }
+
+        try {
+            return await this.tts.synthesize(text, options);
+        } catch (error) {
+            if (this.usesFishTts() && this.fishCreditFallbackEnabled && isFishCreditError(error) && this.fallbackTts) {
+                this.noteFishCreditDepleted(error, 'TTS');
+                return this.fallbackTts.synthesize(text, this.fallbackTtsOptions(options));
+            }
+            throw error;
+        }
     }
 
     /**
@@ -171,6 +333,12 @@ class VoiceProvider {
      * @returns {Readable} - Audio stream
      */
     synthesizeStream(textChunks, options = {}) {
+        if (this.shouldUseFallbackTts()) {
+            console.warn('[VoiceProvider] Streaming disabled; using Edge TTS fallback because Fish Audio credit is depleted.');
+            return this.collectText(textChunks)
+                .then(text => this.fallbackTts.synthesize(text, this.fallbackTtsOptions(options)));
+        }
+
         if (typeof this.tts.synthesizeStream !== 'function') {
             throw new Error(`Streaming TTS is not available in voice mode: ${this.mode}`);
         }
@@ -183,6 +351,10 @@ class VoiceProvider {
      * @returns {boolean}
      */
     isStreamingEnabled(options = {}) {
+        if (this.shouldUseFallbackTts()) {
+            return false;
+        }
+
         return Boolean(
             typeof this.tts.isStreamingEnabled === 'function' &&
             this.tts.isStreamingEnabled(options)
@@ -197,7 +369,30 @@ class VoiceProvider {
      * @returns {Promise<Object>} - Transcription result
      */
     async transcribe(audioBuffer, options = {}) {
-        return this.stt.transcribe(audioBuffer, options);
+        try {
+            return await this.stt.transcribe(audioBuffer, options);
+        } catch (error) {
+            if (this.mode === 'fish' && this.fishCreditFallbackEnabled && isFishCreditError(error)) {
+                this.noteFishCreditDepleted(error, 'ASR');
+                if (this.fallbackStt) {
+                    try {
+                        console.warn(`[VoiceProvider] Retrying ASR with ${this.fallbackSttProviderName} fallback.`);
+                        return await this.fallbackStt.transcribe(audioBuffer, options);
+                    } catch (fallbackError) {
+                        fallbackError.primaryError = error;
+                        fallbackError.fishCreditDepleted = true;
+                        fallbackError.fallbackProvider = this.fallbackSttProviderName;
+                        throw fallbackError;
+                    }
+                }
+            }
+
+            throw error;
+        }
+    }
+
+    isFishCreditError(error) {
+        return isFishCreditError(error);
     }
 
     /**
@@ -281,14 +476,22 @@ class VoiceProvider {
         return {
             mode: this.mode,
             tts: {
-                provider: getTtsProvider(),
+                provider: this.shouldUseFallbackTts() ? 'edge-fallback' : getTtsProvider(),
                 voiceId: this.voiceId
             },
             stt: {
-                provider: getSttProvider()
+                provider: this.fishCreditDepleted && this.fallbackSttProviderName
+                    ? `${getSttProvider()} -> ${this.fallbackSttProviderName}`
+                    : getSttProvider()
+            },
+            fishCreditFallback: {
+                enabled: this.fishCreditFallbackEnabled,
+                depleted: this.fishCreditDepleted,
+                ttsProvider: this.fallbackTts ? 'edge' : null,
+                sttProvider: this.fallbackSttProviderName
             }
         };
     }
 }
 
-module.exports = { VoiceProvider };
+module.exports = { VoiceProvider, isFishCreditError };

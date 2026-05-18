@@ -34,6 +34,7 @@ class AudioReceiver {
             onSpeakingStop: options.onSpeakingStop || (() => {}),
             onEndpointing: options.onEndpointing || (() => {}), // (userId, { active, reason, debounceMs }) — Discord-stop debounce window
             onAsrDispatched: options.onAsrDispatched || (() => {}), // (userId, { reason, audioBytes, speechDuration }) — fires immediately before stt.transcribe
+            onAsrError: options.onAsrError || (() => {}),
             onError: options.onError || console.error,
             enableTranscription: options.enableTranscription !== false, // Default true
             botUserId: options.botUserId, // Bot's own user ID to filter self-audio
@@ -547,6 +548,7 @@ class AudioReceiver {
             let wordLevelData = [];
             let language = null;
             let audioEvents = [];
+            let providerError = null;
             const asrStartedAt = new Date().toISOString();
 
             if (this.enableTranscription && this.stt) {
@@ -587,6 +589,24 @@ class AudioReceiver {
                     }
                 } catch (sttError) {
                     console.error('[AudioReceiver] STT error:', sttError.message);
+                    providerError = {
+                        message: sttError.message,
+                        status: sttError.status || sttError.statusCode || null,
+                        provider: sttError.provider || null,
+                        operation: sttError.operation || 'ASR',
+                        fishCreditDepleted: Boolean(sttError.fishCreditDepleted)
+                    };
+                    try {
+                        this.options.onAsrError(userId, {
+                            reason: snapshotReason || 'snapshot',
+                            audioBytes: audioBuffer.length,
+                            speechDuration,
+                            error: providerError,
+                            rawError: sttError
+                        });
+                    } catch (handlerError) {
+                        console.error('[AudioReceiver] ASR error handler failed:', handlerError.message);
+                    }
                     // Continue without transcription - don't block the flow
                 }
             }
@@ -610,6 +630,7 @@ class AudioReceiver {
                 speechDuration,
                 asrStartedAt,
                 asrCompletedAt,
+                providerError,
                 sampleRate: 48000,
                 channels: 2
             };

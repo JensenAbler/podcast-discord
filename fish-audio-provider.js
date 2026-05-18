@@ -34,6 +34,18 @@ function normalizeSpokenSeparators(text) {
     });
 }
 
+function createFishApiError(operation, response, bodyText) {
+    const error = new Error(`Fish Audio ${operation} API error: ${response.status} - ${bodyText}`);
+    error.provider = 'fish-audio';
+    error.operation = operation;
+    error.status = response.status;
+    error.bodyText = bodyText;
+    if (response.status === 402 || /Insufficient Balance/i.test(bodyText || '')) {
+        error.fishCreditDepleted = true;
+    }
+    return error;
+}
+
 class FishAudioProvider {
     constructor(options = {}) {
         this.apiKey = options.apiKey || process.env.FISH_AUDIO_API_KEY || process.env.FISH_API_KEY;
@@ -103,7 +115,7 @@ class FishAudioProvider {
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Fish Audio TTS API error: ${response.status} - ${errorText}`);
+            throw createFishApiError('TTS', response, errorText);
         }
 
         const audioBuffer = Buffer.from(await response.arrayBuffer());
@@ -454,7 +466,7 @@ class FishAudioProvider {
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Fish Audio ASR API error: ${response.status} - ${errorText}`);
+            throw createFishApiError('ASR', response, errorText);
         }
 
         const result = await response.json();

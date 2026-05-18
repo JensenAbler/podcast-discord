@@ -114,6 +114,8 @@ class AlphaClawdVoiceBot {
         this.idleDecisionHandledSpeechAt = new Map(); // guildId -> ms timestamp of participant speech already handled by idle logic
         this.directResponseInFlight = new Set(); // guildId
         this.lastParticipantSpeechAt = new Map(); // guildId -> ms timestamp
+        this.asrErrorNoticeLastSpokenAt = new Map(); // guildId -> ms timestamp
+        this.asrErrorNoticeCooldownMs = Number(process.env.VOICE_ASR_ERROR_NOTICE_COOLDOWN_MS || 60000);
         this.participantActivityVersion = new Map(); // guildId -> monotonic counter for floor-taking changes
         this.participantActivityTimers = new Map(); // guildId -> Map<userId, timeout>
         this.participantActivityConfirmDelayMs = Number(process.env.PODCAST_PARTICIPANT_ACTIVITY_CONFIRM_MS || 200);
@@ -311,6 +313,7 @@ class AlphaClawdVoiceBot {
                 speechDuration: utterance.speechDuration,
                 asrStartedAt: utterance.asrStartedAt,
                 asrCompletedAt: utterance.asrCompletedAt,
+                providerError: utterance.providerError,
                 timestamp: utterance.timestamp || Date.now()
             });
         });
@@ -348,6 +351,12 @@ class AlphaClawdVoiceBot {
             this.confirmParticipantActivity(guildId, userId, 'ASR dispatched');
             this.markInternalThoughtAsrPending(guildId, userId, metadata);
             this.conversationBuffer.markAsrPending(userId, metadata);
+        });
+
+        this.voiceManager.setAsrErrorHandler((guildId, userId, metadata = {}) => {
+            this.handleAsrError(guildId, userId, metadata).catch((error) => {
+                console.error('[Bot] ASR error notice failed:', error);
+            });
         });
     }
 
@@ -2528,6 +2537,95 @@ class AlphaClawdVoiceBot {
         if (this.isReadableAudio(audio) && typeof audio.destroy === 'function') {
             audio.destroy();
         }
+    }
+
+    serializeVoiceProviderError(error) {
+        if (!error) return null;
+        return {
+            message: error.message || String(error),
+            status: error.status || error.statusCode || null,
+            provider: error.provider || null,
+            operation: error.operation || null,
+            fishCreditDepleted: Boolean(error.fishCreditDepleted)
+        };
+    }
+
+    shouldThrottleAsrErrorNotice(guildId) {
+        const lastSpokenAt = this.asrErrorNoticeLastSpokenAt.get(guildId) || 0;
+        return Date.now() - lastSpokenAt < this.asrErrorNoticeCooldownMs;
+    }
+
+    buildAsrErrorNotice(metadata = {}) {
+        const providerError = metadata.error || {};
+        if (providerError.fishCreditDepleted) {
+            return "I'm still here, but Fish Audio speech transcription just ran out of balance, so I can't understand new speech right now.";
+        }
+        return "I'm still here, but speech transcription is failing right now, so I may miss what you just said.";
+    }
+
+    async handleAsrError(guildId, userId, metadata = {}) {
+        const providerError = metadata.error || this.serializeVoiceProviderError(metadata.rawError);
+        console.warn(`[Bot] ASR failed for ${userId}: ${providerError?.message || 'unknown error'}`);
+
+        if (!this.voiceManager.isConnected(guildId) || this.shouldThrottleAsrErrorNotice(guildId)) {
+            return;
+        }
+
+        this.asrErrorNoticeLastSpokenAt.set(guildId, Date.now());
+        await this.speakServiceNotice(guildId, this.buildAsrErrorNotice({ ...metadata, error: providerError }), {
+            fallbackReason: providerError?.fishCreditDepleted ? 'fish_asr_credit_depleted' : 'asr_error',
+            providerError,
+            audioEvents: ['asr_error_notice']
+        });
+    }
+
+    async speakServiceNotice(guildId, text, options = {}) {
+        if (!this.voiceManager.isConnected(guildId)) return { played: false, disconnected: true };
+
+        const generatedAt = new Date().toISOString();
+        const ttsStartedAt = new Date().toISOString();
+        const audioBuffer = await this.voiceProvider.synthesize(text, {
+            voiceId: this.voiceId
+        });
+        const ttsCompletedAt = new Date().toISOString();
+
+        if (this.recordingState.get(guildId) === this.RecordingState.RECORDING) {
+            const playbackResult = await this.playTtsAndRecord(guildId, audioBuffer);
+            const playback = playbackResult.playback;
+            const playbackTiming = playbackResult.playbackTiming || playback?.timing || {};
+            const playbackStartedAt = playbackTiming.playbackStartedAt || playback?.timing?.playbackStartedAt || null;
+            const playbackEndedAt = playbackTiming.playbackEndedAt || playback?.timing?.playbackEndedAt || null;
+            const playbackStartedMs = Date.parse(playbackStartedAt);
+            const playbackEndedMs = Date.parse(playbackEndedAt);
+            const playbackDuration = !Number.isNaN(playbackStartedMs) && !Number.isNaN(playbackEndedMs)
+                ? Math.max(0, playbackEndedMs - playbackStartedMs)
+                : 0;
+
+            const transcriptEntry = {
+                speaker: 'Alpha-Clawd',
+                speakerRole: 'host',
+                transcription: text,
+                timestamp: generatedAt,
+                generatedAt,
+                ttsStartedAt,
+                ttsCompletedAt,
+                playbackRequestedAt: playbackTiming.playbackRequestedAt || playback?.timing?.playbackRequestedAt || null,
+                playbackStartedAt,
+                playbackEndedAt,
+                duration: playbackDuration,
+                source: 'service_notice',
+                fallbackReason: options.fallbackReason || 'service_notice',
+                providerError: options.providerError || null,
+                audioEvents: options.audioEvents || ['service_notice']
+            };
+            this.voiceManager.saveTranscriptEntry(guildId, transcriptEntry);
+            this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);
+            this.observeShowRunnerTranscriptEntry(guildId, transcriptEntry);
+        } else {
+            await this.voiceManager.speak(guildId, audioBuffer);
+        }
+
+        return { played: true, stale: false };
     }
 
     /**
