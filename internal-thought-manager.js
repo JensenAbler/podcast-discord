@@ -31,7 +31,7 @@ class InternalThoughtManager {
         };
         this.maxRecentThoughts = this.parsePositiveInt(
             options.maxRecentThoughts ?? process.env.PODCAST_INTERNAL_THOUGHT_RECENT_COUNT,
-            3
+            5
         );
         this.maxActiveAwarenessInjections = this.parsePositiveInt(
             options.maxActiveAwarenessInjections ?? process.env.PODCAST_AWARENESS_MAX_ACTIVE,

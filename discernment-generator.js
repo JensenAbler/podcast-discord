@@ -111,19 +111,15 @@ class DiscernmentGenerator extends PodcastGenerator {
             return [
                 ...identity,
                 '',
-                'You own the CANDIDATE PRODUCTION/AWARENESS INJECTION process. The internal thought generator only produces private thoughts; you decide whether any private awareness should become context for the live podcast generator.',
+                'You own the CANDIDATE PRODUCTION process. The internal thought generator only produces private thoughts; you decide whether any private awareness should become context for the live podcast generator.',
                 '',
                 'CANDIDATE PRODUCTION MODE',
                 '',
-                'Review the three most recent internal thoughts together with the complete transcript so far. Produce at most one concise candidate awareness note that might help Alpha-Clawd listen or respond better in the live conversation.',
+                'Review the 5 most recent internal thoughts together with the complete transcript so far. Produce one concise candidate awareness note that might help Alpha-Clawd listen or respond better in the live conversation. ',
                 '',
-                'Ground candidates in the live transcript and recent internal thoughts only. An important part of your role is guarding the podcast generator against generic question-autocomplete. Watch for patterns where Alpha-Clawd keeps asking shallow follow-up questions, reflexively asks the guest how something feels, asks what the guest wants next, or hands the conversational burden back after the guest already gave material to work with.',
+                'A Candidate awareness note should be more than just a summary of the noticings of the 5 most recent internal thoughts. It should draw out a deeper insight, pattern, or preference. Think: "What\'s really going on here?" The answer to that question, if there is one, is the substance of the candidates that you are meant to produce.',
                 '',
-                'When that pattern is present or likely, prefer a candidate awareness note that curtails it: suggest the possibility of synthesis, contribution, bridging, or holding space instead of asking another generic question. Keep the candidate specific to the current turn. Be very attentive especially to the most recent message.',
-                '',
-                'Prefer attention and pacing notes over suggested content.',
-                '',
-                'Do not decide whether the note should be injected. If there is no candidate useful enough for a separate judgment pass, leave candidateAwarenessNote empty.'
+                'A separate model will decide whether the note should actually be injected. Don\'t worry about it if the candidate you produce doesnt seem super helpful. In that case it will be screened.'
             ].join('\n');
         }
 
@@ -138,15 +134,13 @@ class DiscernmentGenerator extends PodcastGenerator {
             '',
             'You receive a candidate awareness note produced by a prior discernment pass and decide whether it is relevant enough to the interests of the podcast participants to warrant injecting it into the context of the podcast generator.',
             '',
-            'Approve only when the awareness would help Alpha-Clawd listen or respond better in the live conversation. Do not approve something merely because it is interesting, poetic, clever, or true. Do not steer the podcast away from what participants are actually doing.',
+            'Approve only when it really seems like there is a value add. An example of value add would be helping Alpha-Clawd listen or respond better in the live conversation. You may also approve something merely because it is interesting, poetic, clever, or true. It is ok to steer the podcast away from what participants are currently doing, as long as it seems like a truly insightful, fun, or intruiging thread that is asking to emerge from what has come before.',
             '',
-            'Treat prevention of generic question-autocomplete as a high-value reason to inject. If a candidate would stop Alpha-Clawd from asking another shallow reflex question and would help it synthesize, carry the thread, bridge to prepared structure, or simply leave space, approve it when it is grounded in the latest transcript.',
-            '',
-            'The awarenessInjection text must be immediate, present-tense, and useful for the next few live turns. Future-oriented reasoning belongs in reason, not in the injected text. Distinguish "later in this same episode" from future-episode planning.',
+            'The awarenessInjection text should be framed as immediate, present-tense, and useful for the next few live turns. But, keep in mind that by the time the awareness injection gets injected, the conversation may have advanced by one or two turns. So, the injection should also be somewhat "evergreen," in its form. ',
             '',
             'Reject stale candidates when the complete transcript has moved into a new topic. Be very attentive especially to the most recent message. If the most recent user message indicates a PIVOT, then prefer choosing NO INJECTION.',
             '',
-            'If approved, awarenessInjection is the exact private context text to show the podcast generator. It is not speech. If rejected, awarenessInjection must be empty.'
+            'If approved, awarenessInjection is the exact private context text to show the podcast generator. If rejected, awarenessInjection must be empty.'
         ].join('\n');
     }
 
@@ -156,7 +150,7 @@ class DiscernmentGenerator extends PodcastGenerator {
                 'Complete transcript so far:',
                 String(input.completeTranscript || input.transcript || '(empty)').trim(),
                 '',
-                'Three most recent internal thoughts:',
+                'Five most recent internal thoughts:',
                 this.formatInternalThoughts(input.recentInternalThoughts || []) || '(none)'
             ];
 
@@ -173,7 +167,7 @@ class DiscernmentGenerator extends PodcastGenerator {
             'Complete transcript so far:',
             String(input.completeTranscript || input.transcript || this.formatUtterances(input.utterances || []) || '(empty)').trim(),
             '',
-            'Three most recent internal thoughts:',
+            'Five most recent internal thoughts:',
             this.formatInternalThoughts(input.recentInternalThoughts || []) || '(none)'
         ];
 

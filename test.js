@@ -1251,18 +1251,15 @@ async function runTests() {
         }
         const thoughtSystemPrompt = thoughtGenerator.buildSystemPrompt();
         if (
-            !thoughtSystemPrompt.includes('intentionally packet-only') ||
-            !thoughtSystemPrompt.includes('previous internalThought') ||
-            !thoughtSystemPrompt.includes('candidateAwarenessNote') ||
-            !thoughtSystemPrompt.includes('active awarenessInjection') ||
-            !thoughtSystemPrompt.includes('artifact content being discussed') ||
-            !thoughtSystemPrompt.includes('generic question-autocomplete behavior') ||
-            !thoughtSystemPrompt.includes('guests to elaborate') ||
-            !thoughtSystemPrompt.includes('the guest needs synthesis') ||
-            !thoughtSystemPrompt.includes('throwing the conversational burden back') ||
-            thoughtSystemPrompt.includes('Jensen needs synthesis')
+            !thoughtSystemPrompt.includes('internal facing, non-vocalized-type reflections') ||
+            !thoughtSystemPrompt.includes('transcript packet that you are presented with') ||
+            !thoughtSystemPrompt.includes('part of an evolving conversation') ||
+            !thoughtSystemPrompt.includes('participant\'s interests, emotional motion') ||
+            !thoughtSystemPrompt.includes('your own personal reaction') ||
+            !thoughtSystemPrompt.includes('neutral observation and awareness') ||
+            thoughtSystemPrompt.includes('awarenessInjection')
         ) {
-            throw new Error(`Internal thought system prompt does not guard recursive artifact ingestion: ${thoughtSystemPrompt}`);
+            throw new Error(`Internal thought system prompt does not match scratchpad framing: ${thoughtSystemPrompt}`);
         }
 
         const discernmentGenerator = new DiscernmentGenerator({
@@ -1482,7 +1479,7 @@ async function runTests() {
         });
         if (
             !candidatePrompt.includes('Complete transcript so far') ||
-            !candidatePrompt.includes('Three most recent internal thoughts') ||
+            !candidatePrompt.includes('Five most recent internal thoughts') ||
             candidatePrompt.includes('Awareness injections already active')
         ) {
             throw new Error(`Discernment candidate prompt is wrong: ${candidatePrompt}`);
@@ -1493,21 +1490,21 @@ async function runTests() {
         if (
             !discernmentPrompt.includes('relevant enough to the interests of the podcast participants') ||
             !discernmentPrompt.includes('awarenessInjection') ||
-            !candidateSystemPrompt.includes('CANDIDATE PRODUCTION/AWARENESS INJECTION process') ||
+            !candidateSystemPrompt.includes('CANDIDATE PRODUCTION process') ||
             !discernmentPrompt.includes('You own the awareness injection process') ||
             !discernmentPrompt.includes('JUDGMENT MODE') ||
             !discernmentPrompt.includes('INJECTION JUDGEMENT') ||
             !discernmentPrompt.includes('immediate, present-tense') ||
-            !discernmentPrompt.includes('later in this same episode') ||
+            !discernmentPrompt.includes('value add') ||
+            !discernmentPrompt.includes('interesting, poetic, clever, or true') ||
+            !discernmentPrompt.includes('somewhat "evergreen," in its form') ||
             !discernmentPrompt.includes('Reject stale candidates when the complete transcript has moved into a new topic') ||
             !discernmentPrompt.includes('most recent user message indicates a PIVOT') ||
-            !discernmentPrompt.includes('prevention of generic question-autocomplete') ||
             !candidateSystemPrompt.includes('CANDIDATE PRODUCTION MODE') ||
-            !candidateSystemPrompt.includes('reflexively asks the guest how something feels') ||
-            !candidateSystemPrompt.includes('asks what the guest wants next') ||
-            !candidateSystemPrompt.includes('suggest the possibility of synthesis, contribution, bridging, or holding space') ||
-            !candidateSystemPrompt.includes('Be very attentive especially to the most recent message') ||
-            !candidateSystemPrompt.includes('Prefer attention and pacing notes over suggested content') ||
+            !candidateSystemPrompt.includes('Review the 5 most recent internal thoughts') ||
+            !candidateSystemPrompt.includes('more than just a summary of the noticings') ||
+            !candidateSystemPrompt.includes('What\'s really going on here?') ||
+            !candidateSystemPrompt.includes('doesnt seem super helpful') ||
             candidateSystemPrompt.includes('INJECTION JUDGEMENT') ||
             candidateSystemPrompt.includes('JUDGMENT MODE') ||
             discernmentPrompt.includes('CANDIDATE PRODUCTION MODE') ||
