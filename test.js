@@ -567,8 +567,8 @@ async function runTests() {
         }
 
         const defaultSpeechCapGenerator = new PodcastGenerator({ apiKey: 'sk-test-placeholder' });
-        if (defaultSpeechCapGenerator.maxSpeechChars !== 420) {
-            throw new Error(`Default live speech cap should be 420 chars, got ${defaultSpeechCapGenerator.maxSpeechChars}`);
+        if (defaultSpeechCapGenerator.maxSpeechChars !== 0) {
+            throw new Error(`Default live speech cap should be 0 (no cap), got ${defaultSpeechCapGenerator.maxSpeechChars}`);
         }
 
         const pendingPrompt = generator.buildUserPrompt('Jensen: Did Big Brain finish yet?', null, {

@@ -207,7 +207,7 @@ class PodcastGenerator {
         this.timeout = Number(options.timeout || process.env.PODCAST_GENERATOR_TIMEOUT_MS || 15000);
         this.maxCompletionTokens = Number(options.maxCompletionTokens || process.env.PODCAST_GENERATOR_MAX_TOKENS || 1500);
         this.maxHistoryTurns = Number(options.maxHistoryTurns || process.env.PODCAST_GENERATOR_HISTORY_TURNS || 8);
-        this.maxSpeechChars = Number(options.maxSpeechChars || process.env.PODCAST_GENERATOR_MAX_SPEECH_CHARS || 420);
+        this.maxSpeechChars = Number(options.maxSpeechChars || process.env.PODCAST_GENERATOR_MAX_SPEECH_CHARS || 0);
         this.maxRequestTokens = this.parsePositiveInt(
             options.maxRequestTokens ?? process.env.PODCAST_GENERATOR_MAX_REQUEST_TOKENS,
             8000
@@ -222,6 +222,8 @@ class PodcastGenerator {
         );
         this.responseFormat = options.responseFormat || process.env.PODCAST_GENERATOR_RESPONSE_FORMAT || 'json_schema';
         this.reasoningFormat = options.reasoningFormat || process.env.PODCAST_GENERATOR_REASONING_FORMAT;
+        this.voiceMode = options.voiceMode || process.env.VOICE_MODE || 'fish';
+        this.fishAudioModel = options.fishAudioModel || options.fishModel || process.env.FISH_AUDIO_MODEL || 's2-pro';
         this.allowJsonObjectFallback = options.allowJsonObjectFallback !== undefined
             ? Boolean(options.allowJsonObjectFallback)
             : process.env.PODCAST_GENERATOR_JSON_OBJECT_FALLBACK !== 'false';
@@ -628,6 +630,39 @@ class PodcastGenerator {
         return this.fitMessagesToPromptBudget(messages, transcript, input);
     }
 
+    isFishTtsActive() {
+        return /^(fish|fish-whisper)$/i.test(String(this.voiceMode || ''));
+    }
+
+    getFishControlStyle() {
+        return String(this.fishAudioModel || '').trim().toLowerCase().startsWith('s1')
+            ? 'fish-s1'
+            : 'fish-s2';
+    }
+
+    buildSpeechControlGuidance() {
+        if (!this.isFishTtsActive()) {
+            return [
+                'TTS pacing:',
+                '- The active TTS mode is not Fish Audio. Use wording and punctuation for pacing; do not include Fish control tags like [pause] or (break) in speech.'
+            ];
+        }
+
+        if (this.getFishControlStyle() === 'fish-s1') {
+            return [
+                'Fish TTS performance controls:',
+                '- Active TTS appears to be Fish S1-family. You may put sparse parenthesized controls directly in speech when they improve delivery: (break) for a breath, (long-break) for a larger transition.',
+                '- Use controls as performance markup, not stage directions. Do not narrate them, do not put them in bigBrain.reason, and avoid them in tiny backchannels.'
+            ];
+        }
+
+        return [
+            'Fish TTS performance controls:',
+            '- Active TTS appears to be Fish S2-family. You may put sparse bracketed controls directly in speech when they improve delivery: [short pause], [pause], [long pause], [soft voice], [emphasis], or [sigh].',
+            '- Use controls as performance markup, not stage directions. Do not narrate them, do not put them in bigBrain.reason, and avoid them in tiny backchannels.'
+        ];
+    }
+
     buildSystemPrompt() {
         return [
             'You are:',
@@ -715,6 +750,7 @@ class PodcastGenerator {
             '- Return JSON matching the provided schema.',
             '- If humans are acknowledging, thinking aloud, talking amongst themselves, or developing a thought, usually set shouldRespond=false. If a response is needed only to show presence, Minimal backchannel is allowed but should be rare because delayed bare acknowledgements can feel awkward; do not ask a question.',
             '- If shouldRespond=true, speech is exactly what the TTS should say out loud.',
+            ...this.buildSpeechControlGuidance(),
             '- Keep speech to 1-3 natural sentences unless a direct question needs slightly more.',
             '- Use no markdown, bullets, code, URLs, file paths, tables, or stage directions.',
             '',
@@ -1788,7 +1824,7 @@ class PodcastGenerator {
                 },
                 speech: {
                     type: 'string',
-                    description: 'Exact text to send to TTS. Empty string when shouldRespond is false.'
+                    description: 'Exact text to send to TTS. Empty string when shouldRespond is false. May include sparse Fish Audio controls when the system prompt says Fish is active.'
                 },
                 bigBrain: {
                     type: 'object',
@@ -1836,7 +1872,7 @@ class PodcastGenerator {
     }
 
     sanitizeSpeech(text) {
-        let cleaned = String(text || '')
+        return String(text || '')
             .replace(/```[\s\S]*?```/g, '')
             .replace(/\[ACTION:mode:[^\]]+\]/gi, '')
             .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi, '$1')
@@ -1847,23 +1883,6 @@ class PodcastGenerator {
             .replace(/[*_~>]+/g, '')
             .replace(/\s+/g, ' ')
             .trim();
-
-        if (cleaned.length <= this.maxSpeechChars) {
-            return cleaned;
-        }
-
-        const clipped = cleaned.slice(0, this.maxSpeechChars);
-        const sentenceEnd = Math.max(
-            clipped.lastIndexOf('.'),
-            clipped.lastIndexOf('!'),
-            clipped.lastIndexOf('?')
-        );
-
-        if (sentenceEnd > Math.floor(this.maxSpeechChars * 0.45)) {
-            return clipped.slice(0, sentenceEnd + 1).trim();
-        }
-
-        return `${clipped.replace(/\s+\S*$/, '').trim()}...`;
     }
 
     formatUtterances(utterances) {
