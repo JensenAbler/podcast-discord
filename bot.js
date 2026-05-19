@@ -1228,7 +1228,7 @@ class AlphaClawdVoiceBot {
                 .setDescription('Stop recording and leave voice channel'),
             new SlashCommandBuilder()
                 .setName('podcast-production')
-                .setDescription('Produce a publish-ready episode from a recording')
+                .setDescription('Render a versioned episode from a recording without publishing')
                 .addIntegerOption(option =>
                     option
                         .setName('episode')
@@ -1648,7 +1648,7 @@ class AlphaClawdVoiceBot {
 
     buildEpisodeDownloadUrl(data, mp3Path) {
         const downloadBase = (process.env.PODCAST_DOWNLOAD_BASE_URL || 'https://clawcast.jensenabler.com/episodes').replace(/\/+$/, '');
-        const fileName = path.basename(data?.versionedEpisodesCopy || data?.episodesCopy || mp3Path || '');
+        const fileName = path.basename(data?.versionedEpisodesCopy || data?.episodesCopy || '');
         return fileName ? `${downloadBase}/${fileName}` : null;
     }
 
@@ -1694,6 +1694,7 @@ class AlphaClawdVoiceBot {
             'produce-recording',
             '--episode', String(episode),
             '--recording', recording,
+            '--skip-finalize',
             '--resume'
         ];
         if (creativeDirection) {
@@ -1741,6 +1742,14 @@ class AlphaClawdVoiceBot {
                         if (fileSizeMB <= DISCORD_LIMIT_MB) {
                             const attachment = new AttachmentBuilder(mp3Path, { name: fileName });
                             replyOptions.files = [attachment];
+                        } else if (!downloadUrl) {
+                            replyOptions.content = this.appendDownloadNotice(
+                                replyOptions.content,
+                                fileSizeMB,
+                                DISCORD_LIMIT_MB,
+                                null,
+                                mp3Path
+                            );
                         } else {
                             replyOptions.content += `\n\n⚠️ File is **${fileSizeMB.toFixed(1)} MB** — too large for Discord attachment (limit: ${DISCORD_LIMIT_MB} MB).` +
                                 `\n🔗 [Download](${downloadUrl}) or use \`scp\`:` +
@@ -1831,10 +1840,14 @@ class AlphaClawdVoiceBot {
                 const syncSummary = data.syncTarget
                     ? (data.syncResults || []).map(r => r.returnCode === 0 || r.dryRun ? 'ok' : `failed:${r.returnCode}`).join(', ')
                     : 'not configured';
+                const versionLabel = data.publishedVersion || data.version || data.metadataVersion || 'unknown';
+                const versionedMp3 = data.publishedVersionUrl || data.publishedVersionMp3 || 'unknown';
                 content = `**${status}**\n` +
                     `Episode ${data.episode || episode}: ${data.title || 'Untitled'}\n` +
+                    `Version: ${versionLabel}\n` +
+                    `Versioned MP3: ${versionedMp3}\n` +
                     `Duration: ${data.duration || 'unknown'}\n` +
-                    `Episode: ${data.episodeUrl || data.mp3 || 'unknown'}\n` +
+                    `Episode URL: ${data.episodeUrl || data.stableMp3 || data.mp3 || 'unknown'}\n` +
                     `Feed: ${data.feedUrl || data.feed || 'unknown'}\n` +
                     `RSS item: ${data.replacedExistingItem ? 'replaced existing item' : 'added new item'}\n` +
                     `Sync: ${syncSummary}`;

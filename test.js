@@ -5588,11 +5588,22 @@ async function runTests() {
             },
             '/opt/clawcast-network/content/production/episode-06/v004/episode-06-v004.mp3'
         );
+        const unpublishedDownloadUrl = AlphaClawdVoiceBot.prototype.buildEpisodeDownloadUrl(
+            {},
+            '/opt/clawcast-network/content/production/episode-06/v004/episode-06-v004.mp3'
+        );
         const notice = AlphaClawdVoiceBot.prototype.appendDownloadNotice(
             'done',
             16.1,
             limit,
             downloadUrl,
+            '/tmp/episode-06.mp3'
+        );
+        const unpublishedNotice = AlphaClawdVoiceBot.prototype.appendDownloadNotice(
+            'done',
+            16.1,
+            limit,
+            null,
             '/tmp/episode-06.mp3'
         );
 
@@ -5605,8 +5616,14 @@ async function runTests() {
         if (downloadUrl !== 'https://clawcast.jensenabler.com/episodes/episode-06-v004.mp3') {
             throw new Error(`Unexpected download URL: ${downloadUrl}`);
         }
+        if (unpublishedDownloadUrl !== null) {
+            throw new Error(`Unpublished production render should not get public episode URL, got ${unpublishedDownloadUrl}`);
+        }
         if (!notice.includes('16.1 MB') || !notice.includes(downloadUrl) || !notice.includes('/tmp/episode-06.mp3')) {
             throw new Error(`Notice omitted expected publish details: ${notice}`);
+        }
+        if (unpublishedNotice.includes('Download:') || !unpublishedNotice.includes('/tmp/episode-06.mp3')) {
+            throw new Error(`Unpublished notice should show path without a public download URL: ${unpublishedNotice}`);
         }
         if (!AlphaClawdVoiceBot.prototype.isDiscordRequestTooLarge({ code: 40005, message: 'Request entity too large' })) {
             throw new Error('Request-too-large detection failed');
@@ -5815,6 +5832,11 @@ async function runTests() {
                 stdout: JSON.stringify({
                     episode: '05',
                     version: 'v002',
+                    publishedVersion: 'v002',
+                    publishedVersionMp3: '/opt/clawcast-network/content/production/episode-05/v002/episode-05-v002.mp3',
+                    publishedVersionUrl: 'https://clawcast.jensenabler.com/episodes/episode-05-v002.mp3',
+                    stableMp3: '/opt/clawcast-network/content/episodes/episode-05.mp3',
+                    episodeUrl: 'https://clawcast.jensenabler.com/episodes/episode-05.mp3',
                     title: 'Test Episode',
                     duration: '10:00'
                 }),
@@ -5852,11 +5874,77 @@ async function runTests() {
         if (!reply?.content?.includes('Podcast Published')) {
             throw new Error(`Publish reply was not sent: ${JSON.stringify(reply)}`);
         }
+        if (
+            !reply.content.includes('Version: v002') ||
+            !reply.content.includes('Versioned MP3: https://clawcast.jensenabler.com/episodes/episode-05-v002.mp3')
+        ) {
+            throw new Error(`Publish reply omitted versioned MP3 details: ${reply.content}`);
+        }
 
         console.log('  Publish command passes version option to CLI');
         passed++;
     } catch (error) {
         console.log(`  Publish command version test failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 47c.3b: Publish dry run passes dry-run option and labels reply');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        let capturedArgs = null;
+        let reply = null;
+
+        bot.runProductionProcess = async (args) => {
+            capturedArgs = args;
+            return {
+                stdout: JSON.stringify({
+                    episode: '05',
+                    version: 'v002',
+                    publishedVersion: 'v002',
+                    publishedVersionMp3: '/opt/clawcast-network/content/production/episode-05/v002/episode-05-v002.mp3',
+                    title: 'Dry Run Episode',
+                    duration: '10:00',
+                    dryRun: true,
+                    syncResults: [{ dryRun: true, returnCode: null }]
+                }),
+                stderr: ''
+            };
+        };
+        bot.extractLastJson = AlphaClawdVoiceBot.prototype.extractLastJson;
+
+        const interaction = {
+            options: {
+                getInteger: (name) => name === 'episode' ? 5 : null,
+                getString: (name) => {
+                    if (name === 'version') return 'v002';
+                    if (name === 'title') return null;
+                    if (name === 'description') return null;
+                    throw new Error(`Unexpected string option ${name}`);
+                },
+                getBoolean: (name) => name === 'dry-run' ? true : null
+            },
+            deferReply: async () => {},
+            editReply: async (options) => {
+                reply = options;
+            }
+        };
+
+        await bot.handlePublishCommand(interaction);
+
+        if (!capturedArgs.includes('--dry-run')) {
+            throw new Error(`Dry-run option was not passed: ${JSON.stringify(capturedArgs)}`);
+        }
+        if (!reply?.content?.includes('Podcast Publish Dry Run')) {
+            throw new Error(`Dry-run reply was not labeled: ${JSON.stringify(reply)}`);
+        }
+        if (!reply.content.includes('Versioned MP3: /opt/clawcast-network/content/production/episode-05/v002/episode-05-v002.mp3')) {
+            throw new Error(`Dry-run reply omitted versioned MP3 details: ${reply.content}`);
+        }
+
+        console.log('  Publish dry run passes dry-run and displays versioned MP3 details');
+        passed++;
+    } catch (error) {
+        console.log(`  Publish dry-run display test failed: ${error.message}`);
         failed++;
     }
 
@@ -5890,6 +5978,9 @@ async function runTests() {
         const episodeIndex = capturedArgs.indexOf('--episode');
         if (episodeIndex === -1 || capturedArgs[episodeIndex + 1] !== '42') {
             throw new Error(`Production did not default to next episode: ${JSON.stringify(capturedArgs)}`);
+        }
+        if (!capturedArgs.includes('--skip-finalize')) {
+            throw new Error(`Production command can still finalize public episode files: ${JSON.stringify(capturedArgs)}`);
         }
 
         console.log('  Production command defaults to next episode when omitted');
@@ -6031,11 +6122,14 @@ async function runTests() {
         if (capturedArgs.includes('--regenerate-audio')) {
             throw new Error(`Removed regenerate-audio option still reached CLI: ${JSON.stringify(capturedArgs)}`);
         }
+        if (!capturedArgs.includes('--skip-finalize')) {
+            throw new Error(`Production command can still finalize public episode files: ${JSON.stringify(capturedArgs)}`);
+        }
         if (!reply?.content?.includes('Podcast Production Complete')) {
             throw new Error(`Production reply was not sent: ${JSON.stringify(reply)}`);
         }
 
-        console.log('  Production command passes intro/outro creative direction and omits regenerate-audio');
+        console.log('  Production command passes intro/outro creative direction, omits regenerate-audio, and skips finalize');
         passed++;
     } catch (error) {
         console.log(`  Production command contract failed: ${error.message}`);
