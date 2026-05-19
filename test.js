@@ -5282,6 +5282,8 @@ async function runTests() {
 
             const gen = new PodcastGenerator({
                 apiKey: 'test-key',
+                baseUrl: 'https://api.openai.test/v1',
+                model: 'test-model',
                 timeout: 1000
             });
             const stream = await gen.generateStreaming({
@@ -5763,8 +5765,12 @@ async function runTests() {
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'podcast-publish-version-test-'));
+        const previousContentRoot = process.env.CLAWCAST_CONTENT_ROOT;
         const previousPodcastRoot = process.env.PODCAST_ROOT;
+        const previousPodcastContentRoot = process.env.PODCAST_CONTENT_ROOT;
+        process.env.CLAWCAST_CONTENT_ROOT = tempRoot;
         process.env.PODCAST_ROOT = tempRoot;
+        delete process.env.PODCAST_CONTENT_ROOT;
 
         const prodDir = path.join(tempRoot, 'production', 'episode-05');
         fs.mkdirSync(path.join(prodDir, 'v001'), { recursive: true });
@@ -5809,8 +5815,12 @@ async function runTests() {
             throw new Error(`Version autocomplete filtering failed: ${JSON.stringify(filteredResponse)}`);
         }
 
+        if (previousContentRoot === undefined) delete process.env.CLAWCAST_CONTENT_ROOT;
+        else process.env.CLAWCAST_CONTENT_ROOT = previousContentRoot;
         if (previousPodcastRoot === undefined) delete process.env.PODCAST_ROOT;
         else process.env.PODCAST_ROOT = previousPodcastRoot;
+        if (previousPodcastContentRoot === undefined) delete process.env.PODCAST_CONTENT_ROOT;
+        else process.env.PODCAST_CONTENT_ROOT = previousPodcastContentRoot;
         fs.rmSync(tempRoot, { recursive: true, force: true });
 
         console.log('  Publish version autocomplete lists versions with finalized indicator and supports filtering');
