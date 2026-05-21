@@ -5878,6 +5878,7 @@ async function runTests() {
                     publishedVersion: 'v002',
                     publishedVersionMp3: '/opt/clawcast-network/content/production/episode-05/v002/episode-05-v002.mp3',
                     publishedVersionUrl: 'https://clawcast.jensenabler.com/episodes/episode-05-v002.mp3',
+                    publicMetadataUrl: 'https://clawcast.jensenabler.com/episodes/episode-05.json',
                     stableMp3: '/opt/clawcast-network/content/episodes/episode-05.mp3',
                     episodeUrl: 'https://clawcast.jensenabler.com/episodes/episode-05.mp3',
                     title: 'Test Episode',
@@ -5919,7 +5920,8 @@ async function runTests() {
         }
         if (
             !reply.content.includes('Version: v002') ||
-            !reply.content.includes('Versioned MP3: https://clawcast.jensenabler.com/episodes/episode-05-v002.mp3')
+            !reply.content.includes('Versioned MP3: https://clawcast.jensenabler.com/episodes/episode-05-v002.mp3') ||
+            !reply.content.includes('Metadata: https://clawcast.jensenabler.com/episodes/episode-05.json')
         ) {
             throw new Error(`Publish reply omitted versioned MP3 details: ${reply.content}`);
         }
@@ -5945,6 +5947,7 @@ async function runTests() {
                     version: 'v002',
                     publishedVersion: 'v002',
                     publishedVersionMp3: '/opt/clawcast-network/content/production/episode-05/v002/episode-05-v002.mp3',
+                    publicMetadataPath: '/opt/clawcast-network/content/episodes/episode-05.json',
                     title: 'Dry Run Episode',
                     duration: '10:00',
                     dryRun: true,
@@ -5982,6 +5985,9 @@ async function runTests() {
         }
         if (!reply.content.includes('Versioned MP3: /opt/clawcast-network/content/production/episode-05/v002/episode-05-v002.mp3')) {
             throw new Error(`Dry-run reply omitted versioned MP3 details: ${reply.content}`);
+        }
+        if (!reply.content.includes('Metadata: /opt/clawcast-network/content/episodes/episode-05.json')) {
+            throw new Error(`Dry-run reply omitted public metadata details: ${reply.content}`);
         }
 
         console.log('  Publish dry run passes dry-run and displays versioned MP3 details');

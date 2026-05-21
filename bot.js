@@ -1874,10 +1874,12 @@ class AlphaClawdVoiceBot {
                     : 'not configured';
                 const versionLabel = data.publishedVersion || data.version || data.metadataVersion || 'unknown';
                 const versionedMp3 = data.publishedVersionUrl || data.publishedVersionMp3 || 'unknown';
+                const publicMetadata = data.publicMetadataUrl || data.publicMetadataPath || null;
                 content = `**${status}**\n` +
                     `Episode ${data.episode || episode}: ${data.title || 'Untitled'}\n` +
                     `Version: ${versionLabel}\n` +
                     `Versioned MP3: ${versionedMp3}\n` +
+                    (publicMetadata ? `Metadata: ${publicMetadata}\n` : '') +
                     `Duration: ${data.duration || 'unknown'}\n` +
                     `Episode URL: ${data.episodeUrl || data.stableMp3 || data.mp3 || 'unknown'}\n` +
                     `Feed: ${data.feedUrl || data.feed || 'unknown'}\n` +
