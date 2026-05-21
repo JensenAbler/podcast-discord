@@ -1008,6 +1008,7 @@ class AlphaClawdVoiceBot {
             const randomIndex = Math.floor(Math.random() * this.cachedAudio.fillerClips.length);
             const fillerBuffer = this.cachedAudio.fillerClips[randomIndex];
             console.log(`[Bot] Playing filler clip (${fillerBuffer.length} bytes)`);
+            this.duckBigBrainAmbientBed(guildId, 'filler clip starting');
             await this.voiceManager.speak(guildId, fillerBuffer);
         } catch (error) {
             console.error('[Bot] Error playing filler clip:', error);
@@ -1109,6 +1110,7 @@ class AlphaClawdVoiceBot {
         const inputType = options.inputType
             ?? (capture.isStream ? streamTypeForLiveFormat(this.voiceProvider?.format) : undefined);
 
+        this.duckBigBrainAmbientBed(guildId, 'foreground TTS starting');
         const playback = await this.voiceManager.speakWithTiming(guildId, capture.playbackAudio, {
             ...options,
             inputType,
@@ -2889,6 +2891,7 @@ class AlphaClawdVoiceBot {
             guildId,
             runId: pending.runId,
             stopped: false,
+            ducked: false,
             timer: null,
             playbackActive: false,
             chunksPlayed: 0
@@ -2923,6 +2926,34 @@ class AlphaClawdVoiceBot {
         return true;
     }
 
+    ensureBigBrainAmbientBed(guildId, pending, options = {}) {
+        if (this.bigBrainAmbientBeds?.has?.(guildId)) {
+            return false;
+        }
+        return this.startBigBrainAmbientBed(guildId, pending, options);
+    }
+
+    scheduleNextBigBrainAmbientChunk(guildId, bed, delayMs, reason = 'loop') {
+        if (!this.isBigBrainAmbientBedCurrent(guildId, bed)) {
+            return false;
+        }
+
+        bed.timer = setTimeout(() => {
+            bed.timer = null;
+            this.playBigBrainAmbientChunk(guildId, bed).catch((error) => {
+                if (!this.isBigBrainAmbientBedCurrent(guildId, bed)) {
+                    return;
+                }
+                console.warn(`[Bot] bigBrain ambient bed ${reason} failed runId=${bed.runId}: ${error.message}`);
+                this.stopBigBrainAmbientBed(guildId, `ambient ${reason} failed`, { runId: bed.runId, bed });
+            });
+        }, Math.max(100, delayMs));
+        if (typeof bed.timer.unref === 'function') {
+            bed.timer.unref();
+        }
+        return true;
+    }
+
     async playBigBrainAmbientChunk(guildId, bed) {
         if (!this.isBigBrainAmbientBedCurrent(guildId, bed)) {
             return;
@@ -2932,31 +2963,28 @@ class AlphaClawdVoiceBot {
             return;
         }
 
-        const playback = this.voiceManager?.getPlaybackStatus?.(guildId) || { isPlaying: false, queueLength: 0 };
-        if (playback.isPlaying || playback.queueLength > 0) {
-            bed.timer = setTimeout(() => {
-                bed.timer = null;
-                this.playBigBrainAmbientChunk(guildId, bed).catch((error) => {
-                    if (!this.isBigBrainAmbientBedCurrent(guildId, bed)) {
-                        return;
-                    }
-                    console.warn(`[Bot] bigBrain ambient bed retry failed runId=${bed.runId}: ${error.message}`);
-                    this.stopBigBrainAmbientBed(guildId, 'ambient retry failed', { runId: bed.runId, bed });
-                });
-            }, 500);
-            if (typeof bed.timer.unref === 'function') {
-                bed.timer.unref();
-            }
-            return;
-        }
-
         const buffer = await this.getBigBrainAmbientBedBuffer();
         if (!this.isBigBrainAmbientBedCurrent(guildId, bed)) {
             return;
         }
 
-        let playbackStartedMs = null;
+        const durationMs = this.getBigBrainAmbientChunkDurationMs();
         const chunkNumber = bed.chunksPlayed + 1;
+        const playback = this.voiceManager?.getPlaybackStatus?.(guildId) || { isPlaying: false, queueLength: 0 };
+        if (playback.isPlaying || playback.queueLength > 0) {
+            const startTime = Date.now();
+            this.voiceManager.addBotAudioToRecording(guildId, buffer, {
+                startTime,
+                volume: this.getBigBrainAmbientVolume()
+            });
+            bed.chunksPlayed++;
+            console.log(`[Bot] bigBrain ambient bed recorded under active playback runId=${bed.runId}, chunk=${chunkNumber}`);
+            this.scheduleNextBigBrainAmbientChunk(guildId, bed, durationMs, 'record-only loop');
+            return;
+        }
+
+        let playbackStartedMs = null;
+        let playbackEndedMs = null;
         bed.playbackActive = true;
 
         try {
@@ -2970,14 +2998,22 @@ class AlphaClawdVoiceBot {
                 }
             });
 
-            await ambientPlayback.finished;
+            const playbackTiming = await ambientPlayback.finished;
+            const parsedEnd = Date.parse(playbackTiming?.playbackEndedAt || '');
+            playbackEndedMs = Number.isNaN(parsedEnd) ? Date.now() : parsedEnd;
         } catch (error) {
             if (!this.isBigBrainAmbientBedCurrent(guildId, bed)) {
                 return;
             }
-            throw error;
+            if (bed.ducked) {
+                playbackEndedMs = Date.now();
+                console.log(`[Bot] bigBrain ambient bed playback ducked cleanly runId=${bed.runId}, chunk=${chunkNumber}`);
+            } else {
+                throw error;
+            }
         } finally {
             bed.playbackActive = false;
+            bed.ducked = false;
         }
 
         if (!this.isBigBrainAmbientBedCurrent(guildId, bed)) {
@@ -2992,19 +3028,36 @@ class AlphaClawdVoiceBot {
         }
         bed.chunksPlayed++;
 
-        bed.timer = setTimeout(() => {
-            bed.timer = null;
-            this.playBigBrainAmbientChunk(guildId, bed).catch((error) => {
-                if (!this.isBigBrainAmbientBedCurrent(guildId, bed)) {
-                    return;
-                }
-                console.warn(`[Bot] bigBrain ambient bed loop failed runId=${bed.runId}: ${error.message}`);
-                this.stopBigBrainAmbientBed(guildId, 'ambient loop failed', { runId: bed.runId, bed });
-            });
-        }, 100);
-        if (typeof bed.timer.unref === 'function') {
-            bed.timer.unref();
+        const elapsedMs = Number.isFinite(playbackStartedMs) && Number.isFinite(playbackEndedMs)
+            ? Math.max(0, playbackEndedMs - playbackStartedMs)
+            : durationMs;
+        const nextDelayMs = Math.max(100, durationMs - elapsedMs + 100);
+        this.scheduleNextBigBrainAmbientChunk(guildId, bed, nextDelayMs, 'loop');
+    }
+
+    duckBigBrainAmbientBed(guildId, reason = 'foreground audio starting', options = {}) {
+        const bed = this.bigBrainAmbientBeds?.get?.(guildId);
+        if (!bed) {
+            return false;
         }
+        if (options.runId && bed.runId !== options.runId) {
+            return false;
+        }
+        if (options.bed && bed !== options.bed) {
+            return false;
+        }
+        if (!bed.playbackActive) {
+            return false;
+        }
+
+        bed.ducked = true;
+        const stopped = this.voiceManager?.stopPlayback?.(guildId);
+        if (!stopped) {
+            bed.ducked = false;
+            return false;
+        }
+        console.log(`[Bot] bigBrain ambient bed ducked runId=${bed.runId} (${reason})`);
+        return true;
     }
 
     stopBigBrainAmbientBed(guildId, reason = 'stopped', options = {}) {
@@ -3252,8 +3305,6 @@ class AlphaClawdVoiceBot {
             return;
         }
 
-        this.stopBigBrainAmbientBed(guildId, 'tool tone starting', { runId: pending.runId });
-
         const state = {
             guildId,
             runId: pending.runId,
@@ -3274,6 +3325,7 @@ class AlphaClawdVoiceBot {
             }
 
             state.playbackActive = true;
+            this.duckBigBrainAmbientBed(guildId, 'tool tone starting', { runId: pending.runId });
             const playback = await this.voiceManager.speakWithTiming(guildId, buffer, {
                 inputType: StreamType.Arbitrary,
                 volume: this.getBigBrainToolToneVolume(),
@@ -3308,7 +3360,7 @@ class AlphaClawdVoiceBot {
         }
 
         if (!state.stopped && this.pendingBigBrainResponses?.has?.(pending.runId)) {
-            this.startBigBrainAmbientBed(guildId, pending, { delayMs: 0 });
+            this.ensureBigBrainAmbientBed(guildId, pending, { delayMs: 0 });
         }
     }
 
@@ -3316,7 +3368,6 @@ class AlphaClawdVoiceBot {
         return ![
             'bigBrain response staged',
             'bigBrain run cleaned up',
-            'host response starting',
             'idle loop stopped'
         ].includes(reason);
     }
@@ -3340,7 +3391,7 @@ class AlphaClawdVoiceBot {
         if (this.shouldResumeAmbientAfterToolToneStop(reason)) {
             const pending = this.pendingBigBrainResponses?.get?.(state.runId);
             if (pending?.guildId === guildId) {
-                this.startBigBrainAmbientBed(guildId, pending, { delayMs: 0 });
+                this.ensureBigBrainAmbientBed(guildId, pending, { delayMs: 0 });
             }
         }
         return true;
@@ -3767,7 +3818,6 @@ class AlphaClawdVoiceBot {
         }
         const source = options.source || 'buffer';
         this.stopBigBrainToolTone(guildId, 'host response starting');
-        this.stopBigBrainAmbientBed(guildId, 'host response starting');
 
         try {
             const isStreaming = Boolean(response?.isStreaming && response.speechStream);

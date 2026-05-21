@@ -3548,7 +3548,7 @@ async function runTests() {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-bigbrain-tools';
         const runId = 'discord-bigbrain-tool-tone';
-        let stoppedAmbient = null;
+        let duckedAmbient = null;
         let resumedAmbient = null;
         let toneRequest = null;
         let playedTone = null;
@@ -3576,11 +3576,11 @@ async function runTests() {
         bot.RecordingState = { RECORDING: 'RECORDING' };
         bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
         bot.hasCurrentParticipantFloor = () => false;
-        bot.stopBigBrainAmbientBed = (_guildId, reason, options = {}) => {
-            stoppedAmbient = { reason, runId: options.runId };
+        bot.duckBigBrainAmbientBed = (_guildId, reason, options = {}) => {
+            duckedAmbient = { reason, runId: options.runId };
             return true;
         };
-        bot.startBigBrainAmbientBed = (_guildId, pending, options = {}) => {
+        bot.ensureBigBrainAmbientBed = (_guildId, pending, options = {}) => {
             resumedAmbient = { runId: pending?.runId, delayMs: options.delayMs };
             return true;
         };
@@ -3638,8 +3638,8 @@ async function runTests() {
         if (!pentatonic.includes(toneRequest.frequency)) {
             throw new Error(`Tool tone frequency is not pentatonic: ${toneRequest.frequency}`);
         }
-        if (stoppedAmbient?.reason !== 'tool tone starting' || stoppedAmbient?.runId !== runId) {
-            throw new Error(`Ambient bed was not stopped for the tool cue: ${JSON.stringify(stoppedAmbient)}`);
+        if (duckedAmbient?.reason !== 'tool tone starting' || duckedAmbient?.runId !== runId) {
+            throw new Error(`Ambient bed was not ducked for the tool cue: ${JSON.stringify(duckedAmbient)}`);
         }
         if (playedTone?.audio !== 'tool-tone-audio' || playedTone?.volume !== 0.33) {
             throw new Error(`Tool tone was not played with expected options: ${JSON.stringify(playedTone)}`);
@@ -3651,7 +3651,7 @@ async function runTests() {
             throw new Error(`Ambient bed did not immediately resume while the bigBrain run remained pending: ${JSON.stringify(resumedAmbient)}`);
         }
 
-        stoppedAmbient = null;
+        duckedAmbient = null;
         resumedAmbient = null;
         toneRequest = null;
         playedTone = null;
@@ -3675,7 +3675,7 @@ async function runTests() {
             throw new Error(`Agent activity fallback tone was not played and recorded: ${JSON.stringify({ playedTone, recordedTone })}`);
         }
 
-        stoppedAmbient = null;
+        duckedAmbient = null;
         resumedAmbient = null;
         toneRequest = null;
         playedTone = null;
@@ -3730,7 +3730,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7g.1: Stale ambient stop cannot kill resumed bed');
+    console.log('\nTest 7g.1: Ducked ambient playback cannot kill the active bed');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-bigbrain-ambient-race';
@@ -3825,20 +3825,140 @@ async function runTests() {
         if (tonePlays !== 1) {
             throw new Error(`Tool tone did not play exactly once: ${tonePlays}`);
         }
-        if (ambientStarts < 2) {
-            throw new Error(`Ambient bed did not restart after tool tone: ${ambientStarts}`);
+        if (ambientStarts !== 1) {
+            throw new Error(`Ducked ambient bed should remain the same active bed, got starts=${ambientStarts}`);
         }
         if (!bot.bigBrainAmbientBeds.has(guildId)) {
-            throw new Error('Resumed ambient bed was stopped by stale playback failure');
+            throw new Error('Active ambient bed was stopped by ducked playback failure');
         }
         if (stopCalls !== 1) {
-            throw new Error(`Expected only the original ambient stop, got ${stopCalls}`);
+            throw new Error(`Expected one duck of the active ambient playback, got ${stopCalls}`);
         }
 
-        console.log('  Stale ambient playback failures cannot stop the freshly resumed bed');
+        bot.stopBigBrainAmbientBed(guildId, 'test cleanup', { runId });
+        console.log('  Ducked ambient playback failures keep the bed state alive');
         passed++;
     } catch (error) {
-        console.log(`  Ambient resume race failed: ${error.message}`);
+        console.log(`  Ambient duck handling failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 7g.2: Host responses duck the bigBrain bed instead of stopping it');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-bigbrain-host-bed';
+        const runId = 'discord-bigbrain-host-bed';
+        let hardStoppedAmbient = false;
+        let duckStopCalls = 0;
+        let recordedHostAudio = null;
+        let savedTranscript = null;
+
+        bot.voiceId = 'voice-test';
+        bot.directResponseInFlight = new Set();
+        bot.bigBrainAmbientBeds = new Map([[
+            guildId,
+            {
+                guildId,
+                runId,
+                stopped: false,
+                ducked: false,
+                timer: null,
+                playbackActive: true,
+                chunksPlayed: 1
+            }
+        ]]);
+        bot.voiceProvider = { format: 'mp3' };
+        bot.synthesizeLiveTTS = async () => Buffer.from('host-audio');
+        bot.waitForParticipantFloorToSettle = async () => true;
+        bot.discardStaleDirectResponse = () => false;
+        bot.settleGeneratorResponse = async (response) => response;
+        bot.markIdleDecisionHandled = () => {};
+        bot.formatAwarenessInjectionsForTranscript = () => [];
+        bot.observeInternalThoughtTranscriptEntry = () => {};
+        bot.observeShowRunnerTranscriptEntry = () => {};
+        bot.stopBigBrainToolTone = () => false;
+        bot.stopBigBrainAmbientBed = () => {
+            hardStoppedAmbient = true;
+            return true;
+        };
+        bot.conversationBuffer = {
+            setFlushHold: () => {},
+            startCooldown: () => {}
+        };
+        bot.podcastGenerator = {
+            rememberAssistantResponse: () => {}
+        };
+        bot.voiceManager = {
+            stopPlayback: () => {
+                duckStopCalls++;
+                return true;
+            },
+            speakWithTiming: async (_guildId, audio, options) => {
+                if (audio.toString() !== 'host-audio') {
+                    throw new Error(`Unexpected host audio: ${audio.toString()}`);
+                }
+                options.onStart?.({ playbackStartedAt: '2026-05-09T00:00:05.000Z' });
+                return {
+                    timing: {
+                        playbackRequestedAt: '2026-05-09T00:00:04.900Z',
+                        playbackStartedAt: '2026-05-09T00:00:05.000Z',
+                        playbackEndedAt: null
+                    },
+                    finished: Promise.resolve({
+                        playbackRequestedAt: '2026-05-09T00:00:04.900Z',
+                        playbackStartedAt: '2026-05-09T00:00:05.000Z',
+                        playbackEndedAt: '2026-05-09T00:00:06.000Z'
+                    })
+                };
+            },
+            addBotAudioToRecording: (_guildId, audio, options) => {
+                recordedHostAudio = {
+                    audio: audio.toString(),
+                    startTime: options.startTime
+                };
+            },
+            saveTranscriptEntry: (_guildId, entry) => {
+                savedTranscript = entry;
+            }
+        };
+
+        const result = await bot.speakDirectGeneratorResponse(
+            guildId,
+            {
+                speech: 'A short host response over the bed.',
+                bigBrain: { requested: false, reason: '', consumedRunId: '' }
+            },
+            {
+                source: 'buffer',
+                playFiller: false,
+                rememberAssistant: true
+            }
+        );
+
+        if (!result?.played) {
+            throw new Error(`Host response did not play: ${JSON.stringify(result)}`);
+        }
+        if (hardStoppedAmbient) {
+            throw new Error('Host response hard-stopped the bigBrain ambient bed');
+        }
+        if (duckStopCalls !== 1) {
+            throw new Error(`Host response should duck the current ambient playback once, got ${duckStopCalls}`);
+        }
+        const bed = bot.bigBrainAmbientBeds.get(guildId);
+        if (!bed || bed.stopped || !bed.ducked) {
+            throw new Error(`Ambient bed state was not preserved and marked ducked: ${JSON.stringify(bed)}`);
+        }
+        if (recordedHostAudio?.audio !== 'host-audio' || !Number.isFinite(recordedHostAudio.startTime)) {
+            throw new Error(`Host audio was not recorded after ducking the bed: ${JSON.stringify(recordedHostAudio)}`);
+        }
+        if (savedTranscript?.transcription !== 'A short host response over the bed.') {
+            throw new Error(`Host transcript was not saved: ${JSON.stringify(savedTranscript)}`);
+        }
+
+        console.log('  Host speech ducks live ambience without tearing down the bed');
+        passed++;
+    } catch (error) {
+        console.log(`  Host ambient ducking failed: ${error.message}`);
         failed++;
     }
 
