@@ -1228,7 +1228,7 @@ class AlphaClawdVoiceBot {
                 .setDescription('Stop recording and leave voice channel'),
             new SlashCommandBuilder()
                 .setName('podcast-production')
-                .setDescription('Render a versioned episode from a recording without publishing')
+                .setDescription('Produce a publish-ready episode from a recording')
                 .addIntegerOption(option =>
                     option
                         .setName('episode')
@@ -1648,7 +1648,7 @@ class AlphaClawdVoiceBot {
 
     buildEpisodeDownloadUrl(data, mp3Path) {
         const downloadBase = (process.env.PODCAST_DOWNLOAD_BASE_URL || 'https://clawcast.jensenabler.com/episodes').replace(/\/+$/, '');
-        const fileName = path.basename(data?.versionedEpisodesCopy || data?.episodesCopy || '');
+        const fileName = path.basename(data?.versionedEpisodesCopy || data?.episodesCopy || mp3Path || '');
         return fileName ? `${downloadBase}/${fileName}` : null;
     }
 
@@ -1694,7 +1694,6 @@ class AlphaClawdVoiceBot {
             'produce-recording',
             '--episode', String(episode),
             '--recording', recording,
-            '--skip-finalize',
             '--resume'
         ];
         if (creativeDirection) {
@@ -1742,14 +1741,6 @@ class AlphaClawdVoiceBot {
                         if (fileSizeMB <= DISCORD_LIMIT_MB) {
                             const attachment = new AttachmentBuilder(mp3Path, { name: fileName });
                             replyOptions.files = [attachment];
-                        } else if (!downloadUrl) {
-                            replyOptions.content = this.appendDownloadNotice(
-                                replyOptions.content,
-                                fileSizeMB,
-                                DISCORD_LIMIT_MB,
-                                null,
-                                mp3Path
-                            );
                         } else {
                             replyOptions.content += `\n\n⚠️ File is **${fileSizeMB.toFixed(1)} MB** — too large for Discord attachment (limit: ${DISCORD_LIMIT_MB} MB).` +
                                 `\n🔗 [Download](${downloadUrl}) or use \`scp\`:` +

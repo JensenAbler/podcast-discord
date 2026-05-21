@@ -5601,14 +5601,6 @@ async function runTests() {
             downloadUrl,
             '/tmp/episode-06.mp3'
         );
-        const unpublishedNotice = AlphaClawdVoiceBot.prototype.appendDownloadNotice(
-            'done',
-            16.1,
-            limit,
-            null,
-            '/tmp/episode-06.mp3'
-        );
-
         if (limit !== 8) {
             throw new Error(`Expected default upload limit 8 MB, got ${limit}`);
         }
@@ -5618,14 +5610,11 @@ async function runTests() {
         if (downloadUrl !== 'https://clawcast.jensenabler.com/episodes/episode-06-v004.mp3') {
             throw new Error(`Unexpected download URL: ${downloadUrl}`);
         }
-        if (unpublishedDownloadUrl !== null) {
-            throw new Error(`Unpublished production render should not get public episode URL, got ${unpublishedDownloadUrl}`);
+        if (unpublishedDownloadUrl !== 'https://clawcast.jensenabler.com/episodes/episode-06-v004.mp3') {
+            throw new Error(`Expected render filename URL fallback, got ${unpublishedDownloadUrl}`);
         }
         if (!notice.includes('16.1 MB') || !notice.includes(downloadUrl) || !notice.includes('/tmp/episode-06.mp3')) {
             throw new Error(`Notice omitted expected publish details: ${notice}`);
-        }
-        if (unpublishedNotice.includes('Download:') || !unpublishedNotice.includes('/tmp/episode-06.mp3')) {
-            throw new Error(`Unpublished notice should show path without a public download URL: ${unpublishedNotice}`);
         }
         if (!AlphaClawdVoiceBot.prototype.isDiscordRequestTooLarge({ code: 40005, message: 'Request entity too large' })) {
             throw new Error('Request-too-large detection failed');
@@ -5989,8 +5978,8 @@ async function runTests() {
         if (episodeIndex === -1 || capturedArgs[episodeIndex + 1] !== '42') {
             throw new Error(`Production did not default to next episode: ${JSON.stringify(capturedArgs)}`);
         }
-        if (!capturedArgs.includes('--skip-finalize')) {
-            throw new Error(`Production command can still finalize public episode files: ${JSON.stringify(capturedArgs)}`);
+        if (capturedArgs.includes('--skip-finalize')) {
+            throw new Error(`Production command should finalize public episode files again: ${JSON.stringify(capturedArgs)}`);
         }
 
         console.log('  Production command defaults to next episode when omitted');
@@ -6132,14 +6121,14 @@ async function runTests() {
         if (capturedArgs.includes('--regenerate-audio')) {
             throw new Error(`Removed regenerate-audio option still reached CLI: ${JSON.stringify(capturedArgs)}`);
         }
-        if (!capturedArgs.includes('--skip-finalize')) {
-            throw new Error(`Production command can still finalize public episode files: ${JSON.stringify(capturedArgs)}`);
+        if (capturedArgs.includes('--skip-finalize')) {
+            throw new Error(`Production command should finalize public episode files again: ${JSON.stringify(capturedArgs)}`);
         }
         if (!reply?.content?.includes('Podcast Production Complete')) {
             throw new Error(`Production reply was not sent: ${JSON.stringify(reply)}`);
         }
 
-        console.log('  Production command passes intro/outro creative direction, omits regenerate-audio, and skips finalize');
+        console.log('  Production command passes intro/outro creative direction, omits regenerate-audio, and finalizes output');
         passed++;
     } catch (error) {
         console.log(`  Production command contract failed: ${error.message}`);
