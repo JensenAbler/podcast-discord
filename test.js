@@ -5601,6 +5601,47 @@ async function runTests() {
             downloadUrl,
             '/tmp/episode-06.mp3'
         );
+        const previousContentRoot = process.env.CLAWCAST_CONTENT_ROOT;
+        const previousPodcastRoot = process.env.PODCAST_ROOT;
+        const previousPodcastContentRoot = process.env.PODCAST_CONTENT_ROOT;
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'production-versioned-download-'));
+        let preparedDownloadUrl = null;
+
+        try {
+            process.env.CLAWCAST_CONTENT_ROOT = tempRoot;
+            delete process.env.PODCAST_ROOT;
+            delete process.env.PODCAST_CONTENT_ROOT;
+
+            const finalDir = path.join(tempRoot, 'production', 'episode-06', 'v004');
+            const finalMp3 = path.join(finalDir, 'episode-06-v004.mp3');
+            fs.mkdirSync(finalDir, { recursive: true });
+            fs.writeFileSync(finalMp3, Buffer.from('versioned render'));
+
+            const prepared = AlphaClawdVoiceBot.prototype.ensureProductionVersionedDownload({
+                episode: '06',
+                version: 'v004',
+                finalMp3
+            });
+            const versionedPath = path.join(tempRoot, 'episodes', 'episode-06-v004.mp3');
+            const stablePath = path.join(tempRoot, 'episodes', 'episode-06.mp3');
+            preparedDownloadUrl = AlphaClawdVoiceBot.prototype.buildEpisodeDownloadUrl(prepared, finalMp3);
+
+            if (prepared.versionedEpisodesCopy !== versionedPath || !fs.existsSync(versionedPath)) {
+                throw new Error(`Versioned production download was not prepared: ${JSON.stringify(prepared)}`);
+            }
+            if (fs.existsSync(stablePath)) {
+                throw new Error(`Production download helper wrote stable published MP3: ${stablePath}`);
+            }
+        } finally {
+            if (previousContentRoot === undefined) delete process.env.CLAWCAST_CONTENT_ROOT;
+            else process.env.CLAWCAST_CONTENT_ROOT = previousContentRoot;
+            if (previousPodcastRoot === undefined) delete process.env.PODCAST_ROOT;
+            else process.env.PODCAST_ROOT = previousPodcastRoot;
+            if (previousPodcastContentRoot === undefined) delete process.env.PODCAST_CONTENT_ROOT;
+            else process.env.PODCAST_CONTENT_ROOT = previousPodcastContentRoot;
+            fs.rmSync(tempRoot, { recursive: true, force: true });
+        }
+
         if (limit !== 8) {
             throw new Error(`Expected default upload limit 8 MB, got ${limit}`);
         }
@@ -5610,8 +5651,11 @@ async function runTests() {
         if (downloadUrl !== 'https://clawcast.jensenabler.com/episodes/episode-06-v004.mp3') {
             throw new Error(`Unexpected download URL: ${downloadUrl}`);
         }
-        if (unpublishedDownloadUrl !== 'https://clawcast.jensenabler.com/episodes/episode-06-v004.mp3') {
-            throw new Error(`Expected render filename URL fallback, got ${unpublishedDownloadUrl}`);
+        if (unpublishedDownloadUrl !== null) {
+            throw new Error(`Unpublished production render should not get public episode URL, got ${unpublishedDownloadUrl}`);
+        }
+        if (preparedDownloadUrl !== 'https://clawcast.jensenabler.com/episodes/episode-06-v004.mp3') {
+            throw new Error(`Prepared versioned download URL was not public: ${preparedDownloadUrl}`);
         }
         if (!notice.includes('16.1 MB') || !notice.includes(downloadUrl) || !notice.includes('/tmp/episode-06.mp3')) {
             throw new Error(`Notice omitted expected publish details: ${notice}`);
@@ -5631,7 +5675,7 @@ async function runTests() {
             process.env.PODCAST_DOWNLOAD_BASE_URL = originalDownloadBase;
         }
 
-        console.log('  Oversized production renders use the hosted episode URL instead of attachment failure');
+        console.log('  Oversized production renders use a versioned hosted episode URL without touching the stable MP3');
         passed++;
     } catch (error) {
         console.log(`  Oversized attachment fallback failed: ${error.message}`);
@@ -5978,8 +6022,8 @@ async function runTests() {
         if (episodeIndex === -1 || capturedArgs[episodeIndex + 1] !== '42') {
             throw new Error(`Production did not default to next episode: ${JSON.stringify(capturedArgs)}`);
         }
-        if (capturedArgs.includes('--skip-finalize')) {
-            throw new Error(`Production command should finalize public episode files again: ${JSON.stringify(capturedArgs)}`);
+        if (!capturedArgs.includes('--skip-finalize')) {
+            throw new Error(`Production command can still finalize public episode files: ${JSON.stringify(capturedArgs)}`);
         }
 
         console.log('  Production command defaults to next episode when omitted');
@@ -6121,14 +6165,14 @@ async function runTests() {
         if (capturedArgs.includes('--regenerate-audio')) {
             throw new Error(`Removed regenerate-audio option still reached CLI: ${JSON.stringify(capturedArgs)}`);
         }
-        if (capturedArgs.includes('--skip-finalize')) {
-            throw new Error(`Production command should finalize public episode files again: ${JSON.stringify(capturedArgs)}`);
+        if (!capturedArgs.includes('--skip-finalize')) {
+            throw new Error(`Production command can still finalize public episode files: ${JSON.stringify(capturedArgs)}`);
         }
         if (!reply?.content?.includes('Podcast Production Complete')) {
             throw new Error(`Production reply was not sent: ${JSON.stringify(reply)}`);
         }
 
-        console.log('  Production command passes intro/outro creative direction, omits regenerate-audio, and finalizes output');
+        console.log('  Production command passes intro/outro creative direction, omits regenerate-audio, and skips finalize');
         passed++;
     } catch (error) {
         console.log(`  Production command contract failed: ${error.message}`);

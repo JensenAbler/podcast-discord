@@ -1228,7 +1228,7 @@ class AlphaClawdVoiceBot {
                 .setDescription('Stop recording and leave voice channel'),
             new SlashCommandBuilder()
                 .setName('podcast-production')
-                .setDescription('Produce a publish-ready episode from a recording')
+                .setDescription('Render a versioned episode from a recording without publishing')
                 .addIntegerOption(option =>
                     option
                         .setName('episode')
@@ -1648,7 +1648,7 @@ class AlphaClawdVoiceBot {
 
     buildEpisodeDownloadUrl(data, mp3Path) {
         const downloadBase = (process.env.PODCAST_DOWNLOAD_BASE_URL || 'https://clawcast.jensenabler.com/episodes').replace(/\/+$/, '');
-        const fileName = path.basename(data?.versionedEpisodesCopy || data?.episodesCopy || mp3Path || '');
+        const fileName = path.basename(data?.versionedEpisodesCopy || data?.episodesCopy || '');
         return fileName ? `${downloadBase}/${fileName}` : null;
     }
 
@@ -1661,6 +1661,41 @@ class AlphaClawdVoiceBot {
             next += `\nPath:\n\`\`\`\n${mp3Path}\n\`\`\``;
         }
         return next;
+    }
+
+    ensureProductionVersionedDownload(data) {
+        if (!data?.finalMp3 || data.versionedEpisodesCopy) return data;
+
+        const rawEpisode = String(data.episode || '');
+        if (!/^\d+$/.test(rawEpisode)) return data;
+        const episode = rawEpisode.padStart(2, '0');
+        const version = String(data.version || '');
+        if (!/^v\d+$/.test(version)) return data;
+
+        try {
+            const finalMp3 = path.resolve(data.finalMp3);
+            if (!fs.existsSync(finalMp3)) return data;
+
+            const episodesDir = path.join(getPodcastRoot(), 'episodes');
+            fs.mkdirSync(episodesDir, { recursive: true });
+            const versionedPath = path.join(episodesDir, `episode-${episode}-${version}.mp3`);
+
+            if (fs.existsSync(versionedPath) || fs.lstatSync?.(versionedPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
+                fs.unlinkSync(versionedPath);
+            }
+
+            try {
+                fs.symlinkSync(path.relative(episodesDir, finalMp3), versionedPath);
+            } catch {
+                fs.copyFileSync(finalMp3, versionedPath);
+            }
+
+            data.versionedEpisodesCopy = versionedPath;
+        } catch (error) {
+            console.error('[Bot] Failed to prepare versioned production download:', error);
+        }
+
+        return data;
     }
 
     isDiscordRequestTooLarge(error) {
@@ -1694,6 +1729,7 @@ class AlphaClawdVoiceBot {
             'produce-recording',
             '--episode', String(episode),
             '--recording', recording,
+            '--skip-finalize',
             '--resume'
         ];
         if (creativeDirection) {
@@ -1711,6 +1747,7 @@ class AlphaClawdVoiceBot {
         try {
             const result = await this.runProductionProcess(args);
             const data = this.extractLastJson(result.stdout);
+            if (data) this.ensureProductionVersionedDownload(data);
 
             let summary = '';
             if (data) {
@@ -1742,9 +1779,13 @@ class AlphaClawdVoiceBot {
                             const attachment = new AttachmentBuilder(mp3Path, { name: fileName });
                             replyOptions.files = [attachment];
                         } else {
-                            replyOptions.content += `\n\n⚠️ File is **${fileSizeMB.toFixed(1)} MB** — too large for Discord attachment (limit: ${DISCORD_LIMIT_MB} MB).` +
-                                `\n🔗 [Download](${downloadUrl}) or use \`scp\`:` +
-                                `\n\`\`\`\n${mp3Path}\n\`\`\``;
+                            replyOptions.content = this.appendDownloadNotice(
+                                replyOptions.content,
+                                fileSizeMB,
+                                DISCORD_LIMIT_MB,
+                                downloadUrl,
+                                mp3Path
+                            );
                         }
                     }
                 } catch (attachErr) {
