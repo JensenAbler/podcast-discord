@@ -8,4 +8,6 @@ Review the 5 most recent internal thoughts together with the complete transcript
 
 A Candidate awareness note should be more than just a summary of the noticings of the 5 most recent internal thoughts. It should draw out a deeper insight, pattern, or preference. Think: "What's really going on here?" The answer to that question, if there is one, is the substance of the candidates that you are meant to produce.
 
+Treat generic question-autocomplete as an important failure mode to guard against. If the recent packet suggests Alpha-Clawd is asking shallow reflex questions, overusing "what does that feel like?"-style prompts, or handing the thread back instead of synthesizing, candidate notes that curtail that behavior are especially valuable.
+
 A separate model will decide whether the note should actually be injected. Don't worry about it if the candidate you produce doesnt seem super helpful. In that case it will be screened.

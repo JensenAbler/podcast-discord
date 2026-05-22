@@ -79,6 +79,7 @@ const { PodcastGenerator } = require('./podcast-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
 const { ShowRunnerManager } = require('./showrunner-manager');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
+const { buildTurnIdIntent } = require('./turn-intent');
 
 // Map a Fish TTS format string to the @discordjs/voice StreamType that lets
 // Discord play the bytes without an FFmpeg transcode. Returning undefined
@@ -119,6 +120,8 @@ class AlphaClawdVoiceBot {
         this.participantActivityVersion = new Map(); // guildId -> monotonic counter for floor-taking changes
         this.participantActivityTimers = new Map(); // guildId -> Map<userId, timeout>
         this.participantActivityConfirmDelayMs = Number(process.env.PODCAST_PARTICIPANT_ACTIVITY_CONFIRM_MS || 200);
+        this.latestParticipantTurnIdIntent = new Map(); // guildId -> deterministic turn intent for latest participant utterance
+        this.awarenessTurnWaitMs = Number(process.env.PODCAST_AWARENESS_TURN_WAIT_MS ?? 200);
         this.bigBrainEnabled = options.bigBrainEnabled !== undefined
             ? Boolean(options.bigBrainEnabled)
             : process.env.PODCAST_BIG_BRAIN_ENABLED !== 'false';
@@ -285,6 +288,10 @@ class AlphaClawdVoiceBot {
             if (transcription) {
                 this.lastParticipantSpeechAt.set(guildId, Date.now());
                 this.confirmParticipantActivity(guildId, utterance.userId, 'transcript');
+                const participantTurnIdIntent = this.buildGeneratorTurnIdIntent('participant', [utterance]);
+                if (participantTurnIdIntent) {
+                    this.latestParticipantTurnIdIntent.set(guildId, participantTurnIdIntent);
+                }
                 this.observeInternalThoughtTranscriptEntry(guildId, {
                     ...utterance,
                     speakerRole: utterance.speakerRole || 'guest',
@@ -534,6 +541,49 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    buildGeneratorTurnIdIntent(source, utterances = []) {
+        try {
+            const intent = buildTurnIdIntent(utterances, { source });
+            return intent ? { ...intent, source } : null;
+        } catch (error) {
+            console.warn(`[Bot] Failed to build turn id intent: ${error.message}`);
+            return null;
+        }
+    }
+
+    getLatestParticipantTurnIdIntent(guildId) {
+        return this.latestParticipantTurnIdIntent?.get?.(guildId) || null;
+    }
+
+    getAwarenessTurnWaitMs() {
+        const parsed = Number(this.awarenessTurnWaitMs);
+        if (!Number.isFinite(parsed)) {
+            return 200;
+        }
+        return Math.max(0, Math.min(1000, Math.floor(parsed)));
+    }
+
+    async getAwarenessInjectionsForGeneratorTurn(guildId, turnIdIntent) {
+        if (!this.internalThoughtsEnabled || !turnIdIntent?.turnId) {
+            return [];
+        }
+
+        try {
+            if (typeof this.internalThoughtManager?.waitForAwarenessInjectionsForTurn === 'function') {
+                return await this.internalThoughtManager.waitForAwarenessInjectionsForTurn(guildId, turnIdIntent, {
+                    timeoutMs: this.getAwarenessTurnWaitMs()
+                });
+            }
+            if (typeof this.internalThoughtManager?.claimAwarenessInjectionsForTurn === 'function') {
+                return this.internalThoughtManager.claimAwarenessInjectionsForTurn(guildId, turnIdIntent);
+            }
+            return [];
+        } catch (error) {
+            console.warn(`[Bot] Failed to claim awareness injections for turn: ${error.message}`);
+            return [];
+        }
+    }
+
     getShowRunnerGuidanceForGenerator(guildId) {
         if (!this.showRunnerEnabled || !this.showRunnerManager?.getGuidance) {
             return null;
@@ -559,8 +609,7 @@ class AlphaClawdVoiceBot {
                     createdAt: item?.createdAt || null,
                     awarenessInjection: String(awarenessInjection).trim(),
                     reason: String(item?.reason || '').trim(),
-                    expiresAfterTurns: Number(item?.expiresAfterTurns || 0),
-                    remainingTurns: Number(item?.remainingTurns || 0)
+                    turnIdIntent: item?.turnIdIntent || null
                 };
             })
             .filter((item) => item.awarenessInjection);
@@ -603,7 +652,12 @@ class AlphaClawdVoiceBot {
     }
 
     async selectAwarenessInjectionsForBigBrain(guildId, response, options = {}) {
-        const activeAwarenessInjections = this.getAwarenessInjectionsForGenerator(guildId);
+        const turnAwarenessInjections = Array.isArray(options.awarenessInjections)
+            ? options.awarenessInjections
+            : [];
+        const activeAwarenessInjections = turnAwarenessInjections.length > 0
+            ? turnAwarenessInjections
+            : this.getAwarenessInjectionsForGenerator(guildId);
         if (
             !this.bigBrainAwarenessSelectionEnabled ||
             activeAwarenessInjections.length === 0 ||
@@ -858,7 +912,8 @@ class AlphaClawdVoiceBot {
             const idleSeconds = (Date.now() - lastSpeechAt) / 1000;
             const participantActivityBaseline = this.getParticipantActivityVersion(guildId);
             this.markIdleDecisionHandled(guildId, lastSpeechAt);
-            const awarenessInjections = this.getAwarenessInjectionsForGenerator(guildId);
+            const turnIdIntent = this.getLatestParticipantTurnIdIntent(guildId);
+            const awarenessInjections = await this.getAwarenessInjectionsForGeneratorTurn(guildId, turnIdIntent);
             const showRunnerGuidance = this.getShowRunnerGuidanceForGenerator(guildId);
 
             console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s without participant speech`);
@@ -901,6 +956,7 @@ class AlphaClawdVoiceBot {
                     await this.dispatchBigBrainTurn(guildId, finalResponse, {
                         source: 'idle',
                         transcript: '',
+                        awarenessInjections,
                         participantActivityBaseline: this.getParticipantActivityVersion(guildId)
                     });
                 }
@@ -2449,7 +2505,11 @@ class AlphaClawdVoiceBot {
         this.directResponseInFlight.add(guildId);
         this.conversationBuffer?.setFlushHold?.('direct-response', true);
         const participantActivityBaseline = this.getParticipantActivityVersion(guildId);
-        const awarenessInjections = this.getAwarenessInjectionsForGenerator(guildId);
+        const turnIdIntent = this.buildGeneratorTurnIdIntent('direct-generator', utterances);
+        if (turnIdIntent) {
+            this.latestParticipantTurnIdIntent?.set?.(guildId, turnIdIntent);
+        }
+        const awarenessInjections = await this.getAwarenessInjectionsForGeneratorTurn(guildId, turnIdIntent);
         const showRunnerGuidance = this.getShowRunnerGuidanceForGenerator(guildId);
         let bigBrainDispatch = null;
 
@@ -2518,6 +2578,7 @@ class AlphaClawdVoiceBot {
                         transcript,
                         utterances,
                         wordData,
+                        awarenessInjections,
                         participantActivityBaseline: this.getParticipantActivityVersion(guildId),
                         stallSpoken: playbackResult?.played === true
                     }

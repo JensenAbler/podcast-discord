@@ -28,6 +28,7 @@ const { ShowRunnerManager } = require('./showrunner-manager');
 const { PacketizationBuffer } = require('./packetization-buffer');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
 const { EpisodeTranscriptStore, createEpisodeTranscriptServer } = require('./episode-transcript-viewer');
+const { buildTurnIdIntent, normalizeTurnIdIntent } = require('./turn-intent');
 
 module.exports = {
     // Core voice components
@@ -51,6 +52,8 @@ module.exports = {
     BigBrainAwarenessSelector,
     EpisodeTranscriptStore,
     createEpisodeTranscriptServer,
+    buildTurnIdIntent,
+    normalizeTurnIdIntent,
     
     // Main bot class
     AlphaClawdVoiceBot

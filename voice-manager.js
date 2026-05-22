@@ -649,6 +649,7 @@ class VoiceManager {
                     createdAt: item.createdAt || null,
                     awarenessInjection: item.awarenessInjection || '',
                     reason: item.reason || '',
+                    turnIdIntent: item.turnIdIntent || null,
                     expiresAfterTurns: item.expiresAfterTurns || 0,
                     remainingTurns: item.remainingTurns || 0
                 }))

@@ -262,6 +262,7 @@ class EpisodeTranscriptStore {
             awarenessCandidate: this.cleanText(record.awarenessCandidate?.candidateAwarenessNote || ''),
             awarenessInjection: this.cleanText(awarenessInjection?.awarenessInjection || ''),
             reason: this.cleanText(awarenessInjection?.reason || record.discernment?.reason || ''),
+            turnIdIntent: awarenessInjection?.turnIdIntent || record.turnIdIntent || null,
             expiresAfterTurns: Number(awarenessInjection?.expiresAfterTurns || record.discernment?.expiresAfterTurns || 0),
             remainingTurns: Number(awarenessInjection?.remainingTurns || 0)
         };

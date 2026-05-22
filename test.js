@@ -21,6 +21,7 @@ const {
     BigBrainAwarenessSelector,
     EpisodeTranscriptStore,
     createEpisodeTranscriptServer,
+    buildTurnIdIntent,
     AlphaClawdVoiceBot
 } = require('./index');
 const { EndBehaviorType } = require('@discordjs/voice');
@@ -556,20 +557,19 @@ async function runTests() {
             awarenessInjections: [{
                 id: 'awareness-internal-packet-1',
                 reason: 'This tracks the current design intent.',
-                awarenessInjection: 'Jensen is designing internal thought as private host awareness, not asking for a generic implementation lecture.',
-                remainingTurns: 2
+                awarenessInjection: 'Jensen is designing internal thought as private host awareness, not asking for a generic implementation lecture.'
             }]
         });
         const awarenessPrompt = awarenessMessages[awarenessMessages.length - 2].content;
 
         if (
-            awarenessPrompt.includes('Active awareness injection(s):') &&
+            awarenessPrompt.includes('Awareness injection(s) for this turn:') &&
             awarenessPrompt.includes('id: awareness-internal-packet-1') &&
             awarenessPrompt.includes('reason: This tracks the current design intent.') &&
-            awarenessPrompt.includes('remaining participant turns: 2') &&
             awarenessPrompt.includes('awarenessInjection: Jensen is designing internal thought as private host awareness') &&
-            awarenessPrompt.includes('These are private host awareness notes') &&
+            awarenessPrompt.includes('selected for this exact live turn') &&
             !awarenessPrompt.includes('contextText') &&
+            !awarenessPrompt.includes('remaining participant turns') &&
             !awarenessPrompt.includes('priority')
         ) {
             console.log('  Generator user prompt includes private awareness injections');
@@ -1258,6 +1258,7 @@ async function runTests() {
             !thoughtSystemPrompt.includes('Alpha-Clawd\'s behavioral choices depicted in the packet') ||
             !thoughtSystemPrompt.includes('your own personal reaction') ||
             !thoughtSystemPrompt.includes('All fields of the internal thoughts and noticings JSON') ||
+            !thoughtSystemPrompt.includes('curtailing generic question-autocomplete behavior') ||
             thoughtSystemPrompt.includes('awarenessInjection')
         ) {
             throw new Error(`Internal thought system prompt does not match scratchpad framing: ${thoughtSystemPrompt}`);
@@ -1273,12 +1274,11 @@ async function runTests() {
         }
         const discernmentSchema = discernmentGenerator.getResponseSchema('judgment');
         if (
-            discernmentSchema.required.join(',') !== 'injectIntoPodcastGenerator,reason,awarenessInjection,expiresAfterTurns' ||
+            discernmentSchema.required.join(',') !== 'injectIntoPodcastGenerator,reason,awarenessInjection' ||
             discernmentSchema.properties.priority ||
             discernmentSchema.properties.risk ||
             discernmentSchema.properties.participantRelevance ||
-            discernmentSchema.properties.expiresAfterTurns.minimum !== undefined ||
-            discernmentSchema.properties.expiresAfterTurns.maximum !== undefined
+            discernmentSchema.properties.expiresAfterTurns
         ) {
             throw new Error(`Discernment schema includes stale fields: ${JSON.stringify(discernmentSchema)}`);
         }
@@ -1289,7 +1289,7 @@ async function runTests() {
             awarenessInjection: '',
             expiresAfterTurns: 4
         });
-        if (rejected.injectIntoPodcastGenerator || rejected.awarenessInjection !== '' || rejected.expiresAfterTurns !== 0) {
+        if (rejected.injectIntoPodcastGenerator || rejected.awarenessInjection !== '' || rejected.expiresAfterTurns !== undefined) {
             throw new Error(`Discernment should reject empty injections: ${JSON.stringify(rejected)}`);
         }
 
@@ -1305,8 +1305,7 @@ async function runTests() {
                 : {
                     injectIntoPodcastGenerator: true,
                     reason: 'This would help Alpha-Clawd stay with Jensen\'s stated aim.',
-                    awarenessInjection: 'Jensen is designing internal thought to let Alpha-Clawd personality come through, not asking for a generic implementation lecture.',
-                    expiresAfterTurns: 4
+                    awarenessInjection: 'Jensen is designing internal thought to let Alpha-Clawd personality come through, not asking for a generic implementation lecture.'
                 };
             return {
                 choices: [{
@@ -1334,7 +1333,7 @@ async function runTests() {
             !candidate.candidateAwarenessNote.includes('personality') ||
             discernmentCalls[1]?.body.response_format?.json_schema?.name !== 'podcast_awareness_discernment' ||
             !approved.injectIntoPodcastGenerator ||
-            approved.expiresAfterTurns !== 4 ||
+            approved.expiresAfterTurns !== undefined ||
             !approved.awarenessInjection.includes('personality come through')
         ) {
             throw new Error(`Discernment generator did not run candidate and judgment passes as expected: ${JSON.stringify({ discernmentCalls, candidate, approved })}`);
@@ -1353,7 +1352,7 @@ async function runTests() {
             !candidateMessages[2]?.content.includes('"candidateAwarenessNote"') ||
             candidateMessages[2]?.content.includes('"injectIntoPodcastGenerator"') ||
             !judgmentMessages[2]?.content.includes('"injectIntoPodcastGenerator"') ||
-            !judgmentMessages[2]?.content.includes('"expiresAfterTurns"')
+            judgmentMessages[2]?.content.includes('"expiresAfterTurns"')
         ) {
             throw new Error(`Discernment schema prompts were not mode-specific: ${JSON.stringify({ candidate: candidateMessages[2], judgment: judgmentMessages[2] })}`);
         }
@@ -1507,23 +1506,26 @@ async function runTests() {
             !discernmentPrompt.includes('what does Alpha-Clawd, as a podcast host, seem to be missing?') ||
             !discernmentPrompt.includes('If there is not a good answer to this question, then the candidate is weak') ||
             !discernmentPrompt.includes('framed in first person, present-tense') ||
-            !discernmentPrompt.includes('somewhat "evergreen," in its form') ||
+            !discernmentPrompt.includes('exact next podcast-generator turn associated with the target turn-id-intent') ||
+            !discernmentPrompt.includes('It does not live for multiple turns') ||
+            !discernmentPrompt.includes('generic question-autocomplete') ||
             !discernmentPrompt.includes('I asked a question recently') ||
             !discernmentPrompt.includes('Only observational content and instructive content') ||
             !discernmentPrompt.includes('include reasoning only in the reasoning field') ||
             !discernmentPrompt.includes('Reject stale candidates when the complete transcript has moved into a new topic') ||
             !discernmentPrompt.includes('most recent user message indicates a PIVOT') ||
+            !discernmentPrompt.includes('target turn-id-intent no longer appears') ||
             !candidateSystemPrompt.includes('CANDIDATE PRODUCTION MODE') ||
             !candidateSystemPrompt.includes('Review the 5 most recent internal thoughts') ||
             !candidateSystemPrompt.includes('more than just a summary of the noticings') ||
             !candidateSystemPrompt.includes('What\'s really going on here?') ||
+            !candidateSystemPrompt.includes('generic question-autocomplete') ||
             !candidateSystemPrompt.includes('doesnt seem super helpful') ||
             candidateSystemPrompt.includes('INJECTION JUDGEMENT') ||
             candidateSystemPrompt.includes('JUDGMENT MODE') ||
             discernmentPrompt.includes('CANDIDATE PRODUCTION MODE') ||
             discernmentPrompt.includes('CANDIDATE PRODUCTION/AWARENESS INJECTION process') ||
-            candidateSystemPrompt.includes('reflexively asks Jensen') ||
-            candidateSystemPrompt.includes('tell the host to synthesize') ||
+            discernmentPrompt.includes('somewhat "evergreen," in its form') ||
             discernmentPrompt.includes('priority')
         ) {
             throw new Error(`Discernment prompt does not match the revised framing: ${discernmentPrompt}`);
@@ -1536,7 +1538,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 5c: Internal thought manager packets, persists, and expires awareness injections');
+    console.log('\nTest 5c: Internal thought manager packets, persists, and gates awareness injections by turn');
     try {
         const thoughtCalls = [];
         const discernmentCalls = [];
@@ -1576,8 +1578,7 @@ async function runTests() {
                     return {
                         injectIntoPodcastGenerator: true,
                         reason: 'This tracks Jensen\'s stated interest.',
-                        awarenessInjection: 'Jensen is using this episode to design Alpha-Clawd internal awareness, not asking for generic advice.',
-                        expiresAfterTurns: 2
+                        awarenessInjection: 'Jensen is using this episode to design Alpha-Clawd internal awareness, not asking for generic advice.'
                     };
                 }
             }
@@ -1605,7 +1606,7 @@ async function runTests() {
 
         if (
             firstRecord?.packetId !== 'internal-packet-1' ||
-            firstRecord.awarenessInjection?.remainingTurns !== 2 ||
+            !firstRecord.awarenessInjection?.turnIdIntent?.turnId ||
             thoughtCalls[0]?.transcript !== 'Jensen: I want your personality to come out.\nAlpha-Clawd: I hear that.' ||
             thoughtCalls[0]?.recentInternalThoughts !== undefined ||
             thoughtCalls[0]?.activeAwarenessInjections !== undefined ||
@@ -1614,7 +1615,8 @@ async function runTests() {
             discernmentCalls[0].mode !== 'candidate' ||
             discernmentCalls[0].input.recentInternalThoughts?.length !== 1 ||
             !discernmentCalls[0].input.completeTranscript.includes('Alpha-Clawd: I hear that.') ||
-            discernmentCalls[1].mode !== 'judgment'
+            discernmentCalls[1].mode !== 'judgment' ||
+            discernmentCalls[1].input.targetTurnIdIntent?.turnId !== firstRecord.awarenessInjection.turnIdIntent.turnId
         ) {
             throw new Error(`Manager did not process first packet correctly: ${JSON.stringify({ firstRecord, thoughtCalls, discernmentCalls })}`);
         }
@@ -1624,14 +1626,25 @@ async function runTests() {
             throw new Error(`Awareness injection was not activated: ${JSON.stringify(active)}`);
         }
 
+        const claimed = manager.claimAwarenessInjectionsForTurn('guild-thoughts', firstRecord.awarenessInjection.turnIdIntent);
+        active = manager.getActiveAwarenessInjections('guild-thoughts');
+        if (
+            claimed.length !== 1 ||
+            claimed[0].id !== 'awareness-internal-packet-1' ||
+            active.length !== 0 ||
+            manager.claimAwarenessInjectionsForTurn('guild-thoughts', firstRecord.awarenessInjection.turnIdIntent).length !== 0
+        ) {
+            throw new Error(`Awareness injection was not claimed exactly once for its turn: ${JSON.stringify({ claimed, active })}`);
+        }
+
         await manager.handleTranscriptEntry('guild-thoughts', {
             speaker: 'Jensen',
             speakerRole: 'guest',
             text: 'Each packet should get reflected on.'
         });
         active = manager.getActiveAwarenessInjections('guild-thoughts');
-        if (active[0]?.remainingTurns !== 1) {
-            throw new Error(`Awareness injection did not count down on participant turn: ${JSON.stringify(active)}`);
+        if (active.length !== 0) {
+            throw new Error(`Claimed awareness injection came back on a later participant turn: ${JSON.stringify(active)}`);
         }
 
         const secondRecord = await manager.handleTranscriptEntry('guild-thoughts', {
@@ -1653,7 +1666,12 @@ async function runTests() {
         }
 
         const lines = fs.readFileSync(session.outputPath, 'utf8').trim().split(/\n+/);
-        if (lines.length !== 2 || JSON.parse(lines[0]).type !== 'internal_thought' || JSON.parse(lines[0]).awarenessInjection?.id !== 'awareness-internal-packet-1') {
+        if (
+            lines.length !== 2 ||
+            JSON.parse(lines[0]).type !== 'internal_thought' ||
+            JSON.parse(lines[0]).awarenessInjection?.id !== 'awareness-internal-packet-1' ||
+            !JSON.parse(lines[0]).awarenessInjection?.turnIdIntent?.turnId
+        ) {
             throw new Error(`Internal thought JSONL was not persisted correctly: ${fs.readFileSync(session.outputPath, 'utf8')}`);
         }
 
@@ -1687,7 +1705,7 @@ async function runTests() {
                     reason: 'The candidate pass already succeeded.'
                 }),
                 judgeCandidate: async () => {
-                    throw new Error('Anthropic schema rejected expiresAfterTurns');
+                    throw new Error('Anthropic schema rejected awareness judgment');
                 }
             }
         });
@@ -1744,13 +1762,119 @@ async function runTests() {
         }
         await staleAwarenessManager.endSession('guild-stale-awareness', { flush: false });
 
+        const waitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-wait-'));
+        const waitManager = new InternalThoughtManager({
+            packetTurnCount: 1,
+            now: () => '2026-05-12T21:20:00.000Z',
+            thoughtGenerator: {
+                generate: async (input) => ({
+                    packetId: input.packetId,
+                    internalThought: 'Alpha-Clawd should avoid generic question autocomplete here.',
+                    noticings: ['The host can synthesize instead of tossing back a shallow question.'],
+                    undercurrents: []
+                })
+            },
+            discernmentGenerator: {
+                generateCandidate: async () => ({
+                    candidateAwarenessNote: 'Alpha-Clawd should synthesize rather than ask a generic follow-up.',
+                    reason: 'This directly addresses a repeated hosting failure mode.'
+                }),
+                judgeCandidate: async () => {
+                    await sleep(25);
+                    return {
+                        injectIntoPodcastGenerator: true,
+                        reason: 'A one-turn guard would help.',
+                        awarenessInjection: 'I should synthesize and structure here instead of asking a generic follow-up question.'
+                    };
+                }
+            }
+        });
+        const waitSession = waitManager.startSession('guild-wait-awareness', { recordingPath: waitDir });
+        const waitEntry = {
+            userId: 'jensen',
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'Please do not autocomplete into another generic question.',
+            asrCompletedAt: '2026-05-12T21:20:00.100Z'
+        };
+        const waitWork = waitManager.handleTranscriptEntry('guild-wait-awareness', waitEntry);
+        const waitedAwareness = await waitManager.waitForAwarenessInjectionsForTurn(
+            'guild-wait-awareness',
+            buildTurnIdIntent([waitEntry], { source: 'direct-generator' }),
+            { timeoutMs: 200 }
+        );
+        await waitWork;
+        if (
+            waitedAwareness.length !== 1 ||
+            !waitedAwareness[0].awarenessInjection.includes('generic follow-up') ||
+            waitManager.getActiveAwarenessInjections('guild-wait-awareness').length !== 0
+        ) {
+            throw new Error(`Awareness wait did not claim a near-ready injection: ${JSON.stringify(waitedAwareness)}`);
+        }
+        await waitManager.endSession('guild-wait-awareness', { flush: false });
+        fs.rmSync(waitDir, { recursive: true, force: true });
+
+        const timeoutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-timeout-'));
+        const timeoutManager = new InternalThoughtManager({
+            packetTurnCount: 1,
+            now: () => '2026-05-12T21:21:00.000Z',
+            thoughtGenerator: {
+                generate: async (input) => ({
+                    packetId: input.packetId,
+                    internalThought: 'This will finish too late for the intended turn.',
+                    noticings: [],
+                    undercurrents: []
+                })
+            },
+            discernmentGenerator: {
+                generateCandidate: async () => ({
+                    candidateAwarenessNote: 'A late awareness note should be dropped.',
+                    reason: 'The generator deadline should win.'
+                }),
+                judgeCandidate: async () => {
+                    await sleep(50);
+                    return {
+                        injectIntoPodcastGenerator: true,
+                        reason: 'Late but otherwise useful.',
+                        awarenessInjection: 'This should not survive after the intended turn closes.'
+                    };
+                }
+            }
+        });
+        const timeoutSession = timeoutManager.startSession('guild-timeout-awareness', { recordingPath: timeoutDir });
+        const timeoutEntry = {
+            userId: 'jensen',
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'Let this miss the awareness deadline.',
+            asrCompletedAt: '2026-05-12T21:21:00.100Z'
+        };
+        const timeoutWork = timeoutManager.handleTranscriptEntry('guild-timeout-awareness', timeoutEntry);
+        const timedOutAwareness = await timeoutManager.waitForAwarenessInjectionsForTurn(
+            'guild-timeout-awareness',
+            buildTurnIdIntent([timeoutEntry], { source: 'direct-generator' }),
+            { timeoutMs: 5 }
+        );
+        await timeoutWork;
+        const timeoutRecord = JSON.parse(fs.readFileSync(timeoutSession.outputPath, 'utf8').trim());
+        if (
+            timedOutAwareness.length !== 0 ||
+            timeoutManager.getActiveAwarenessInjections('guild-timeout-awareness').length !== 0 ||
+            timeoutRecord.awarenessInjection !== null ||
+            timeoutRecord.droppedAwarenessInjection?.droppedReason !== 'turn_already_closed'
+        ) {
+            throw new Error(`Late awareness injection was not dropped after the deadline: ${JSON.stringify({ timedOutAwareness, timeoutRecord })}`);
+        }
+        await timeoutManager.endSession('guild-timeout-awareness', { flush: false });
+        fs.rmSync(timeoutDir, { recursive: true, force: true });
+
         const ended = await manager.endSession('guild-thoughts');
         if (ended.thoughtCount !== 2 || manager.getActiveAwarenessInjections('guild-thoughts').length !== 0) {
             throw new Error(`Manager did not end cleanly: ${JSON.stringify(ended)}`);
         }
 
         fs.rmSync(managerDir, { recursive: true, force: true });
-        console.log('  Internal thought manager packets transcript entries and manages awareness injection lifecycle');
+        console.log('  Internal thought manager packets transcript entries and gates awareness injection lifecycle');
         passed++;
     } catch (error) {
         console.log(`  Internal thought manager failed: ${error.message}`);
@@ -2534,13 +2658,20 @@ async function runTests() {
         bot.internalThoughtsEnabled = true;
         bot.showRunnerEnabled = true;
         const recentThoughtRequests = [];
+        const awarenessWaitRequests = [];
+        bot.latestParticipantTurnIdIntent = new Map();
+        bot.awarenessTurnWaitMs = 200;
         bot.internalThoughtManager = {
-            getActiveAwarenessInjections: (activeGuildId) => activeGuildId === guildId
+            waitForAwarenessInjectionsForTurn: async (activeGuildId, turnIdIntent, options) => {
+                awarenessWaitRequests.push({ guildId: activeGuildId, turnIdIntent, options });
+                return activeGuildId === guildId && turnIdIntent?.turnId
                 ? [{
                     id: 'awareness-direct-test',
-                    awarenessInjection: 'Jensen is testing whether private awareness reaches direct turns.'
+                    awarenessInjection: 'Jensen is testing whether private awareness reaches direct turns.',
+                    turnIdIntent
                 }]
-                : [],
+                : [];
+            },
             getRecentInternalThoughts: (activeGuildId, limit) => {
                 recentThoughtRequests.push({ guildId: activeGuildId, limit });
                 return Array.from({ length: 9 }, (_, index) => ({
@@ -2636,6 +2767,9 @@ async function runTests() {
         }
         if (directAwarenessInjections?.[0]?.id !== 'awareness-direct-test') {
             throw new Error(`Direct generator did not receive active awareness injections: ${JSON.stringify(directAwarenessInjections)}`);
+        }
+        if (awarenessWaitRequests[0]?.options?.timeoutMs !== 200 || !awarenessWaitRequests[0]?.turnIdIntent?.turnId) {
+            throw new Error(`Direct generator did not wait/claim awareness by turn id intent: ${JSON.stringify(awarenessWaitRequests)}`);
         }
         if (directShowRunnerGuidance?.phase !== 'background' || !directShowRunnerGuidance.generatorInstruction.includes('bridge')) {
             throw new Error(`Direct generator did not receive show runner guidance: ${JSON.stringify(directShowRunnerGuidance)}`);

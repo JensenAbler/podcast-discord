@@ -915,10 +915,10 @@ class PodcastGenerator {
         if (awarenessInjections) {
             lines.push(
                 '',
-                'Active awareness injection(s):',
+                'Awareness injection(s) for this turn:',
                 awarenessInjections,
                 '',
-                'These are private host awareness notes. Let them inform attention, continuity, and question choice only when they fit the live turn. Do not quote them or mention that you received an awareness injection.'
+                'These are private host awareness notes selected for this exact live turn. Let them inform attention, continuity, and question choice only when they fit. Do not quote them or mention that you received an awareness injection.'
             );
         }
 
@@ -1008,12 +1008,10 @@ class PodcastGenerator {
 
                 const id = String(item?.id || `awareness-${index + 1}`).trim();
                 const reason = String(item?.reason || '').trim();
-                const remainingTurns = Number(item?.remainingTurns);
 
                 return [
                     id ? `id: ${id}` : null,
                     reason ? `reason: ${reason}` : null,
-                    Number.isFinite(remainingTurns) ? `remaining participant turns: ${Math.max(0, Math.floor(remainingTurns))}` : null,
                     `awarenessInjection: ${awarenessInjection}`
                 ].filter(Boolean).join('\n');
             })

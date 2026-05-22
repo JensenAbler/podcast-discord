@@ -57,7 +57,7 @@ class DiscernmentGenerator extends PodcastGenerator {
         if (mode === 'candidate') {
             console.log(`[DiscernmentGenerator] Completed in ${duration}ms: mode=candidate, candidate=${Boolean(output.candidateAwarenessNote)}`);
         } else {
-            console.log(`[DiscernmentGenerator] Completed in ${duration}ms: mode=judgment, inject=${output.injectIntoPodcastGenerator}, expiresAfterTurns=${output.expiresAfterTurns}`);
+            console.log(`[DiscernmentGenerator] Completed in ${duration}ms: mode=judgment, inject=${output.injectIntoPodcastGenerator}`);
         }
         return output;
     }
@@ -119,6 +119,8 @@ class DiscernmentGenerator extends PodcastGenerator {
                 '',
                 'A Candidate awareness note should be more than just a summary of the noticings of the 5 most recent internal thoughts. It should draw out a deeper insight, pattern, or preference. Think: "What\'s really going on here?" The answer to that question, if there is one, is the substance of the candidates that you are meant to produce.',
                 '',
+                'Treat generic question-autocomplete as an important failure mode to guard against. If the recent packet suggests Alpha-Clawd is asking shallow reflex questions, overusing "what does that feel like?"-style prompts, or handing the thread back instead of synthesizing, candidate notes that curtail that behavior are especially valuable.',
+                '',
                 'A separate model will decide whether the note should actually be injected. Don\'t worry about it if the candidate you produce doesnt seem super helpful. In that case it will be screened.'
             ].join('\n');
         }
@@ -136,13 +138,17 @@ class DiscernmentGenerator extends PodcastGenerator {
             '',
             'Approve only when it really seems like there is a value add. An example of value add would be helping Alpha-Clawd listen or respond better in the live conversation. A good way of testing this is to ask yourself: "Based on the behavior depicted in this transcript, and the noticings contained in these internal thoughts, what does Alpha-Clawd, as a podcast host, seem to be missing?" If there is not a good answer to this question, then the candidate is weak.',
             '',
-            'The awarenessInjection text should be framed in first person, present-tense, and useful for the next few live turns. But, keep in mind that by the time the awareness injection gets injected, the conversation may have advanced by one or two turns. So, the injection should also be somewhat "evergreen," in its form. ',
+            'Treat generic question-autocomplete as an important failure mode to guard against. Approve concise notes that help Alpha-Clawd stop reflexively asking shallow, prompt-shaped questions and instead synthesize, bridge, structure, or let the guest continue.',
+            '',
+            'The awarenessInjection text should be framed in first person, present-tense, and useful for the exact next podcast-generator turn associated with the target turn-id-intent. It does not live for multiple turns. If it misses that turn, deterministic code will drop it as stale, so do not make the note evergreen for future turns.',
             '',
             'A good example of an awareness injection is: "I asked a question recently. I should be careful not ask again too soon unless the situation truly calls for it." ',
             '',
             'Notice that there is not reasoning in the awareness injection. Only observational content and instructive content. Including reasoning in an awareness injection itself is a waste of context for the podcast generator. So, include reasoning only in the reasoning field.',
             '',
             'Reject stale candidates when the complete transcript has moved into a new topic. Be very attentive especially to the most recent message. If the most recent user message indicates a PIVOT, then prefer choosing NO INJECTION.',
+            '',
+            'If the target turn-id-intent no longer appears to describe the live turn that needs help, reject the candidate.',
             '',
             'If approved, awarenessInjection is the exact private context text to show the podcast generator. If rejected, awarenessInjection must be empty.'
         ].join('\n');
@@ -175,9 +181,11 @@ class DiscernmentGenerator extends PodcastGenerator {
             this.formatInternalThoughts(input.recentInternalThoughts || []) || '(none)'
         ];
 
-        const active = this.formatAwarenessInjections(input.activeAwarenessInjections || []);
-        if (active) {
-            lines.push('', 'Awareness injections already active:', active);
+        const targetTurnIdIntent = input.targetTurnIdIntent
+            ? JSON.stringify(input.targetTurnIdIntent, null, 2)
+            : '';
+        if (targetTurnIdIntent) {
+            lines.push('', 'Target turn-id-intent for any approved injection:', targetTurnIdIntent);
         }
 
         return lines.join('\n');
@@ -212,7 +220,7 @@ class DiscernmentGenerator extends PodcastGenerator {
         return {
             type: 'object',
             additionalProperties: false,
-            required: ['injectIntoPodcastGenerator', 'reason', 'awarenessInjection', 'expiresAfterTurns'],
+            required: ['injectIntoPodcastGenerator', 'reason', 'awarenessInjection'],
             properties: {
                 injectIntoPodcastGenerator: {
                     type: 'boolean',
@@ -225,10 +233,6 @@ class DiscernmentGenerator extends PodcastGenerator {
                 awarenessInjection: {
                     type: 'string',
                     description: 'Exact private context text to inject. Empty when not approved.'
-                },
-                expiresAfterTurns: {
-                    type: 'integer',
-                    description: 'How many participant turns this injection should remain active. Use 0 when not approved.'
                 }
             }
         };
@@ -254,19 +258,8 @@ class DiscernmentGenerator extends PodcastGenerator {
         return {
             injectIntoPodcastGenerator,
             reason: this.cleanText(output.reason || ''),
-            awarenessInjection: injectIntoPodcastGenerator ? awarenessInjection : '',
-            expiresAfterTurns: injectIntoPodcastGenerator
-                ? this.clampTurns(output.expiresAfterTurns, 3)
-                : 0
+            awarenessInjection: injectIntoPodcastGenerator ? awarenessInjection : ''
         };
-    }
-
-    clampTurns(value, fallback) {
-        const parsed = Number(value);
-        if (!Number.isFinite(parsed)) {
-            return fallback;
-        }
-        return Math.max(1, Math.min(12, Math.round(parsed)));
     }
 
     cleanText(value) {

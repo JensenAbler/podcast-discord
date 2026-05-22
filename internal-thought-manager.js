@@ -3,6 +3,7 @@ const path = require('path');
 const { InternalThoughtGenerator } = require('./internal-thought-generator');
 const { DiscernmentGenerator } = require('./discernment-generator');
 const { PacketizationBuffer } = require('./packetization-buffer');
+const { buildTurnIdIntent, normalizeTurnIdIntent } = require('./turn-intent');
 
 class InternalThoughtManager {
     constructor(options = {}) {
@@ -67,6 +68,8 @@ class InternalThoughtManager {
             transcriptEntries: [],
             thoughts: [],
             activeAwarenessInjections: [],
+            pendingAwarenessTurnIds: new Set(),
+            closedAwarenessTurnIds: new Map(),
             processing: Promise.resolve()
         };
 
@@ -157,7 +160,10 @@ class InternalThoughtManager {
         }
 
         const packet = this.buildPacket(session, entries, reason);
-        const work = session.processing.then(() => this.processPacket(session, packet));
+        this.trackPendingAwarenessTurn(session, packet.turnIdIntent);
+        const work = session.processing
+            .then(() => this.processPacket(session, packet))
+            .finally(() => this.untrackPendingAwarenessTurn(session, packet.turnIdIntent));
         session.processing = work.catch(() => {});
         return work;
     }
@@ -185,6 +191,7 @@ class InternalThoughtManager {
             reason,
             createdAt: this.now(),
             entries,
+            turnIdIntent: buildTurnIdIntent(entries, { source: 'internal-packet' }),
             transcript: this.formatTranscript(entries),
             completeTranscript: this.formatTranscript(session.transcriptEntries)
         };
@@ -199,6 +206,7 @@ class InternalThoughtManager {
             createdAt: packet.createdAt,
             processedAt: this.now(),
             transcript: packet.transcript,
+            turnIdIntent: packet.turnIdIntent,
             entries: packet.entries
         };
         const record = {
@@ -206,7 +214,8 @@ class InternalThoughtManager {
             thought: null,
             awarenessCandidate: null,
             discernment: null,
-            awarenessInjection: null
+            awarenessInjection: null,
+            droppedAwarenessInjection: null
         };
         let errorStage = 'internal_thought';
 
@@ -229,7 +238,8 @@ class InternalThoughtManager {
             const awarenessCandidate = await this.generateAwarenessCandidate({
                 recentInternalThoughts,
                 completeTranscript: packet.completeTranscript,
-                packetId: packet.packetId
+                packetId: packet.packetId,
+                targetTurnIdIntent: packet.turnIdIntent
             });
             record.awarenessCandidate = awarenessCandidate;
 
@@ -240,11 +250,17 @@ class InternalThoughtManager {
                     candidateReason: awarenessCandidate.reason,
                     recentInternalThoughts,
                     completeTranscript: packet.completeTranscript,
+                    targetTurnIdIntent: packet.turnIdIntent,
                     activeAwarenessInjections: session.activeAwarenessInjections
                 });
                 record.discernment = discernment;
                 if (discernment.injectIntoPodcastGenerator) {
-                    record.awarenessInjection = this.activateAwarenessInjection(session, packet, discernment);
+                    const activated = this.activateAwarenessInjection(session, packet, discernment);
+                    if (activated?.droppedReason) {
+                        record.droppedAwarenessInjection = activated;
+                    } else {
+                        record.awarenessInjection = activated;
+                    }
                 }
             }
 
@@ -279,19 +295,130 @@ class InternalThoughtManager {
     }
 
     activateAwarenessInjection(session, packet, discernment) {
+        const turnIdIntent = normalizeTurnIdIntent(packet.turnIdIntent);
         const injection = {
             id: `awareness-${packet.packetId}`,
             packetId: packet.packetId,
             createdAt: this.now(),
             awarenessInjection: discernment.awarenessInjection,
             reason: discernment.reason,
-            expiresAfterTurns: discernment.expiresAfterTurns,
-            remainingTurns: discernment.expiresAfterTurns
+            turnIdIntent
         };
+
+        if (!turnIdIntent?.turnId) {
+            return {
+                ...injection,
+                droppedReason: 'missing_turn_id_intent'
+            };
+        }
+
+        if (this.isAwarenessTurnClosed(session, turnIdIntent)) {
+            return {
+                ...injection,
+                droppedReason: 'turn_already_closed'
+            };
+        }
 
         session.activeAwarenessInjections.push(injection);
         session.activeAwarenessInjections = session.activeAwarenessInjections.slice(-this.maxActiveAwarenessInjections);
         return injection;
+    }
+
+    claimAwarenessInjectionsForTurn(guildId, turnIdIntent) {
+        const session = this.sessions.get(guildId);
+        const normalizedTurn = normalizeTurnIdIntent(turnIdIntent);
+        if (!session || !normalizedTurn?.turnId) {
+            return [];
+        }
+
+        const claimed = [];
+        const retained = [];
+        for (const item of session.activeAwarenessInjections) {
+            const itemTurn = normalizeTurnIdIntent(item.turnIdIntent);
+            if (itemTurn?.turnId === normalizedTurn.turnId) {
+                claimed.push({ ...item });
+                continue;
+            }
+
+            if (!itemTurn?.turnId) {
+                retained.push(item);
+            }
+        }
+
+        session.activeAwarenessInjections = retained;
+        if (claimed.length > 0) {
+            this.markAwarenessTurnClosed(session, normalizedTurn);
+        }
+        return claimed;
+    }
+
+    async waitForAwarenessInjectionsForTurn(guildId, turnIdIntent, options = {}) {
+        const session = this.sessions.get(guildId);
+        const normalizedTurn = normalizeTurnIdIntent(turnIdIntent);
+        if (!session || !normalizedTurn?.turnId) {
+            return [];
+        }
+
+        const immediate = this.claimAwarenessInjectionsForTurn(guildId, normalizedTurn);
+        if (immediate.length > 0) {
+            return immediate;
+        }
+
+        const timeoutMs = Math.max(0, Number(options.timeoutMs ?? 200));
+        if (!this.hasPendingAwarenessForTurn(session, normalizedTurn) || timeoutMs <= 0) {
+            this.markAwarenessTurnClosed(session, normalizedTurn);
+            return [];
+        }
+
+        console.log(`[InternalThoughtManager] Waiting up to ${timeoutMs}ms for awareness turn ${normalizedTurn.turnId}`);
+        await Promise.race([
+            session.processing.catch(() => {}),
+            new Promise((resolve) => setTimeout(resolve, timeoutMs))
+        ]);
+
+        const claimed = this.claimAwarenessInjectionsForTurn(guildId, normalizedTurn);
+        if (claimed.length === 0) {
+            this.markAwarenessTurnClosed(session, normalizedTurn);
+        }
+        return claimed;
+    }
+
+    hasPendingAwarenessForTurn(session, turnIdIntent) {
+        const normalizedTurn = normalizeTurnIdIntent(turnIdIntent);
+        return Boolean(session?.pendingAwarenessTurnIds?.has(normalizedTurn?.turnId));
+    }
+
+    trackPendingAwarenessTurn(session, turnIdIntent) {
+        const normalizedTurn = normalizeTurnIdIntent(turnIdIntent);
+        if (session?.pendingAwarenessTurnIds && normalizedTurn?.turnId) {
+            session.pendingAwarenessTurnIds.add(normalizedTurn.turnId);
+        }
+    }
+
+    untrackPendingAwarenessTurn(session, turnIdIntent) {
+        const normalizedTurn = normalizeTurnIdIntent(turnIdIntent);
+        if (session?.pendingAwarenessTurnIds && normalizedTurn?.turnId) {
+            session.pendingAwarenessTurnIds.delete(normalizedTurn.turnId);
+        }
+    }
+
+    markAwarenessTurnClosed(session, turnIdIntent) {
+        const normalizedTurn = normalizeTurnIdIntent(turnIdIntent);
+        if (!session?.closedAwarenessTurnIds || !normalizedTurn?.turnId) {
+            return;
+        }
+
+        session.closedAwarenessTurnIds.set(normalizedTurn.turnId, Date.now());
+        const maxClosedTurns = 100;
+        while (session.closedAwarenessTurnIds.size > maxClosedTurns) {
+            const oldestKey = session.closedAwarenessTurnIds.keys().next().value;
+            session.closedAwarenessTurnIds.delete(oldestKey);
+        }
+    }
+
+    isAwarenessTurnClosed(session, turnIdIntent) {
+        const normalizedTurn = normalizeTurnIdIntent(turnIdIntent);
+        return Boolean(session?.closedAwarenessTurnIds?.has(normalizedTurn?.turnId));
     }
 
     advanceAwarenessExpirations(session, entry) {
@@ -299,13 +426,13 @@ class InternalThoughtManager {
             return;
         }
 
+        const entryTurn = buildTurnIdIntent([entry], { source: 'participant-entry' });
         session.activeAwarenessInjections = session.activeAwarenessInjections
             .filter((item) => !this.isAwarenessInvalidatedByEntry(item, entry))
-            .map((item) => ({
-                ...item,
-                remainingTurns: Math.max(0, Number(item.remainingTurns || 0) - 1)
-            }))
-            .filter((item) => item.remainingTurns > 0);
+            .filter((item) => {
+                const itemTurn = normalizeTurnIdIntent(item.turnIdIntent);
+                return itemTurn?.turnId && itemTurn.turnId === entryTurn?.turnId;
+            });
     }
 
     isAwarenessInvalidatedByEntry(item = {}, entry = {}) {
