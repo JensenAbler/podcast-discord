@@ -22,9 +22,10 @@ const {
     EpisodeTranscriptStore,
     createEpisodeTranscriptServer,
     buildTurnIdIntent,
+    AudioTransmitter,
     AlphaClawdVoiceBot
 } = require('./index');
-const { EndBehaviorType } = require('@discordjs/voice');
+const { EndBehaviorType, AudioPlayerStatus } = require('@discordjs/voice');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { GatewayWsClient, verifyDeviceSignature } = require('./gateway-ws-client');
 const { EpisodePostProcessor } = require('./post-processor');
@@ -35,6 +36,7 @@ const {
     isLegacyEpisodesRecordingDir
 } = require('./paths');
 const { PassThrough } = require('stream');
+const { EventEmitter } = require('events');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -3815,6 +3817,31 @@ async function runTests() {
         toneRequest = null;
         playedTone = null;
         recordedTone = null;
+        bot.directResponseInFlight = new Set([guildId]);
+
+        bot.handleWsAgentEvent({
+            runId,
+            sessionKey: 'agent:main:main',
+            stream: 'tool',
+            data: {
+                phase: 'update',
+                name: 'web_fetch',
+                toolCallId: 'tool-host-overlap'
+            }
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 30));
+
+        if (toneRequest || playedTone || recordedTone || duckedAmbient || resumedAmbient) {
+            throw new Error(`Tool tone was not suppressed during host speech: ${JSON.stringify({ toneRequest, playedTone, recordedTone, duckedAmbient, resumedAmbient })}`);
+        }
+        bot.directResponseInFlight.clear();
+
+        duckedAmbient = null;
+        resumedAmbient = null;
+        toneRequest = null;
+        playedTone = null;
+        recordedTone = null;
         let finishInterruptedTone = null;
         bot.voiceManager.speakWithTiming = async (_guildId, audio, options) => {
             playedTone = {
@@ -4094,6 +4121,64 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Host ambient ducking failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 7g.3: Audio playback queues rapid overlapping requests before start events');
+    try {
+        class FakePlayer extends EventEmitter {
+            constructor() {
+                super();
+                this.played = [];
+            }
+
+            play(resource) {
+                this.played.push(resource);
+            }
+
+            stop() {
+                this.emit(AudioPlayerStatus.Idle);
+            }
+        }
+
+        const player = new FakePlayer();
+        const transmitter = new AudioTransmitter({ player });
+        let firstFinished = false;
+        let secondFinished = false;
+
+        await transmitter.play(Buffer.from('first-audio'), {
+            onFinish: () => { firstFinished = true; }
+        });
+        const secondPlay = transmitter.play(Buffer.from('second-audio'), {
+            onFinish: () => { secondFinished = true; }
+        });
+
+        if (player.played.length !== 1 || transmitter.getQueueLength() !== 1) {
+            throw new Error(`Second play was not queued before the first Playing event: ${JSON.stringify({ played: player.played.length, queued: transmitter.getQueueLength() })}`);
+        }
+
+        player.emit(AudioPlayerStatus.Playing);
+        player.emit(AudioPlayerStatus.Idle);
+        await secondPlay;
+
+        if (!firstFinished) {
+            throw new Error('First playback finish callback was replaced by the queued playback');
+        }
+        if (player.played.length !== 2 || transmitter.getQueueLength() !== 0) {
+            throw new Error(`Queued playback did not start after first idle: ${JSON.stringify({ played: player.played.length, queued: transmitter.getQueueLength() })}`);
+        }
+
+        player.emit(AudioPlayerStatus.Playing);
+        player.emit(AudioPlayerStatus.Idle);
+
+        if (!secondFinished || transmitter.isCurrentlyPlaying()) {
+            throw new Error(`Second playback did not finish cleanly: ${JSON.stringify({ secondFinished, isPlaying: transmitter.isCurrentlyPlaying() })}`);
+        }
+
+        console.log('  Audio transmitter queues near-simultaneous playback instead of replacing callbacks');
+        passed++;
+    } catch (error) {
+        console.log(`  Audio transmitter queueing failed: ${error.message}`);
         failed++;
     }
 

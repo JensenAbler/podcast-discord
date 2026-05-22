@@ -113,8 +113,9 @@ class AudioTransmitter {
                 ...options
             };
 
-            // Add to queue if already playing
-            if (this.isPlaying) {
+            // Add to queue if playback is active or has been handed to Discord
+            // but the Playing event has not landed yet.
+            if (this.isPlaying || this.currentResource || this.currentPlayback) {
                 console.log('[AudioTransmitter] Adding to queue');
                 this.queue.push({ audio, options: playOptions, resolve, reject });
                 return;
@@ -173,6 +174,7 @@ class AudioTransmitter {
 
             this.currentResource = resource;
             this.currentPlayback = { options };
+            this.isPlaying = true;
 
             // Play the resource
             this.player.play(resource);
@@ -182,6 +184,9 @@ class AudioTransmitter {
 
         } catch (error) {
             console.error('[AudioTransmitter] Error playing audio:', error);
+            this.isPlaying = false;
+            this.currentResource = null;
+            this.currentPlayback = null;
             reject(error);
         }
     }

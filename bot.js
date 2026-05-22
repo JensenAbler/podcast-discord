@@ -3339,6 +3339,9 @@ class AlphaClawdVoiceBot {
         if (this.hasCurrentParticipantFloor(guildId)) {
             return false;
         }
+        if (this.directResponseInFlight?.has?.(guildId)) {
+            return false;
+        }
         if (this.bigBrainToolToneActive?.has?.(guildId)) {
             return false;
         }
@@ -3385,12 +3388,17 @@ class AlphaClawdVoiceBot {
                 return;
             }
 
-            state.playbackActive = true;
             this.duckBigBrainAmbientBed(guildId, 'tool tone starting', { runId: pending.runId });
             const playback = await this.voiceManager.speakWithTiming(guildId, buffer, {
                 inputType: StreamType.Arbitrary,
                 volume: this.getBigBrainToolToneVolume(),
                 onStart: (timing) => {
+                    state.playbackActive = true;
+                    if (state.stopped || !this.pendingBigBrainResponses?.has?.(pending.runId)) {
+                        this.voiceManager?.stopPlayback?.(guildId);
+                        return;
+                    }
+
                     const parsed = Date.parse(timing.playbackStartedAt);
                     playbackStartedMs = Number.isNaN(parsed) ? null : parsed;
                     const label = tone.toneType === 'tool' ? 'tool tone' : 'agent tone';
