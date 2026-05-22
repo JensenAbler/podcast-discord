@@ -27,6 +27,7 @@ const { ShowRunnerGenerator } = require('./showrunner-generator');
 const { ShowRunnerManager } = require('./showrunner-manager');
 const { PacketizationBuffer } = require('./packetization-buffer');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
+const { ParticipantSignalProfile } = require('./participant-signal-profile');
 const { EpisodeTranscriptStore, createEpisodeTranscriptServer } = require('./episode-transcript-viewer');
 const { buildTurnIdIntent, normalizeTurnIdIntent } = require('./turn-intent');
 
@@ -50,6 +51,7 @@ module.exports = {
     ShowRunnerManager,
     PacketizationBuffer,
     BigBrainAwarenessSelector,
+    ParticipantSignalProfile,
     EpisodeTranscriptStore,
     createEpisodeTranscriptServer,
     buildTurnIdIntent,

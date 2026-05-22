@@ -118,9 +118,13 @@ class VoiceManager {
             onUtterance: (utterance) => this.handleUtterance(guildId, utterance),
             onSpeakingStart: (userId) => this.handleSpeakingStart(guildId, userId),
             onSpeakingStop: (userId) => this.handleSpeakingStop(guildId, userId),
+            onSpeechEvidence: (userId, metadata) => this.handleSpeechEvidence(guildId, userId, metadata),
             onEndpointing: (userId, metadata) => this.handleEndpointing(guildId, userId, metadata),
             onAsrDispatched: (userId, metadata) => this.handleAsrDispatched(guildId, userId, metadata),
+            onVadDiscarded: (userId, metadata) => this.handleVadDiscarded(guildId, userId, metadata),
             onAsrError: (userId, metadata) => this.handleAsrError(guildId, userId, metadata),
+            getSpeechEvidenceFrameThreshold: (userId, stats, metadata) => this.getSpeechEvidenceFrameThreshold(guildId, userId, stats, metadata),
+            getAsrCandidateFrameThreshold: (userId, stats, metadata) => this.getAsrCandidateFrameThreshold(guildId, userId, stats, metadata),
             onError: (error) => console.error('[VoiceManager] Receiver error:', error)
         });
         this.receivers.set(guildId, receiver);
@@ -326,6 +330,18 @@ class VoiceManager {
     }
 
     /**
+     * Handle receiver evidence that buffered audio has crossed the speech threshold.
+     * @param {string} guildId - Discord guild ID
+     * @param {string} userId - Discord user ID
+     * @param {Object} metadata - { threshold, speakingFrames, silentFrames, ... }
+     */
+    handleSpeechEvidence(guildId, userId, metadata = {}) {
+        if (this.onSpeechEvidence) {
+            this.onSpeechEvidence(guildId, userId, metadata);
+        }
+    }
+
+    /**
      * Handle a receiver-announced endpoint debounce window.
      * @param {string} guildId - Discord guild ID
      * @param {string} userId - Discord user ID
@@ -350,6 +366,18 @@ class VoiceManager {
     }
 
     /**
+     * Handle a receiver-discarded VAD flap that never became an ASR candidate.
+     * @param {string} guildId - Discord guild ID
+     * @param {string} userId - Discord user ID
+     * @param {Object} metadata - { reason, audioBytes, speakingFrames, silentFrames, ... }
+     */
+    handleVadDiscarded(guildId, userId, metadata = {}) {
+        if (this.onVadDiscarded) {
+            this.onVadDiscarded(guildId, userId, metadata);
+        }
+    }
+
+    /**
      * Handle a receiver-announced ASR failure.
      * @param {string} guildId - Discord guild ID
      * @param {string} userId - Discord user ID
@@ -359,6 +387,20 @@ class VoiceManager {
         if (this.onAsrError) {
             this.onAsrError(guildId, userId, metadata);
         }
+    }
+
+    getSpeechEvidenceFrameThreshold(guildId, userId, stats = {}, metadata = {}) {
+        if (typeof this.onGetSpeechEvidenceFrameThreshold === 'function') {
+            return this.onGetSpeechEvidenceFrameThreshold(guildId, userId, stats, metadata);
+        }
+        return 1;
+    }
+
+    getAsrCandidateFrameThreshold(guildId, userId, stats = {}, metadata = {}) {
+        if (typeof this.onGetAsrCandidateFrameThreshold === 'function') {
+            return this.onGetAsrCandidateFrameThreshold(guildId, userId, stats, metadata);
+        }
+        return 1;
     }
 
     /**
@@ -791,6 +833,14 @@ class VoiceManager {
     }
 
     /**
+     * Set the speech-evidence handler callback.
+     * @param {Function} handler - (guildId, userId, { threshold, speakingFrames, ... }) => void
+     */
+    setSpeechEvidenceHandler(handler) {
+        this.onSpeechEvidence = handler;
+    }
+
+    /**
      * Set the endpoint-debounce handler callback.
      * @param {Function} handler - (guildId, userId, { active, reason, debounceMs, ... }) => void
      */
@@ -807,11 +857,35 @@ class VoiceManager {
     }
 
     /**
+     * Set the discarded-VAD handler callback.
+     * @param {Function} handler - (guildId, userId, { reason, audioBytes, speakingFrames, ... }) => void
+     */
+    setVadDiscardedHandler(handler) {
+        this.onVadDiscarded = handler;
+    }
+
+    /**
      * Set the ASR-error handler callback.
      * @param {Function} handler - (guildId, userId, { reason, audioBytes, speechDuration, error }) => void
      */
     setAsrErrorHandler(handler) {
         this.onAsrError = handler;
+    }
+
+    /**
+     * Set the receiver speech-evidence threshold provider.
+     * @param {Function} provider - (guildId, userId, stats, metadata) => frame threshold
+     */
+    setSpeechEvidenceFrameThresholdProvider(provider) {
+        this.onGetSpeechEvidenceFrameThreshold = provider;
+    }
+
+    /**
+     * Set the receiver ASR-candidate threshold provider.
+     * @param {Function} provider - (guildId, userId, stats, metadata) => frame threshold
+     */
+    setAsrCandidateFrameThresholdProvider(provider) {
+        this.onGetAsrCandidateFrameThreshold = provider;
     }
 
     /**

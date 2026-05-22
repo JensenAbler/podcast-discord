@@ -19,6 +19,7 @@ const {
     ShowRunnerManager,
     PacketizationBuffer,
     BigBrainAwarenessSelector,
+    ParticipantSignalProfile,
     EpisodeTranscriptStore,
     createEpisodeTranscriptServer,
     buildTurnIdIntent,
@@ -72,6 +73,54 @@ async function runTests() {
         }
     } catch (error) {
         console.log(`  Silence detector failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 1b: Participant Signal Profile');
+    try {
+        const profile = new ParticipantSignalProfile({ windowSize: 30 });
+
+        for (let i = 0; i < 8; i++) {
+            profile.recordSignal({
+                type: 'vad_discarded',
+                speakingFrames: 0,
+                duringHostPlayback: i % 2 === 0,
+                nearHostPlaybackStart: i % 2 === 0
+            });
+        }
+        for (let i = 0; i < 2; i++) {
+            profile.recordSignal({ type: 'real_transcript', speakingFrames: 12 });
+        }
+
+        const noisy = profile.getSnapshot();
+        if (noisy.strictnessLevel < 2 || noisy.vadNoiseScore <= 0.5) {
+            throw new Error(`Expected noisy profile to become stricter: ${JSON.stringify(noisy)}`);
+        }
+        if (profile.getSpeechEvidenceFrameThreshold({ duringHostPlayback: true }) < 4) {
+            throw new Error('Host-playback speech-evidence threshold did not rise');
+        }
+
+        for (let i = 0; i < 30; i++) {
+            profile.recordSignal({ type: 'real_transcript', speakingFrames: 20 });
+        }
+
+        const recovered = profile.getSnapshot();
+        if (recovered.strictnessLevel !== 0 || recovered.vadNoiseScore !== 0) {
+            throw new Error(`Profile did not adapt back down after clean signals: ${JSON.stringify(recovered)}`);
+        }
+
+        const phantomProfile = new ParticipantSignalProfile({ windowSize: 30 });
+        phantomProfile.recordSignal({ type: 'phantom_utterance', duringHostPlayback: true });
+        phantomProfile.recordSignal({ type: 'empty_asr', duringHostPlayback: true });
+        phantomProfile.recordSignal({ type: 'real_transcript' });
+        if (phantomProfile.getAsrCandidateFrameThreshold({ duringHostPlayback: true }) < 2) {
+            throw new Error(`Phantom profile did not gently raise ASR threshold: ${JSON.stringify(phantomProfile.getSnapshot())}`);
+        }
+
+        console.log('  Participant signal profile tracks VAD noise, phantoms, echo, and adapts both ways');
+        passed++;
+    } catch (error) {
+        console.log(`  Participant signal profile failed: ${error.message}`);
         failed++;
     }
 
@@ -2812,6 +2861,7 @@ async function runTests() {
         bot.directResponseInFlight.delete(guildId);
 
         const staleRequeues = [];
+        const bufferSpeakingEvents = [];
         let playCalled = false;
         let transcriptSaved = false;
         let cooldownStarted = false;
@@ -2834,6 +2884,14 @@ async function runTests() {
             },
             requeueUtterances: (utterances, reason) => {
                 staleRequeues.push({ utterances, reason });
+            },
+            setUserSpeaking: (userId, speaking) => {
+                bufferSpeakingEvents.push({ userId, speaking });
+                testBufferState = {
+                    ...testBufferState,
+                    activeSpeakerCount: speaking ? 1 : 0,
+                    activeSpeakers: speaking ? [userId] : []
+                };
             },
             startCooldown: () => {
                 cooldownStarted = true;
@@ -2916,6 +2974,67 @@ async function runTests() {
         if (staleRequeues.length !== flapRequeueCount) {
             throw new Error(`Short VAD flap requeued utterances: ${JSON.stringify(staleRequeues)}`);
         }
+
+        bot.participantSignalProfiles = new Map();
+        bot.participantSignalStates = new Map();
+        bot.hostPlaybackState = new Map();
+        bot.setInternalThoughtUserSpeaking = () => {};
+        bot.stopBigBrainToolTone = () => {};
+
+        const rawVadBaseline = bot.getParticipantActivityVersion(guildId);
+        const rawVadSpeakingEventCount = bufferSpeakingEvents.length;
+        bot.noteRawParticipantVadStart(guildId, 'user-raw-vad');
+        if (bot.getParticipantActivityVersion(guildId) !== rawVadBaseline) {
+            throw new Error('Raw VAD start incorrectly confirmed participant activity');
+        }
+        if (bufferSpeakingEvents.length !== rawVadSpeakingEventCount) {
+            throw new Error(`Raw VAD start incorrectly changed buffer speaking state: ${JSON.stringify(bufferSpeakingEvents)}`);
+        }
+        bot.noteRawParticipantVadStop(guildId, 'user-raw-vad');
+        if (bot.getParticipantActivityVersion(guildId) !== rawVadBaseline) {
+            throw new Error('Raw VAD stop incorrectly confirmed participant activity');
+        }
+
+        bot.noteRawParticipantVadStart(guildId, 'user-evidence');
+        bot.confirmParticipantSpeechEvidence(guildId, 'user-evidence', {
+            speakingFrames: 4,
+            threshold: 1,
+            source: 'test speech evidence'
+        });
+        if (bot.getParticipantActivityVersion(guildId) <= rawVadBaseline) {
+            throw new Error('Speech evidence did not confirm participant activity');
+        }
+        if (!bufferSpeakingEvents.some(event => event.userId === 'user-evidence' && event.speaking)) {
+            throw new Error(`Speech evidence did not mark the buffer active: ${JSON.stringify(bufferSpeakingEvents)}`);
+        }
+        bot.noteRawParticipantVadStop(guildId, 'user-evidence');
+
+        bot.participantSignalStates = new Map();
+        bot.noteRawParticipantVadStart(guildId, 'user-before-playback');
+        const waitTimeout = await bot.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
+        if (!waitTimeout.waited || !waitTimeout.timedOut || waitTimeout.waitedMs < 100) {
+            throw new Error(`Pre-playback wait did not hold briefly for low-evidence raw VAD: ${JSON.stringify(waitTimeout)}`);
+        }
+        if (bot.hasCurrentParticipantFloor(guildId)) {
+            throw new Error('Low-evidence raw VAD gained floor during pre-playback wait');
+        }
+        bot.noteRawParticipantVadStop(guildId, 'user-before-playback');
+
+        bot.participantSignalStates = new Map();
+        bot.noteRawParticipantVadStart(guildId, 'user-wait-evidence');
+        const waitForEvidence = bot.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
+        setTimeout(() => {
+            bot.confirmParticipantSpeechEvidence(guildId, 'user-wait-evidence', {
+                speakingFrames: 5,
+                threshold: 1,
+                source: 'test delayed evidence'
+            });
+        }, 30);
+        const waitEvidenceResult = await waitForEvidence;
+        if (!waitEvidenceResult.speechEvidence) {
+            throw new Error(`Pre-playback wait did not notice arriving speech evidence: ${JSON.stringify(waitEvidenceResult)}`);
+        }
+        bot.noteRawParticipantVadStop(guildId, 'user-wait-evidence');
 
         testBufferState = {
             ...testBufferState,
@@ -5018,6 +5137,7 @@ async function runTests() {
         const utterances = [];
         const dispatched = [];
         const endpointing = [];
+        const speechEvidence = [];
         const speechChunk = createSpeechPcm(140);
 
         const receiver = new AudioReceiver({
@@ -5027,6 +5147,7 @@ async function runTests() {
                 transcribe: async () => ({ text: 'real speech', confidence: 0.9, words: [] })
             },
             onUtterance: (u) => utterances.push(u),
+            onSpeechEvidence: (userId, metadata) => speechEvidence.push({ userId, metadata }),
             onEndpointing: (userId, metadata) => endpointing.push({ userId, metadata }),
             onAsrDispatched: (userId, metadata) => dispatched.push({ userId, metadata })
         });
@@ -5050,6 +5171,9 @@ async function runTests() {
         if (dispatched.length !== 0 || utterances.length !== 0) {
             throw new Error(`Non-speech VAD flap triggered ASR: ${JSON.stringify({ dispatched, utterances })}`);
         }
+        if (speechEvidence.length !== 0) {
+            throw new Error(`Non-speech VAD flap emitted speech evidence: ${JSON.stringify(speechEvidence)}`);
+        }
         if (endpointing.some(e => e.metadata.active === true)) {
             throw new Error(`Non-speech VAD flap armed endpointing: ${JSON.stringify(endpointing)}`);
         }
@@ -5062,6 +5186,9 @@ async function runTests() {
 
         if (dispatched.length !== 1) {
             throw new Error(`Expected exactly one ASR dispatch for real speech, got ${dispatched.length}`);
+        }
+        if (speechEvidence.length !== 1 || speechEvidence[0].metadata.speakingFrames <= 0) {
+            throw new Error(`Real speech did not emit speech evidence: ${JSON.stringify(speechEvidence)}`);
         }
         if (dispatched[0].metadata.audioBytes !== speechChunk.length) {
             throw new Error(`VAD flap bytes leaked into speech buffer: ${JSON.stringify(dispatched[0].metadata)}`);

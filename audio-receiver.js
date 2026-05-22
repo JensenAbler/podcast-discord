@@ -32,9 +32,13 @@ class AudioReceiver {
             onUtterance: options.onUtterance || (() => {}),
             onSpeakingStart: options.onSpeakingStart || (() => {}),
             onSpeakingStop: options.onSpeakingStop || (() => {}),
+            onSpeechEvidence: options.onSpeechEvidence || (() => {}),
             onEndpointing: options.onEndpointing || (() => {}), // (userId, { active, reason, debounceMs }) — Discord-stop debounce window
             onAsrDispatched: options.onAsrDispatched || (() => {}), // (userId, { reason, audioBytes, speechDuration }) — fires immediately before stt.transcribe
+            onVadDiscarded: options.onVadDiscarded || (() => {}),
             onAsrError: options.onAsrError || (() => {}),
+            getSpeechEvidenceFrameThreshold: options.getSpeechEvidenceFrameThreshold || (() => 1),
+            getAsrCandidateFrameThreshold: options.getAsrCandidateFrameThreshold || (() => 1),
             onError: options.onError || console.error,
             enableTranscription: options.enableTranscription !== false, // Default true
             botUserId: options.botUserId, // Bot's own user ID to filter self-audio
@@ -224,7 +228,8 @@ class AudioReceiver {
             startTime: null,
             speakerInfo: speakerInfo,
             detector: silenceDetector,
-            endpointTimer: null
+            endpointTimer: null,
+            speechEvidenceEmitted: false
         };
 
         this.speakerBuffers.set(userId, buffer);
@@ -249,7 +254,7 @@ class AudioReceiver {
             // expires, flushUser snapshots and ASR is dispatched. The in-stream
             // SilenceDetector may also beat us to flushUser; either way the
             // endpoint timer is canceled by snapshotUserBuffer.
-            if (this.hasAsrCandidate(buffer)) {
+            if (this.hasAsrCandidate(userId, buffer)) {
                 this.armEndpointTimer(userId, 'speaking stop with buffered audio');
             } else if (buffer.chunks.length > 0) {
                 this.discardUserBuffer(userId, 'non-speech VAD flap');
@@ -275,6 +280,7 @@ class AudioReceiver {
 
         // Feed to silence detector
         buffer.detector.processAudio(chunk);
+        this.maybeEmitSpeechEvidence(userId, buffer);
 
         // Stream to recorder in real-time (for mixed audio recording)
         if (this.options.onAudioChunk) {
@@ -304,11 +310,63 @@ class AudioReceiver {
      * @param {Object} buffer - Speaker buffer
      * @returns {boolean}
      */
-    hasAsrCandidate(buffer) {
+    hasAsrCandidate(userId, buffer) {
         if (!buffer || buffer.chunks.length === 0) return false;
 
         const stats = buffer.detector?.getStats?.();
-        return !stats || stats.speakingFrames > 0;
+        if (!stats) return true;
+
+        const threshold = this.getAsrCandidateFrameThreshold(userId, stats, {
+            audioBytes: this.getBufferedAudioBytes(buffer),
+            chunkCount: buffer.chunks.length
+        });
+        return stats.speakingFrames >= threshold;
+    }
+
+    getSpeechEvidenceFrameThreshold(userId, stats = {}, metadata = {}) {
+        const rawThreshold = this.options.getSpeechEvidenceFrameThreshold(userId, stats, metadata);
+        const parsed = Number(rawThreshold);
+        return Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : 1;
+    }
+
+    getAsrCandidateFrameThreshold(userId, stats = {}, metadata = {}) {
+        const rawThreshold = this.options.getAsrCandidateFrameThreshold(userId, stats, metadata);
+        const parsed = Number(rawThreshold);
+        return Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : 1;
+    }
+
+    getBufferedAudioBytes(buffer) {
+        if (!buffer || !Array.isArray(buffer.chunks)) return 0;
+        return buffer.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    }
+
+    maybeEmitSpeechEvidence(userId, buffer) {
+        if (!buffer || buffer.speechEvidenceEmitted) return;
+
+        const stats = buffer.detector?.getStats?.();
+        if (!stats) return;
+
+        const audioBytes = this.getBufferedAudioBytes(buffer);
+        const threshold = this.getSpeechEvidenceFrameThreshold(userId, stats, {
+            audioBytes,
+            chunkCount: buffer.chunks.length
+        });
+
+        if ((stats.speakingFrames || 0) < threshold) {
+            return;
+        }
+
+        buffer.speechEvidenceEmitted = true;
+        this.options.onSpeechEvidence(userId, {
+            threshold,
+            audioBytes,
+            chunkCount: buffer.chunks.length,
+            speakingFrames: stats.speakingFrames || 0,
+            silentFrames: stats.silentFrames || 0,
+            totalFrames: stats.totalFrames || 0,
+            firstSpeechAtMs: stats.firstSpeechAtMs || null,
+            lastSpeechAtMs: stats.lastSpeechAtMs || null
+        });
     }
 
     /**
@@ -322,11 +380,12 @@ class AudioReceiver {
         const buffer = this.speakerBuffers.get(userId);
         if (!buffer) return;
 
-        const audioBytes = buffer.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const audioBytes = this.getBufferedAudioBytes(buffer);
         const stats = buffer.detector?.getStats?.() || {};
 
         buffer.chunks = [];
         buffer.startTime = null;
+        buffer.speechEvidenceEmitted = false;
 
         if (buffer.endpointTimer) {
             clearTimeout(buffer.endpointTimer);
@@ -342,6 +401,14 @@ class AudioReceiver {
             `[AudioReceiver] Discarded ${audioBytes} bytes for ${userId} (${reason}; ` +
             `speakingFrames=${stats.speakingFrames || 0}, silentFrames=${stats.silentFrames || 0})`
         );
+
+        this.options.onVadDiscarded(userId, {
+            reason,
+            audioBytes,
+            speakingFrames: stats.speakingFrames || 0,
+            silentFrames: stats.silentFrames || 0,
+            totalFrames: stats.totalFrames || 0
+        });
     }
 
     /**
@@ -365,7 +432,8 @@ class AudioReceiver {
             debounceMs,
             chunkCount: buffer.chunks.length,
             speakingFrames: stats.speakingFrames || 0,
-            silentFrames: stats.silentFrames || 0
+            silentFrames: stats.silentFrames || 0,
+            totalFrames: stats.totalFrames || 0
         });
 
         buffer.endpointTimer = setTimeout(() => {
@@ -423,19 +491,21 @@ class AudioReceiver {
             console.log(`[AudioReceiver] No buffered audio for ${userId} on ${reason}`);
             buffer.chunks = [];
             buffer.startTime = null;
+            buffer.speechEvidenceEmitted = false;
             if (buffer.detector) {
                 buffer.detector.reset();
             }
             return null;
         }
 
-        if (!this.hasAsrCandidate(buffer)) {
+        if (!this.hasAsrCandidate(userId, buffer)) {
             this.discardUserBuffer(userId, reason);
             return null;
         }
 
         buffer.chunks = [];
         buffer.startTime = null;
+        buffer.speechEvidenceEmitted = false;
 
         if (buffer.detector) {
             buffer.detector.reset();
@@ -451,7 +521,8 @@ class AudioReceiver {
             speechEndedAt: new Date(speechEndedAtMs).toISOString(),
             speechDuration,
             timestamp: new Date(speechStartedAtMs).toISOString(),
-            reason: reason
+            reason: reason,
+            detectorStats
         };
     }
 
@@ -535,6 +606,7 @@ class AudioReceiver {
             speechStartedAt,
             speechEndedAt,
             speechDuration,
+            detectorStats = {},
             reason: snapshotReason
         } = snapshot;
 
@@ -558,7 +630,10 @@ class AudioReceiver {
                     this.options.onAsrDispatched(userId, {
                         reason: snapshotReason || 'snapshot',
                         audioBytes: audioBuffer.length,
-                        speechDuration
+                        speechDuration,
+                        speakingFrames: detectorStats.speakingFrames || 0,
+                        silentFrames: detectorStats.silentFrames || 0,
+                        totalFrames: detectorStats.totalFrames || 0
                     });
                     const sttResult = await this.stt.transcribe(audioBuffer);
                     rawTranscription = sttResult.text || '';

@@ -80,6 +80,7 @@ const { InternalThoughtManager } = require('./internal-thought-manager');
 const { ShowRunnerManager } = require('./showrunner-manager');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
 const { buildTurnIdIntent } = require('./turn-intent');
+const { ParticipantSignalProfile } = require('./participant-signal-profile');
 
 // Map a Fish TTS format string to the @discordjs/voice StreamType that lets
 // Discord play the bytes without an FFmpeg transcode. Returning undefined
@@ -120,6 +121,9 @@ class AlphaClawdVoiceBot {
         this.participantActivityVersion = new Map(); // guildId -> monotonic counter for floor-taking changes
         this.participantActivityTimers = new Map(); // guildId -> Map<userId, timeout>
         this.participantActivityConfirmDelayMs = Number(process.env.PODCAST_PARTICIPANT_ACTIVITY_CONFIRM_MS || 200);
+        this.participantSignalProfiles = new Map(); // guildId -> Map<userId, ParticipantSignalProfile>
+        this.participantSignalStates = new Map(); // guildId -> Map<userId, raw VAD/evidence state>
+        this.hostPlaybackState = new Map(); // guildId -> { active, startedAt, endedAt }
         this.latestParticipantTurnIdIntent = new Map(); // guildId -> deterministic turn intent for latest participant utterance
         this.awarenessTurnWaitMs = Number(process.env.PODCAST_AWARENESS_TURN_WAIT_MS ?? 200);
         this.bigBrainEnabled = options.bigBrainEnabled !== undefined
@@ -287,6 +291,7 @@ class AlphaClawdVoiceBot {
             // Include full word-level data from ElevenLabs STT for confidence analysis
             if (transcription) {
                 this.lastParticipantSpeechAt.set(guildId, Date.now());
+                this.recordParticipantSignal(guildId, utterance.userId, 'real_transcript', utterance);
                 this.confirmParticipantActivity(guildId, utterance.userId, 'transcript');
                 const participantTurnIdIntent = this.buildGeneratorTurnIdIntent('participant', [utterance]);
                 if (participantTurnIdIntent) {
@@ -302,6 +307,11 @@ class AlphaClawdVoiceBot {
                     speakerRole: utterance.speakerRole || 'guest',
                     source: 'participant'
                 });
+            } else {
+                const eventType = Array.isArray(utterance.audioEvents) && utterance.audioEvents.includes('phantom')
+                    ? 'phantom_utterance'
+                    : 'empty_asr';
+                this.recordParticipantSignal(guildId, utterance.userId, eventType, utterance);
             }
 
             this.conversationBuffer.addUtterance({
@@ -323,30 +333,31 @@ class AlphaClawdVoiceBot {
                 providerError: utterance.providerError,
                 timestamp: utterance.timestamp || Date.now()
             });
+            this.clearCompletedParticipantSignalState(guildId, utterance.userId, 'ASR result handled');
         });
 
         // Set up speaking start/stop handlers to prevent buffer flush while user is speaking
         this.voiceManager.setSpeakingStartHandler((guildId, userId) => {
-            this.stopBigBrainToolTone(guildId, 'participant started speaking');
-            console.log(`[Bot] User ${userId} started speaking, pausing buffer flush`);
-            this.markProvisionalParticipantActivity(guildId, userId, 'speaking start');
-            this.setInternalThoughtUserSpeaking(guildId, userId, true);
-            this.conversationBuffer.setUserSpeaking(userId, true);
+            this.noteRawParticipantVadStart(guildId, userId);
         });
 
         this.voiceManager.setSpeakingStopHandler((guildId, userId) => {
-            console.log(`[Bot] User ${userId} stopped speaking`);
-            this.clearProvisionalParticipantActivity(guildId, userId, 'speaking stop before confirmation');
-            this.setInternalThoughtUserSpeaking(guildId, userId, false);
-            this.conversationBuffer.setUserSpeaking(userId, false);
+            this.noteRawParticipantVadStop(guildId, userId);
+        });
+
+        this.voiceManager.setSpeechEvidenceHandler((guildId, userId, metadata = {}) => {
+            this.confirmParticipantSpeechEvidence(guildId, userId, metadata);
         });
 
         this.voiceManager.setEndpointingHandler((guildId, userId, metadata = {}) => {
             if (metadata.active) {
                 console.log(`[Bot] Endpoint debounce armed for ${userId} (${metadata.reason}, ${metadata.debounceMs}ms)`);
-                this.confirmParticipantActivity(guildId, userId, 'endpointing');
-                this.markInternalThoughtEndpointing(guildId, userId, true);
-                this.conversationBuffer.markEndpointing(userId, true);
+                if (this.hasParticipantSpeechEvidenceConfirmed(guildId, userId)) {
+                    this.markInternalThoughtEndpointing(guildId, userId, true);
+                    this.conversationBuffer.markEndpointing(userId, true);
+                } else {
+                    console.log(`[Bot] Endpoint debounce for ${userId} is low-evidence; not granting floor authority yet`);
+                }
             } else {
                 this.markInternalThoughtEndpointing(guildId, userId, false);
                 this.conversationBuffer.markEndpointing(userId, false);
@@ -355,9 +366,29 @@ class AlphaClawdVoiceBot {
 
         this.voiceManager.setAsrDispatchedHandler((guildId, userId, metadata = {}) => {
             console.log(`[Bot] ASR dispatched to Fish for ${userId} (${metadata.audioBytes} bytes, ${metadata.reason})`);
-            this.confirmParticipantActivity(guildId, userId, 'ASR dispatched');
-            this.markInternalThoughtAsrPending(guildId, userId, metadata);
-            this.conversationBuffer.markAsrPending(userId, metadata);
+            if (this.hasSpeechEvidenceForFloor(guildId, userId, metadata)) {
+                this.confirmParticipantSpeechEvidence(guildId, userId, {
+                    ...metadata,
+                    source: 'ASR dispatched'
+                });
+                this.markInternalThoughtAsrPending(guildId, userId, metadata);
+                this.conversationBuffer.markAsrPending(userId, metadata);
+            } else {
+                console.log(`[Bot] ASR dispatch for ${userId} is below floor-evidence threshold; awaiting transcript before changing floor state`);
+            }
+        });
+
+        this.voiceManager.setVadDiscardedHandler((guildId, userId, metadata = {}) => {
+            this.recordParticipantSignal(guildId, userId, 'vad_discarded', metadata);
+            this.clearUnconfirmedParticipantSignalState(guildId, userId, 'discarded VAD flap');
+        });
+
+        this.voiceManager.setSpeechEvidenceFrameThresholdProvider((guildId, userId, stats = {}, metadata = {}) => {
+            return this.getSpeechEvidenceFrameThreshold(guildId, userId, stats, metadata);
+        });
+
+        this.voiceManager.setAsrCandidateFrameThresholdProvider((guildId, userId, stats = {}, metadata = {}) => {
+            return this.getAsrCandidateFrameThreshold(guildId, userId, stats, metadata);
         });
 
         this.voiceManager.setAsrErrorHandler((guildId, userId, metadata = {}) => {
@@ -777,6 +808,330 @@ class AlphaClawdVoiceBot {
             : 200;
     }
 
+    getParticipantSignalProfileMap(guildId) {
+        if (!this.participantSignalProfiles) {
+            this.participantSignalProfiles = new Map();
+        }
+
+        let profiles = this.participantSignalProfiles.get(guildId);
+        if (!profiles) {
+            profiles = new Map();
+            this.participantSignalProfiles.set(guildId, profiles);
+        }
+
+        return profiles;
+    }
+
+    getParticipantSignalProfile(guildId, userId) {
+        const profiles = this.getParticipantSignalProfileMap(guildId);
+        const key = userId || '__unknown__';
+        let profile = profiles.get(key);
+        if (!profile) {
+            profile = new ParticipantSignalProfile();
+            profiles.set(key, profile);
+        }
+        return profile;
+    }
+
+    getParticipantSignalStateMap(guildId) {
+        if (!this.participantSignalStates) {
+            this.participantSignalStates = new Map();
+        }
+
+        let states = this.participantSignalStates.get(guildId);
+        if (!states) {
+            states = new Map();
+            this.participantSignalStates.set(guildId, states);
+        }
+
+        return states;
+    }
+
+    getParticipantSignalState(guildId, userId, create = false) {
+        if (!guildId || !userId) return null;
+
+        const states = this.getParticipantSignalStateMap(guildId);
+        let state = states.get(userId);
+        if (!state && create) {
+            state = {
+                userId,
+                rawActive: false,
+                speechEvidence: false,
+                floorConfirmed: false,
+                startedAt: null,
+                evidenceAt: null,
+                hostPlaybackContextAtStart: null
+            };
+            states.set(userId, state);
+        }
+
+        return state || null;
+    }
+
+    getHostPlaybackContext(guildId, at = Date.now()) {
+        const playback = this.hostPlaybackState?.get?.(guildId) || {};
+        const startedAt = Number(playback.startedAt);
+        const endedAt = Number(playback.endedAt);
+        const hasStarted = Number.isFinite(startedAt);
+        const active = Boolean(playback.active) && hasStarted && at >= startedAt;
+        const duringHostPlayback = hasStarted &&
+            at >= startedAt &&
+            (active || !Number.isFinite(endedAt) || at <= endedAt);
+        const nearHostPlaybackStart = hasStarted && Math.abs(at - startedAt) <= 600;
+
+        return {
+            duringHostPlayback,
+            nearHostPlaybackStart,
+            hostPlaybackActive: active,
+            hostPlaybackStartedAt: hasStarted ? startedAt : null,
+            hostPlaybackEndedAt: Number.isFinite(endedAt) ? endedAt : null,
+            msSinceHostPlaybackStart: hasStarted ? at - startedAt : null
+        };
+    }
+
+    noteHostPlaybackStart(guildId, timing = {}) {
+        const parsed = Date.parse(timing.playbackStartedAt);
+        const startedAt = Number.isNaN(parsed) ? Date.now() : parsed;
+        if (!this.hostPlaybackState) {
+            this.hostPlaybackState = new Map();
+        }
+        this.hostPlaybackState.set(guildId, {
+            active: true,
+            startedAt,
+            endedAt: null
+        });
+    }
+
+    noteHostPlaybackEnd(guildId, timing = {}) {
+        const parsed = Date.parse(timing.playbackEndedAt);
+        const endedAt = Number.isNaN(parsed) ? Date.now() : parsed;
+        const existing = this.hostPlaybackState?.get?.(guildId) || {};
+        if (!this.hostPlaybackState) {
+            this.hostPlaybackState = new Map();
+        }
+        this.hostPlaybackState.set(guildId, {
+            ...existing,
+            active: false,
+            endedAt
+        });
+    }
+
+    recordParticipantSignal(guildId, userId, type, metadata = {}) {
+        if (!guildId || !userId) return null;
+
+        const at = Number.isFinite(metadata.at)
+            ? metadata.at
+            : (metadata.speechStartedAt ? Date.parse(metadata.speechStartedAt) : Date.now());
+        const context = metadata.hostPlaybackContext || this.getHostPlaybackContext(guildId, Number.isNaN(at) ? Date.now() : at);
+        const profile = this.getParticipantSignalProfile(guildId, userId);
+        const snapshot = profile.recordSignal({
+            ...metadata,
+            ...context,
+            type,
+            at: Number.isNaN(at) ? Date.now() : at
+        });
+
+        if (type !== 'raw_vad_start' && snapshot.strictnessLevel > 0) {
+            console.log(
+                `[Bot] Participant signal profile ${userId}: type=${type}, ` +
+                `vadNoise=${snapshot.vadNoiseScore.toFixed(2)}, ` +
+                `phantom=${snapshot.phantomScore.toFixed(2)}, ` +
+                `echo=${snapshot.echoScore.toFixed(2)}, strictness=${snapshot.strictnessLevel}`
+            );
+        }
+
+        return snapshot;
+    }
+
+    noteRawParticipantVadStart(guildId, userId) {
+        const now = Date.now();
+        const state = this.getParticipantSignalState(guildId, userId, true);
+        const context = this.getHostPlaybackContext(guildId, now);
+
+        state.rawActive = true;
+        state.speechEvidence = false;
+        state.floorConfirmed = false;
+        state.startedAt = now;
+        state.evidenceAt = null;
+        state.hostPlaybackContextAtStart = context;
+
+        this.recordParticipantSignal(guildId, userId, 'raw_vad_start', {
+            at: now,
+            hostPlaybackContext: context
+        });
+
+        console.log(`[Bot] User ${userId} raw VAD started; awaiting speech evidence before taking floor authority`);
+    }
+
+    noteRawParticipantVadStop(guildId, userId) {
+        const state = this.getParticipantSignalState(guildId, userId, false);
+        const hadConfirmedFloor = Boolean(state?.floorConfirmed);
+
+        console.log(`[Bot] User ${userId} raw VAD stopped${hadConfirmedFloor ? '' : ' before speech evidence'}`);
+        this.clearProvisionalParticipantActivity(guildId, userId, 'speaking stop');
+
+        if (hadConfirmedFloor) {
+            this.setInternalThoughtUserSpeaking(guildId, userId, false);
+            this.conversationBuffer.setUserSpeaking(userId, false);
+            if (state) {
+                state.rawActive = false;
+            }
+            return;
+        }
+
+        const states = this.participantSignalStates?.get?.(guildId);
+        states?.delete?.(userId);
+        if (states?.size === 0) {
+            this.participantSignalStates.delete(guildId);
+        }
+    }
+
+    clearUnconfirmedParticipantSignalState(guildId, userId, reason = 'cleared') {
+        const state = this.getParticipantSignalState(guildId, userId, false);
+        if (!state || state.floorConfirmed) {
+            return;
+        }
+
+        const states = this.participantSignalStates?.get?.(guildId);
+        states?.delete?.(userId);
+        if (states?.size === 0) {
+            this.participantSignalStates.delete(guildId);
+        }
+
+        console.log(`[Bot] Unconfirmed raw VAD cleared for ${userId} (${reason})`);
+    }
+
+    clearCompletedParticipantSignalState(guildId, userId, reason = 'completed') {
+        const state = this.getParticipantSignalState(guildId, userId, false);
+        if (!state || state.rawActive) {
+            return;
+        }
+
+        const states = this.participantSignalStates?.get?.(guildId);
+        states?.delete?.(userId);
+        if (states?.size === 0) {
+            this.participantSignalStates.delete(guildId);
+        }
+
+        console.log(`[Bot] Participant signal state cleared for ${userId} (${reason})`);
+    }
+
+    confirmParticipantSpeechEvidence(guildId, userId, metadata = {}) {
+        if (!guildId || !userId) return false;
+
+        const now = Date.now();
+        const state = this.getParticipantSignalState(guildId, userId, true);
+        const context = state.hostPlaybackContextAtStart || this.getHostPlaybackContext(guildId, now);
+
+        state.speechEvidence = true;
+        state.evidenceAt = now;
+
+        this.recordParticipantSignal(guildId, userId, 'speech_evidence', {
+            ...metadata,
+            at: now,
+            hostPlaybackContext: context
+        });
+
+        if (state.floorConfirmed) {
+            return true;
+        }
+
+        state.floorConfirmed = true;
+        const reason = metadata.source || 'speech evidence';
+        if (!this.getHostPlaybackContext(guildId, now).duringHostPlayback) {
+            this.stopBigBrainToolTone(guildId, 'participant speech evidence');
+        }
+        console.log(
+            `[Bot] Speech evidence confirmed for ${userId} ` +
+            `(frames=${metadata.speakingFrames || 0}, threshold=${metadata.threshold || 1}, source=${reason})`
+        );
+        this.setInternalThoughtUserSpeaking(guildId, userId, true);
+        this.conversationBuffer.setUserSpeaking(userId, true);
+        this.confirmParticipantActivity(guildId, userId, reason);
+        return true;
+    }
+
+    hasParticipantSpeechEvidenceConfirmed(guildId, userId) {
+        const state = this.getParticipantSignalState(guildId, userId, false);
+        return Boolean(state?.floorConfirmed);
+    }
+
+    hasSpeechEvidenceForFloor(guildId, userId, metadata = {}) {
+        if (this.hasParticipantSpeechEvidenceConfirmed(guildId, userId)) {
+            return true;
+        }
+
+        const stats = {
+            speakingFrames: metadata.speakingFrames || 0,
+            silentFrames: metadata.silentFrames || 0,
+            totalFrames: metadata.totalFrames || 0
+        };
+        const threshold = this.getSpeechEvidenceFrameThreshold(guildId, userId, stats, metadata);
+        return stats.speakingFrames >= threshold;
+    }
+
+    getSpeechEvidenceFrameThreshold(guildId, userId, stats = {}, metadata = {}) {
+        const profile = this.getParticipantSignalProfile(guildId, userId);
+        return profile.getSpeechEvidenceFrameThreshold({
+            ...this.getHostPlaybackContext(guildId),
+            ...metadata,
+            speakingFrames: stats.speakingFrames || 0
+        });
+    }
+
+    getAsrCandidateFrameThreshold(guildId, userId, stats = {}, metadata = {}) {
+        const profile = this.getParticipantSignalProfile(guildId, userId);
+        return profile.getAsrCandidateFrameThreshold({
+            ...this.getHostPlaybackContext(guildId),
+            ...metadata,
+            speakingFrames: stats.speakingFrames || 0
+        });
+    }
+
+    getPendingUnconfirmedParticipantSignals(guildId) {
+        const states = this.participantSignalStates?.get?.(guildId);
+        if (!states) return [];
+
+        return Array.from(states.values())
+            .filter(state => state.rawActive && !state.floorConfirmed);
+    }
+
+    async waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId) {
+        const pending = this.getPendingUnconfirmedParticipantSignals(guildId);
+        if (pending.length === 0) {
+            return { waited: false, reason: 'no pending raw VAD' };
+        }
+
+        const waitMs = pending.reduce((maxWait, state) => {
+            const profile = this.getParticipantSignalProfile(guildId, state.userId);
+            return Math.max(maxWait, profile.getPrePlaybackEvidenceWaitMs({
+                pendingUnconfirmedCount: pending.length,
+                ...this.getHostPlaybackContext(guildId)
+            }));
+        }, 0);
+
+        if (waitMs <= 0) {
+            return { waited: false, reason: 'no wait configured' };
+        }
+
+        console.log(`[Bot] Pending raw VAD before playback; waiting up to ${waitMs}ms for speech evidence`);
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < waitMs) {
+            if (this.hasCurrentParticipantFloor(guildId)) {
+                return { waited: true, speechEvidence: true, waitedMs: Date.now() - startedAt };
+            }
+
+            if (this.getPendingUnconfirmedParticipantSignals(guildId).length === 0) {
+                return { waited: true, cleared: true, waitedMs: Date.now() - startedAt };
+            }
+
+            const remaining = waitMs - (Date.now() - startedAt);
+            await new Promise(resolve => setTimeout(resolve, Math.min(25, Math.max(1, remaining))));
+        }
+
+        return { waited: true, timedOut: true, waitedMs: Date.now() - startedAt };
+    }
+
     getParticipantActivityTimerMap(guildId) {
         if (!this.participantActivityTimers) {
             this.participantActivityTimers = new Map();
@@ -1185,6 +1540,7 @@ class AlphaClawdVoiceBot {
 
                 const parsedStartMs = Date.parse(timing.playbackStartedAt);
                 playbackStartMs = Number.isNaN(parsedStartMs) ? undefined : parsedStartMs;
+                this.noteHostPlaybackStart(guildId, timing);
 
                 if (!capture.isStream && Buffer.isBuffer(audio)) {
                     this.voiceManager.addBotAudioToRecording(guildId, audio, {
@@ -1198,7 +1554,15 @@ class AlphaClawdVoiceBot {
                 }
             }
         });
-        const playbackTiming = await playback.finished;
+        let playbackTiming;
+        try {
+            playbackTiming = await playback.finished;
+        } catch (error) {
+            if (!playbackStartAborted && Number.isFinite(playbackStartMs)) {
+                this.noteHostPlaybackEnd(guildId, { playbackEndedAt: new Date().toISOString() });
+            }
+            throw error;
+        }
 
         if (playbackStartAborted) {
             return {
@@ -1209,6 +1573,8 @@ class AlphaClawdVoiceBot {
                 abortedBeforePlayback: true
             };
         }
+
+        this.noteHostPlaybackEnd(guildId, playbackTiming);
 
         if (capture.isStream) {
             const recordedAudio = this.getCapturedAudioBuffer(capture);
@@ -3934,6 +4300,16 @@ class AlphaClawdVoiceBot {
                 };
             }
 
+            await this.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
+            if (this.discardStaleDirectResponse(guildId, options, 'after speech-evidence wait')) {
+                this.disposeUnusedAudio(audio);
+                return {
+                    played: false,
+                    stale: true,
+                    finalResponse: await this.settleGeneratorResponse(response, 'stale response after speech-evidence wait')
+                };
+            }
+
             this.markIdleDecisionHandled(guildId);
             const playbackResult = await this.playTtsAndRecord(guildId, audio, {
                 shouldAbortPlaybackStart: () => this.discardStaleDirectResponse(
@@ -4083,6 +4459,12 @@ class AlphaClawdVoiceBot {
             const ttsCompletedAt = new Date().toISOString();
 
             if (this.discardStaleDirectResponse(guildId, options, 'after fallback TTS')) {
+                this.disposeUnusedAudio(audioBuffer);
+                return { played: false, stale: true };
+            }
+
+            await this.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
+            if (this.discardStaleDirectResponse(guildId, options, 'after fallback speech-evidence wait')) {
                 this.disposeUnusedAudio(audioBuffer);
                 return { played: false, stale: true };
             }
