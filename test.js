@@ -1258,7 +1258,7 @@ async function runTests() {
             !thoughtSystemPrompt.includes('Alpha-Clawd\'s behavioral choices depicted in the packet') ||
             !thoughtSystemPrompt.includes('your own personal reaction') ||
             !thoughtSystemPrompt.includes('All fields of the internal thoughts and noticings JSON') ||
-            !thoughtSystemPrompt.includes('curtailing generic question-autocomplete behavior') ||
+            thoughtSystemPrompt.includes('generic question-autocomplete') ||
             thoughtSystemPrompt.includes('awarenessInjection')
         ) {
             throw new Error(`Internal thought system prompt does not match scratchpad framing: ${thoughtSystemPrompt}`);
@@ -1506,6 +1506,8 @@ async function runTests() {
             !discernmentPrompt.includes('what does Alpha-Clawd, as a podcast host, seem to be missing?') ||
             !discernmentPrompt.includes('If there is not a good answer to this question, then the candidate is weak') ||
             !discernmentPrompt.includes('framed in first person, present-tense') ||
+            !discernmentPrompt.includes('somewhat "evergreen," in its form') ||
+            !discernmentPrompt.includes('=========NEW SECTION==========') ||
             !discernmentPrompt.includes('exact next podcast-generator turn associated with the target turn-id-intent') ||
             !discernmentPrompt.includes('It does not live for multiple turns') ||
             !discernmentPrompt.includes('generic question-autocomplete') ||
@@ -1519,13 +1521,12 @@ async function runTests() {
             !candidateSystemPrompt.includes('Review the 5 most recent internal thoughts') ||
             !candidateSystemPrompt.includes('more than just a summary of the noticings') ||
             !candidateSystemPrompt.includes('What\'s really going on here?') ||
-            !candidateSystemPrompt.includes('generic question-autocomplete') ||
             !candidateSystemPrompt.includes('doesnt seem super helpful') ||
+            candidateSystemPrompt.includes('generic question-autocomplete') ||
             candidateSystemPrompt.includes('INJECTION JUDGEMENT') ||
             candidateSystemPrompt.includes('JUDGMENT MODE') ||
             discernmentPrompt.includes('CANDIDATE PRODUCTION MODE') ||
             discernmentPrompt.includes('CANDIDATE PRODUCTION/AWARENESS INJECTION process') ||
-            discernmentPrompt.includes('somewhat "evergreen," in its form') ||
             discernmentPrompt.includes('priority')
         ) {
             throw new Error(`Discernment prompt does not match the revised framing: ${discernmentPrompt}`);
