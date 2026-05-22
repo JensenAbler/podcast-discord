@@ -947,18 +947,32 @@ class AlphaClawdVoiceBot {
         const now = Date.now();
         const state = this.getParticipantSignalState(guildId, userId, true);
         const context = this.getHostPlaybackContext(guildId, now);
+        const hadConfirmedFloor = Boolean(state.floorConfirmed || state.speechEvidence);
 
         state.rawActive = true;
-        state.speechEvidence = false;
-        state.floorConfirmed = false;
-        state.startedAt = now;
-        state.evidenceAt = null;
-        state.hostPlaybackContextAtStart = context;
+        state.startedAt = state.startedAt || now;
+        state.hostPlaybackContextAtStart = state.hostPlaybackContextAtStart || context;
 
         this.recordParticipantSignal(guildId, userId, 'raw_vad_start', {
             at: now,
             hostPlaybackContext: context
         });
+
+        if (hadConfirmedFloor) {
+            state.speechEvidence = true;
+            state.floorConfirmed = true;
+            console.log(`[Bot] User ${userId} raw VAD resumed with existing speech evidence; reasserting floor authority`);
+            this.setInternalThoughtUserSpeaking(guildId, userId, true);
+            this.conversationBuffer.setUserSpeaking(userId, true);
+            this.confirmParticipantActivity(guildId, userId, 'confirmed speech resumed');
+            return;
+        }
+
+        state.speechEvidence = false;
+        state.floorConfirmed = false;
+        state.startedAt = now;
+        state.evidenceAt = null;
+        state.hostPlaybackContextAtStart = context;
 
         console.log(`[Bot] User ${userId} raw VAD started; awaiting speech evidence before taking floor authority`);
     }

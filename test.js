@@ -3009,6 +3009,20 @@ async function runTests() {
         }
         bot.noteRawParticipantVadStop(guildId, 'user-evidence');
 
+        const resumeBaseline = bot.getParticipantActivityVersion(guildId);
+        bot.noteRawParticipantVadStart(guildId, 'user-evidence');
+        if (bot.getParticipantActivityVersion(guildId) <= resumeBaseline) {
+            throw new Error('Confirmed same-buffer resume did not refresh participant activity');
+        }
+        if (!bot.hasCurrentParticipantFloor(guildId)) {
+            throw new Error('Confirmed same-buffer resume did not reassert current participant floor');
+        }
+        const resumeWaitResult = await bot.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
+        if (resumeWaitResult.waited) {
+            throw new Error(`Confirmed same-buffer resume was treated as pending raw VAD: ${JSON.stringify(resumeWaitResult)}`);
+        }
+        bot.noteRawParticipantVadStop(guildId, 'user-evidence');
+
         bot.participantSignalStates = new Map();
         bot.noteRawParticipantVadStart(guildId, 'user-before-playback');
         const waitTimeout = await bot.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
