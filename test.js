@@ -2901,7 +2901,7 @@ async function runTests() {
         const guildId = 'guild-a';
         const firstSpeechAt = Date.now() - 1000;
         bot.generatorMode = 'direct';
-        bot.RecordingState = { RECORDING: 'RECORDING' };
+        bot.RecordingState = { IDLE: 'IDLE', RECORDING: 'RECORDING', STOPPING: 'STOPPING' };
         bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
         bot.internalThoughtsEnabled = true;
         bot.showRunnerEnabled = true;
@@ -3179,6 +3179,33 @@ async function runTests() {
         if (bot.directResponseInFlight.has(guildId)) {
             throw new Error('Stale direct response did not clear the in-flight marker');
         }
+
+        const stopRequeueCount = staleRequeues.length;
+        bot.recordingState.set(guildId, bot.RecordingState.STOPPING);
+        if (!bot.discardStaleDirectResponse(guildId, {
+            source: 'buffer',
+            participantActivityBaseline: 0,
+            flushedUtterances: [{ speaker: 'Jensen', transcription: 'do not requeue after stop' }]
+        }, 'after recording stopped')) {
+            throw new Error('Direct response was not discarded after recording stopped');
+        }
+        if (staleRequeues.length !== stopRequeueCount) {
+            throw new Error(`Stopped recording requeued stale utterances: ${JSON.stringify(staleRequeues)}`);
+        }
+        let generatedAfterStop = false;
+        const generateBeforeStopCheck = bot.podcastGenerator.generate;
+        bot.podcastGenerator.generate = async () => {
+            generatedAfterStop = true;
+            return { shouldRespond: false, speech: '', bigBrain: { requested: false, reason: '' } };
+        };
+        await bot.handleDirectGeneratorFlush(guildId, [
+            { speaker: 'Jensen', transcription: 'this should not generate after stop' }
+        ], 'Jensen: this should not generate after stop');
+        if (generatedAfterStop) {
+            throw new Error('Direct generator ran after recording stopped');
+        }
+        bot.podcastGenerator.generate = generateBeforeStopCheck;
+        bot.recordingState.set(guildId, bot.RecordingState.RECORDING);
 
         const flapBaseline = bot.getParticipantActivityVersion(guildId);
         const flapRequeueCount = staleRequeues.length;
@@ -3633,6 +3660,8 @@ async function runTests() {
         bot.pendingBigBrainResponses = new Map();
         bot.stagedBigBrainResponses = new Map();
         bot.directResponseInFlight = new Set();
+        bot.RecordingState = { RECORDING: 'RECORDING' };
+        bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
         bot.participantActivityVersion = new Map([[guildId, 3]]);
         bot.participantActivityTimers = new Map();
         bot.participantActivityConfirmDelayMs = 0;
@@ -3833,6 +3862,8 @@ async function runTests() {
         ]]);
         streamingBot.stagedBigBrainResponses = new Map();
         streamingBot.directResponseInFlight = new Set();
+        streamingBot.RecordingState = { RECORDING: 'RECORDING' };
+        streamingBot.recordingState = new Map([[streamingGuildId, streamingBot.RecordingState.RECORDING]]);
         streamingBot.participantActivityVersion = new Map([[streamingGuildId, 0]]);
         streamingBot.conversationBuffer = {
             setFlushHold: () => {},
@@ -4599,6 +4630,8 @@ async function runTests() {
                 rememberedTurn = { transcript, output };
             }
         };
+        bot.RecordingState = { RECORDING: 'RECORDING' };
+        bot.recordingState = new Map([[guildId, bot.RecordingState.RECORDING]]);
 
         const rateLimit = new Error('OpenAI API error: 429 - rate limit');
         rateLimit.status = 429;
@@ -4672,6 +4705,8 @@ async function runTests() {
         let staleRemembered = false;
 
         staleBot.voiceId = 'voice-test';
+        staleBot.RecordingState = { RECORDING: 'RECORDING' };
+        staleBot.recordingState = new Map([[staleGuildId, staleBot.RecordingState.RECORDING]]);
         staleBot.participantActivityVersion = new Map([[staleGuildId, 0]]);
         staleBot.markIdleDecisionHandled = () => {};
         staleBot.voiceProvider = {

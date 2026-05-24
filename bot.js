@@ -107,7 +107,7 @@ class AlphaClawdVoiceBot {
         // Podcast state
         this.activeSessions = new Map(); // guildId -> session info
         this.isProcessing = new Map(); // guildId -> boolean
-        this.recordingState = new Map(); // guildId -> 'IDLE' | 'AWAITING_CONSENT' | 'RECORDING' | 'PAUSED'
+        this.recordingState = new Map(); // guildId -> 'IDLE' | 'AWAITING_CONSENT' | 'RECORDING' | 'STOPPING' | 'PAUSED'
         this.consentWaiters = new Map(); // guildId -> { userId, timeout }
         this.disabledCronJobs = []; // Track cron jobs disabled during podcast
         this.idleDecisionIntervalMs = Number(process.env.PODCAST_IDLE_DECISION_INTERVAL_MS || 5000);
@@ -177,6 +177,7 @@ class AlphaClawdVoiceBot {
             IDLE: 'IDLE',
             AWAITING_CONSENT: 'AWAITING_CONSENT',
             RECORDING: 'RECORDING',
+            STOPPING: 'STOPPING',
             PAUSED: 'PAUSED'
         };
 
@@ -275,6 +276,7 @@ class AlphaClawdVoiceBot {
         // Set up voice manager utterance handler
         this.voiceManager.setUtteranceHandler(async (guildId, utterance) => {
             const transcription = (utterance.transcription || '').trim();
+            const recordingActive = this.isRecordingActive(guildId);
 
             // Debug: inject individual utterance for Gateway UI visibility
             if (this.debugInject && transcription && this.wsClient.isAuthenticated && this.wsClient.canInjectMessages?.()) {
@@ -290,7 +292,7 @@ class AlphaClawdVoiceBot {
 
             // Buffer the utterance (buffer handles timing and flush)
             // Include full word-level data from ElevenLabs STT for confidence analysis
-            if (transcription) {
+            if (transcription && recordingActive) {
                 this.lastParticipantSpeechAt.set(guildId, Date.now());
                 this.recordParticipantSignal(guildId, utterance.userId, 'real_transcript', utterance);
                 this.confirmParticipantActivity(guildId, utterance.userId, 'transcript');
@@ -308,32 +310,39 @@ class AlphaClawdVoiceBot {
                     speakerRole: utterance.speakerRole || 'guest',
                     source: 'participant'
                 });
+            } else if (transcription) {
+                const state = this.recordingState?.get?.(guildId) || this.getRecordingStateValue('IDLE');
+                console.log(`[Bot] Ignoring participant utterance for generator while recording state is ${state}`);
             } else {
                 const eventType = Array.isArray(utterance.audioEvents) && utterance.audioEvents.includes('phantom')
                     ? 'phantom_utterance'
                     : 'empty_asr';
-                this.recordParticipantSignal(guildId, utterance.userId, eventType, utterance);
+                if (recordingActive) {
+                    this.recordParticipantSignal(guildId, utterance.userId, eventType, utterance);
+                }
             }
 
-            this.conversationBuffer.addUtterance({
-                userId: utterance.userId,
-                speaker: utterance.speaker,
-                speakerRole: utterance.speakerRole,
-                transcription: transcription,
-                rawTranscription: utterance.rawTranscription,
-                audioEvents: utterance.audioEvents,
-                transcriptionConfidence: utterance.transcriptionConfidence,
-                words: utterance.words,
-                language: utterance.language,
-                duration: utterance.duration,
-                speechStartedAt: utterance.speechStartedAt,
-                speechEndedAt: utterance.speechEndedAt,
-                speechDuration: utterance.speechDuration,
-                asrStartedAt: utterance.asrStartedAt,
-                asrCompletedAt: utterance.asrCompletedAt,
-                providerError: utterance.providerError,
-                timestamp: utterance.timestamp || Date.now()
-            });
+            if (recordingActive) {
+                this.conversationBuffer.addUtterance({
+                    userId: utterance.userId,
+                    speaker: utterance.speaker,
+                    speakerRole: utterance.speakerRole,
+                    transcription: transcription,
+                    rawTranscription: utterance.rawTranscription,
+                    audioEvents: utterance.audioEvents,
+                    transcriptionConfidence: utterance.transcriptionConfidence,
+                    words: utterance.words,
+                    language: utterance.language,
+                    duration: utterance.duration,
+                    speechStartedAt: utterance.speechStartedAt,
+                    speechEndedAt: utterance.speechEndedAt,
+                    speechDuration: utterance.speechDuration,
+                    asrStartedAt: utterance.asrStartedAt,
+                    asrCompletedAt: utterance.asrCompletedAt,
+                    providerError: utterance.providerError,
+                    timestamp: utterance.timestamp || Date.now()
+                });
+            }
             this.clearCompletedParticipantSignalState(guildId, utterance.userId, 'ASR result handled');
         });
 
@@ -809,9 +818,17 @@ class AlphaClawdVoiceBot {
         this.clearParticipantActivityTimers(guildId);
     }
 
+    isRecordingActive(guildId) {
+        return this.recordingState?.get?.(guildId) === this.getRecordingStateValue('RECORDING');
+    }
+
+    getRecordingStateValue(name) {
+        return this.RecordingState?.[name] || name;
+    }
+
     canRunIdleDecision(guildId) {
         if (this.useGatewayGenerator()) return false;
-        if (this.recordingState.get(guildId) !== this.RecordingState.RECORDING) return false;
+        if (!this.isRecordingActive(guildId)) return false;
         if (!this.lastParticipantSpeechAt.has(guildId)) return false;
         if (this.directResponseInFlight.has(guildId)) return false;
 
@@ -2730,6 +2747,8 @@ class AlphaClawdVoiceBot {
             let recordingPath = null;
 
             if (wasRecording) {
+                this.recordingState.set(guildId, this.RecordingState.STOPPING);
+                this.conversationBuffer?.clear?.();
                 this.stopIdleDecisionLoop(guildId);
                 this.podcastGenerator.endSession();
                 this.consecutiveGeneratorSilences?.delete?.(guildId);
@@ -2973,6 +2992,12 @@ class AlphaClawdVoiceBot {
     }
 
     async handleDirectGeneratorFlush(guildId, utterances, transcript, wordData) {
+        if (!this.isRecordingActive(guildId)) {
+            const state = this.recordingState?.get?.(guildId) || this.getRecordingStateValue('IDLE');
+            console.log(`[Bot] Direct generator flush dropped because recording state is ${state}`);
+            return;
+        }
+
         if (this.directResponseInFlight.has(guildId)) {
             console.log('[Bot] Direct generator flush held because a response is already in flight');
             this.conversationBuffer?.requeueUtterances?.(utterances, 'overlapping direct response');
@@ -3108,6 +3133,13 @@ class AlphaClawdVoiceBot {
     }
 
     discardStaleDirectResponse(guildId, options = {}, stage = 'before playback') {
+        if (!this.isRecordingActive(guildId)) {
+            const source = options.source || 'buffer';
+            const state = this.recordingState?.get?.(guildId) || this.getRecordingStateValue('IDLE');
+            console.log(`[Bot] Direct generator response (${source}) discarded ${stage} because recording state is ${state}`);
+            return true;
+        }
+
         const participantResumed = this.didParticipantResumeSince(guildId, options.participantActivityBaseline);
         const currentFloor = options.includeCurrentFloor ? this.hasCurrentParticipantFloor(guildId) : false;
 
