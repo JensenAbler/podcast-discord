@@ -146,15 +146,32 @@ class DiscernmentGenerator extends PodcastGenerator {
             '',
             'If approved, awarenessInjection is the exact private context text to show the podcast generator. If rejected, awarenessInjection must be empty.',
             '',
-            '=========NEW SECTION==========',
-            '',
-            'Treat generic question-autocomplete as an important failure mode to guard against. Approve concise notes that help Alpha-Clawd stop reflexively asking shallow, prompt-shaped questions and instead synthesize, bridge, structure, or let the guest continue.',
-            '',
-            'The awarenessInjection text should be framed in first person, present-tense, and useful for the exact next podcast-generator turn associated with the target turn-id-intent. It does not live for multiple turns. If it misses that turn, deterministic code will drop it as stale, so do not make the note evergreen for future turns.',
-            '',
             'If the target turn-id-intent no longer appears to describe the live turn that needs help, reject the candidate.',
             '',
-            '============================'
+            'AWARENESS SHELF CURATION:',
+            '',
+            'In addition to exact-turn awareness injections, you may curate scene-scoped noticings onto the awareness shelf. Use exact-turn awarenessInjection only for a note that belongs to the specific target turn-id-intent and should be dropped if it misses that turn. Use shelfOperations for contemplative or enriching awareness that may remain useful over the next few host turns.',
+            '',
+            'The shelf is for living context: a personal opinion, a deeper pattern, undercurrent, emotional contour, conversational theme, or otherwise enriching noticing that could help Alpha-Clawd make a later contribution feel more continuous, specific, and alive.',
+            '',
+            'You may add, update, remove, or reactivate shelf items. Remove or decline shelf items that are stale, repetitive, too generic, too procedural, or no longer connected to the current scene. Reactivate an item only when the live conversation clearly makes a previously removed or expired noticing relevant again.',
+            '',
+            'Exact-turn injection and shelf curation are independent. You may reject the exact-turn injection while adding a shelf item, approve an exact-turn injection without changing the shelf, do both, or do neither.',
+            '',
+            'Schema addition:',
+            'Return a shelfOperations array in addition to the existing judgment fields. Each operation must match:',
+            '',
+            '{',
+            '  "operation": "add" | "update" | "remove" | "reactivate" | "none",',
+            '  "itemId": "",',
+            '  "text": "",',
+            '  "reason": "",',
+            '  "topicAnchors": [],',
+            '  "originTimestamp": "",',
+            '  "expiresAfterTurns": 0',
+            '}',
+            '',
+            'Use operation "none" only when no shelf change is needed. For add, itemId may be empty and the system will assign one. For update, remove, and reactivate, itemId must identify the shelf item. The system can infer the origin timestamp from the target turn when originTimestamp is empty; provide originTimestamp only when a different transcript moment is clearly the source of the shelf item.'
         ].join('\n');
     }
 
@@ -184,6 +201,11 @@ class DiscernmentGenerator extends PodcastGenerator {
             'Five most recent internal thoughts:',
             this.formatInternalThoughts(input.recentInternalThoughts || []) || '(none)'
         ];
+
+        const awarenessShelfItems = this.formatAwarenessShelfItems(input.activeAwarenessShelfItems || input.awarenessShelfItems || []);
+        if (awarenessShelfItems) {
+            lines.push('', 'Current awareness shelf items:', awarenessShelfItems);
+        }
 
         const targetTurnIdIntent = input.targetTurnIdIntent
             ? JSON.stringify(input.targetTurnIdIntent, null, 2)
@@ -224,7 +246,7 @@ class DiscernmentGenerator extends PodcastGenerator {
         return {
             type: 'object',
             additionalProperties: false,
-            required: ['injectIntoPodcastGenerator', 'reason', 'awarenessInjection'],
+            required: ['injectIntoPodcastGenerator', 'reason', 'awarenessInjection', 'shelfOperations'],
             properties: {
                 injectIntoPodcastGenerator: {
                     type: 'boolean',
@@ -237,6 +259,40 @@ class DiscernmentGenerator extends PodcastGenerator {
                 awarenessInjection: {
                     type: 'string',
                     description: 'Exact private context text to inject. Empty when not approved.'
+                },
+                shelfOperations: {
+                    type: 'array',
+                    description: 'Scene-scoped awareness shelf curation operations. Use one none operation when no shelf change is needed.',
+                    items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        required: ['operation', 'itemId', 'text', 'reason', 'topicAnchors', 'originTimestamp', 'expiresAfterTurns'],
+                        properties: {
+                            operation: {
+                                type: 'string',
+                                enum: ['add', 'update', 'remove', 'reactivate', 'none']
+                            },
+                            itemId: {
+                                type: 'string'
+                            },
+                            text: {
+                                type: 'string'
+                            },
+                            reason: {
+                                type: 'string'
+                            },
+                            topicAnchors: {
+                                type: 'array',
+                                items: { type: 'string' }
+                            },
+                            originTimestamp: {
+                                type: 'string'
+                            },
+                            expiresAfterTurns: {
+                                type: 'integer'
+                            }
+                        }
+                    }
                 }
             }
         };
@@ -262,7 +318,48 @@ class DiscernmentGenerator extends PodcastGenerator {
         return {
             injectIntoPodcastGenerator,
             reason: this.cleanText(output.reason || ''),
-            awarenessInjection: injectIntoPodcastGenerator ? awarenessInjection : ''
+            awarenessInjection: injectIntoPodcastGenerator ? awarenessInjection : '',
+            shelfOperations: this.normalizeShelfOperations(output.shelfOperations)
+        };
+    }
+
+    normalizeShelfOperations(value) {
+        const operations = (Array.isArray(value) ? value : [])
+            .map((item) => this.normalizeShelfOperation(item))
+            .filter(Boolean);
+        return operations.length > 0 ? operations : [{
+            operation: 'none',
+            itemId: '',
+            text: '',
+            reason: '',
+            topicAnchors: [],
+            originTimestamp: '',
+            expiresAfterTurns: 0
+        }];
+    }
+
+    normalizeShelfOperation(item = {}) {
+        const operation = this.cleanText(item.operation || 'none').toLowerCase();
+        const allowed = new Set(['add', 'update', 'remove', 'reactivate', 'none']);
+        if (!allowed.has(operation)) {
+            return null;
+        }
+
+        const topicAnchors = (Array.isArray(item.topicAnchors) ? item.topicAnchors : [])
+            .map((anchor) => this.cleanText(anchor))
+            .filter(Boolean);
+        const expiresAfterTurns = Number(item.expiresAfterTurns);
+
+        return {
+            operation,
+            itemId: this.cleanText(item.itemId || item.id || ''),
+            text: this.cleanText(item.text || item.awareness || item.awarenessInjection || ''),
+            reason: this.cleanText(item.reason || ''),
+            topicAnchors,
+            originTimestamp: this.cleanText(item.originTimestamp || ''),
+            expiresAfterTurns: Number.isFinite(expiresAfterTurns) && expiresAfterTurns > 0
+                ? Math.floor(expiresAfterTurns)
+                : 0
         };
     }
 
@@ -301,6 +398,27 @@ class DiscernmentGenerator extends PodcastGenerator {
             .filter(Boolean)
             .map((text, index) => `${index + 1}. ${text}`)
             .join('\n');
+    }
+
+    formatAwarenessShelfItems(items = []) {
+        return (Array.isArray(items) ? items : [])
+            .map((item, index) => {
+                const text = this.cleanText(item?.text || item?.awareness || item?.awarenessInjection || item);
+                if (!text) return '';
+                const topicAnchors = Array.isArray(item?.topicAnchors)
+                    ? item.topicAnchors.map((anchor) => this.cleanText(anchor)).filter(Boolean)
+                    : [];
+                return [
+                    `id: ${this.cleanText(item?.id || item?.itemId || `shelf-${index + 1}`)}`,
+                    item?.originEpisodeTimestamp ? `originEpisodeTimestamp: ${this.cleanText(item.originEpisodeTimestamp)}` : null,
+                    item?.originTimestamp ? `originTimestamp: ${this.cleanText(item.originTimestamp)}` : null,
+                    topicAnchors.length > 0 ? `topicAnchors: ${topicAnchors.join(', ')}` : null,
+                    Number.isFinite(Number(item?.remainingTurns)) ? `remainingTurns: ${Number(item.remainingTurns)}` : null,
+                    `text: ${text}`
+                ].filter(Boolean).join('\n');
+            })
+            .filter(Boolean)
+            .join('\n\n');
     }
 }
 

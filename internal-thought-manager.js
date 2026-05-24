@@ -3,6 +3,7 @@ const path = require('path');
 const { InternalThoughtGenerator } = require('./internal-thought-generator');
 const { DiscernmentGenerator } = require('./discernment-generator');
 const { PacketizationBuffer } = require('./packetization-buffer');
+const { AwarenessShelf } = require('./awareness-shelf');
 const { buildTurnIdIntent, normalizeTurnIdIntent } = require('./turn-intent');
 
 class InternalThoughtManager {
@@ -41,6 +42,12 @@ class InternalThoughtManager {
         this.outputFilename = options.outputFilename || 'internal-thoughts.jsonl';
         this.thoughtGenerator = options.thoughtGenerator || new InternalThoughtGenerator(options.thoughtGeneratorOptions || {});
         this.discernmentGenerator = options.discernmentGenerator || new DiscernmentGenerator(options.discernmentGeneratorOptions || {});
+        this.awarenessShelf = options.awarenessShelf || new AwarenessShelf({
+            enabled: options.awarenessShelfEnabled,
+            maxItems: options.awarenessShelfMaxItems,
+            expireAfterTurns: options.awarenessShelfExpireAfterTurns,
+            now: options.now
+        });
         this.now = options.now || (() => new Date().toISOString());
         this.sessions = new Map();
     }
@@ -81,6 +88,10 @@ class InternalThoughtManager {
         }
 
         this.sessions.set(guildId, session);
+        this.awarenessShelf?.startSession?.(guildId, {
+            recordingPath,
+            startedAt: session.startedAt
+        });
         console.log(`[InternalThoughtManager] Session started for guild ${guildId}${outputPath ? `, output=${outputPath}` : ''}`);
         return session;
     }
@@ -95,12 +106,14 @@ class InternalThoughtManager {
             await this.flushPacket(guildId, 'session-end');
         }
         await session.processing;
+        const awarenessShelf = this.awarenessShelf?.endSession?.(guildId) || null;
         this.sessions.delete(guildId);
         console.log(`[InternalThoughtManager] Session ended for guild ${guildId}`);
         return {
             outputPath: session.outputPath,
             thoughtCount: session.thoughts.length,
-            activeAwarenessInjectionCount: session.activeAwarenessInjections.length
+            activeAwarenessInjectionCount: session.activeAwarenessInjections.length,
+            awarenessShelf
         };
     }
 
@@ -215,7 +228,9 @@ class InternalThoughtManager {
             awarenessCandidate: null,
             discernment: null,
             awarenessInjection: null,
-            droppedAwarenessInjection: null
+            droppedAwarenessInjection: null,
+            shelfOperations: [],
+            appliedShelfOperations: []
         };
         let errorStage = 'internal_thought';
 
@@ -251,9 +266,14 @@ class InternalThoughtManager {
                     recentInternalThoughts,
                     completeTranscript: packet.completeTranscript,
                     targetTurnIdIntent: packet.turnIdIntent,
-                    activeAwarenessInjections: session.activeAwarenessInjections
+                    activeAwarenessInjections: session.activeAwarenessInjections,
+                    activeAwarenessShelfItems: this.getActiveAwarenessShelfItems(session.guildId)
                 });
                 record.discernment = discernment;
+                record.shelfOperations = Array.isArray(discernment.shelfOperations)
+                    ? discernment.shelfOperations
+                    : [];
+                record.appliedShelfOperations = this.applyAwarenessShelfOperations(session, packet, discernment);
                 if (discernment.injectIntoPodcastGenerator) {
                     const activated = this.activateAwarenessInjection(session, packet, discernment);
                     if (activated?.droppedReason) {
@@ -322,6 +342,131 @@ class InternalThoughtManager {
         session.activeAwarenessInjections.push(injection);
         session.activeAwarenessInjections = session.activeAwarenessInjections.slice(-this.maxActiveAwarenessInjections);
         return injection;
+    }
+
+    applyAwarenessShelfOperations(session, packet, discernment = {}) {
+        const operations = Array.isArray(discernment.shelfOperations)
+            ? discernment.shelfOperations
+            : [];
+        const results = [];
+
+        for (const operation of operations) {
+            const action = String(operation?.operation || 'none').trim().toLowerCase();
+            if (!action || action === 'none') {
+                continue;
+            }
+
+            const result = this.applyAwarenessShelfOperation(session, packet, {
+                ...operation,
+                operation: action
+            });
+            results.push(result);
+        }
+
+        return results;
+    }
+
+    applyAwarenessShelfOperation(session, packet, operation = {}) {
+        const itemId = String(operation.itemId || operation.id || '').trim();
+        const patch = this.buildAwarenessShelfOperationPatch(packet, operation);
+        const result = {
+            operation: operation.operation,
+            itemId,
+            applied: false,
+            item: null,
+            reason: ''
+        };
+
+        if (operation.operation === 'add') {
+            const item = this.addAwarenessShelfItem(session.guildId, {
+                id: itemId || undefined,
+                ...patch
+            });
+            return {
+                ...result,
+                itemId: item?.id || itemId,
+                applied: Boolean(item),
+                item,
+                reason: item ? '' : 'add_failed'
+            };
+        }
+
+        if (!itemId) {
+            return {
+                ...result,
+                reason: 'missing_item_id'
+            };
+        }
+
+        if (operation.operation === 'update') {
+            const item = this.updateAwarenessShelfItem(session.guildId, itemId, patch);
+            return {
+                ...result,
+                applied: Boolean(item),
+                item,
+                reason: item ? '' : 'update_failed'
+            };
+        }
+
+        if (operation.operation === 'remove') {
+            const item = this.removeAwarenessShelfItem(session.guildId, itemId, operation.reason || '');
+            return {
+                ...result,
+                applied: Boolean(item),
+                item,
+                reason: item ? '' : 'remove_failed'
+            };
+        }
+
+        if (operation.operation === 'reactivate') {
+            const item = this.reactivateAwarenessShelfItem(session.guildId, itemId, patch);
+            return {
+                ...result,
+                applied: Boolean(item),
+                item,
+                reason: item ? '' : 'reactivate_failed'
+            };
+        }
+
+        return {
+            ...result,
+            reason: 'unknown_operation'
+        };
+    }
+
+    buildAwarenessShelfOperationPatch(packet, operation = {}) {
+        const text = String(operation.text || '').trim();
+        const reason = String(operation.reason || '').trim();
+        const topicAnchors = Array.isArray(operation.topicAnchors)
+            ? operation.topicAnchors.map((item) => String(item || '').trim()).filter(Boolean)
+            : [];
+        const isAdd = operation.operation === 'add';
+        const patch = {
+            originTurnIdIntent: packet.turnIdIntent,
+            turnIdIntent: packet.turnIdIntent
+        };
+
+        if (isAdd || text) {
+            patch.text = text;
+        }
+        if (isAdd || reason) {
+            patch.reason = reason;
+        }
+        if (isAdd || topicAnchors.length > 0) {
+            patch.topicAnchors = topicAnchors;
+        }
+
+        const originTimestamp = String(operation.originTimestamp || '').trim();
+        if (originTimestamp) {
+            patch.originTimestamp = originTimestamp;
+        }
+
+        const expiresAfterTurns = Number(operation.expiresAfterTurns);
+        if (Number.isFinite(expiresAfterTurns) && expiresAfterTurns > 0) {
+            patch.expiresAfterTurns = Math.floor(expiresAfterTurns);
+        }
+
+        return patch;
     }
 
     claimAwarenessInjectionsForTurn(guildId, turnIdIntent) {
@@ -476,6 +621,34 @@ class InternalThoughtManager {
         return session.thoughts
             .slice(-count)
             .map((item) => ({ ...item }));
+    }
+
+    addAwarenessShelfItem(guildId, input = {}) {
+        return this.awarenessShelf?.addItem?.(guildId, input) || null;
+    }
+
+    updateAwarenessShelfItem(guildId, itemId, patch = {}) {
+        return this.awarenessShelf?.updateItem?.(guildId, itemId, patch) || null;
+    }
+
+    removeAwarenessShelfItem(guildId, itemId, reason = '') {
+        return this.awarenessShelf?.removeItem?.(guildId, itemId, reason) || null;
+    }
+
+    reactivateAwarenessShelfItem(guildId, itemId, patch = {}) {
+        return this.awarenessShelf?.reactivateItem?.(guildId, itemId, patch) || null;
+    }
+
+    getActiveAwarenessShelfItems(guildId) {
+        return this.awarenessShelf?.getAvailableItems?.(guildId) || [];
+    }
+
+    getAwarenessShelfItemsForGenerator(guildId, options = {}) {
+        return this.awarenessShelf?.presentItemsForGenerator?.(guildId, options) || [];
+    }
+
+    getEpisodeTimestampForTime(guildId, timestamp = null) {
+        return this.awarenessShelf?.getEpisodeTimestampForTime?.(guildId, timestamp) || null;
     }
 
     appendRecord(session, record) {

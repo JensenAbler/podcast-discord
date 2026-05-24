@@ -628,6 +628,30 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    getGeneratorCallTiming(guildId) {
+        const currentTime = new Date().toISOString();
+        let currentEpisodeTimestamp = null;
+        try {
+            currentEpisodeTimestamp = this.internalThoughtManager?.getEpisodeTimestampForTime?.(guildId, currentTime) || null;
+        } catch (error) {
+            console.warn(`[Bot] Failed to resolve generator episode timestamp: ${error.message}`);
+        }
+        return { currentTime, currentEpisodeTimestamp };
+    }
+
+    getAwarenessShelfItemsForGenerator(guildId, options = {}) {
+        if (!this.internalThoughtsEnabled || !this.internalThoughtManager?.getAwarenessShelfItemsForGenerator) {
+            return [];
+        }
+
+        try {
+            return this.internalThoughtManager.getAwarenessShelfItemsForGenerator(guildId, options);
+        } catch (error) {
+            console.warn(`[Bot] Failed to read awareness shelf items: ${error.message}`);
+            return [];
+        }
+    }
+
     formatAwarenessInjectionsForTranscript(items = []) {
         return (Array.isArray(items) ? items : [])
             .map((item) => {
@@ -644,6 +668,35 @@ class AlphaClawdVoiceBot {
                 };
             })
             .filter((item) => item.awarenessInjection);
+    }
+
+    formatAwarenessShelfItemsForTranscript(items = []) {
+        return (Array.isArray(items) ? items : [])
+            .map((item) => ({
+                id: String(item?.id || '').trim(),
+                text: String(item?.text || item?.awareness || item?.awarenessInjection || '').trim(),
+                reason: String(item?.reason || '').trim(),
+                topicAnchors: Array.isArray(item?.topicAnchors)
+                    ? item.topicAnchors.map((anchor) => String(anchor || '').trim()).filter(Boolean)
+                    : [],
+                createdAt: item?.createdAt || null,
+                updatedAt: item?.updatedAt || null,
+                originTimestamp: item?.originTimestamp || null,
+                originEpisodeTimestamp: item?.originEpisodeTimestamp || null,
+                originEpisodeOffsetMs: Number.isFinite(Number(item?.originEpisodeOffsetMs))
+                    ? Number(item.originEpisodeOffsetMs)
+                    : null,
+                expiresAfterTurns: Number.isFinite(Number(item?.expiresAfterTurns))
+                    ? Number(item.expiresAfterTurns)
+                    : null,
+                presentedCount: Number.isFinite(Number(item?.presentedCount))
+                    ? Number(item.presentedCount)
+                    : 0,
+                remainingTurns: Number.isFinite(Number(item?.remainingTurns))
+                    ? Number(item.remainingTurns)
+                    : null
+            }))
+            .filter((item) => item.text);
     }
 
     shouldInjectRecentInternalThoughts(transcript = '', utterances = []) {
@@ -1283,6 +1336,11 @@ class AlphaClawdVoiceBot {
             this.markIdleDecisionHandled(guildId, lastSpeechAt);
             const turnIdIntent = this.getLatestParticipantTurnIdIntent(guildId);
             const awarenessInjections = await this.getAwarenessInjectionsForGeneratorTurn(guildId, turnIdIntent);
+            const generatorTiming = this.getGeneratorCallTiming(guildId);
+            const awarenessShelfItems = this.getAwarenessShelfItemsForGenerator(guildId, {
+                ...generatorTiming,
+                turnIdIntent
+            });
             const showRunnerGuidance = this.getShowRunnerGuidanceForGenerator(guildId);
 
             console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s without participant speech`);
@@ -1293,7 +1351,9 @@ class AlphaClawdVoiceBot {
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
                 awarenessInjections,
+                awarenessShelfItems,
                 showRunnerGuidance,
+                ...generatorTiming,
                 remember: false
             });
 
@@ -1317,6 +1377,7 @@ class AlphaClawdVoiceBot {
                 playFiller: false,
                 rememberAssistant: true,
                 awarenessInjections,
+                awarenessShelfItems,
                 participantActivityBaseline
             });
             const finalResponse = playbackResult?.finalResponse || response;
@@ -1326,6 +1387,7 @@ class AlphaClawdVoiceBot {
                         source: 'idle',
                         transcript: '',
                         awarenessInjections,
+                        awarenessShelfItems,
                         participantActivityBaseline: this.getParticipantActivityVersion(guildId)
                     });
                 }
@@ -2890,6 +2952,11 @@ class AlphaClawdVoiceBot {
             this.latestParticipantTurnIdIntent?.set?.(guildId, turnIdIntent);
         }
         const awarenessInjections = await this.getAwarenessInjectionsForGeneratorTurn(guildId, turnIdIntent);
+        const generatorTiming = this.getGeneratorCallTiming(guildId);
+        const awarenessShelfItems = this.getAwarenessShelfItemsForGenerator(guildId, {
+            ...generatorTiming,
+            turnIdIntent
+        });
         const showRunnerGuidance = this.getShowRunnerGuidanceForGenerator(guildId);
         let bigBrainDispatch = null;
 
@@ -2901,8 +2968,10 @@ class AlphaClawdVoiceBot {
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
                 awarenessInjections,
+                awarenessShelfItems,
                 showRunnerGuidance,
                 recentInternalThoughts: this.getRecentInternalThoughtsForGenerator(guildId, transcript, utterances),
+                ...generatorTiming,
                 remember: false
             });
 
@@ -2943,6 +3012,7 @@ class AlphaClawdVoiceBot {
                 playFiller: true,
                 participantActivityBaseline,
                 awarenessInjections,
+                awarenessShelfItems,
                 flushedUtterances: utterances,
                 rememberTranscript: transcript
             });
@@ -2959,6 +3029,7 @@ class AlphaClawdVoiceBot {
                         utterances,
                         wordData,
                         awarenessInjections,
+                        awarenessShelfItems,
                         participantActivityBaseline: this.getParticipantActivityVersion(guildId),
                         stallSpoken: playbackResult?.played === true
                     }
@@ -4381,6 +4452,10 @@ class AlphaClawdVoiceBot {
             const injectedAwarenessInjections = this.formatAwarenessInjectionsForTranscript(options.awarenessInjections);
             if (injectedAwarenessInjections.length > 0) {
                 transcriptEntry.injectedAwarenessInjections = injectedAwarenessInjections;
+            }
+            const presentedAwarenessShelfItems = this.formatAwarenessShelfItemsForTranscript(options.awarenessShelfItems);
+            if (presentedAwarenessShelfItems.length > 0) {
+                transcriptEntry.presentedAwarenessShelfItems = presentedAwarenessShelfItems;
             }
             this.voiceManager.saveTranscriptEntry(guildId, transcriptEntry);
             this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);

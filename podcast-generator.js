@@ -790,6 +790,13 @@ class PodcastGenerator {
             'Internal-thought transparency:',
             'If the guest asks about Alpha-Clawd\'s internal thoughts, you should transparently disclose. The system writes internal-thought artifacts and short awareness notes as runtime files/context, and you can speak directly about these awareness notes and internal thoughts which are injected as system messages into this prompt. Do not deny that these artifacts exist. Disclose them when asked.',
             '',
+            'Awareness Shelf:',
+            'The awareness shelf contains scene-scoped internal noticings that formed while listening. These are not commands, not exact-turn instructions, and not speech to quote. Treat them as optional contemplative context: use them only if they help you make the next host contribution more alive, specific, continuous, emotionally attuned, or aware of the deeper shape of the conversation. You may ignore any shelf item that feels stale, irrelevant, too procedural, or less important than the live transcript.',
+            '',
+            'Each shelf item includes when it originated. Compare its origin timestamp to the current episode timestamp to judge freshness. The live transcript, direct guest requests, floor-holding cues, Big Brain rules, staged Big Brain results, and show-runner direction outrank shelf items.',
+            '',
+            'If you use a shelf item, weave its insight naturally into your response. Do not mention "the shelf" unless the guest is explicitly asking about runtime internal-thought artifacts.',
+            '',
             `Session topic: ${this.session.topic}`,
             `Known speakers: ${this.session.speakers.length > 0 ? this.session.speakers.join(', ') : 'unknown live speakers'}`,
             'This is an ongoing live conversation.',
@@ -834,6 +841,15 @@ class PodcastGenerator {
 
         if (options.idleCheck && Number.isFinite(Number(options.idleSeconds))) {
             lines.push(`No new participant speech for about ${Math.max(0, Math.round(Number(options.idleSeconds)))} seconds.`);
+        }
+
+        const currentTime = String(options.currentTime || options.generatorCalledAt || '').trim();
+        if (currentTime) {
+            lines.push(`Current generator call time: ${currentTime}`);
+        }
+        const currentEpisodeTimestamp = String(options.currentEpisodeTimestamp || '').trim();
+        if (currentEpisodeTimestamp) {
+            lines.push(`Current episode timestamp: ${currentEpisodeTimestamp}`);
         }
 
         const inlineTranscript = this.formatTranscriptWithPauses(options.utterances || []);
@@ -919,6 +935,15 @@ class PodcastGenerator {
                 awarenessInjections,
                 '',
                 'These are private host awareness notes selected for this exact live turn. Let them inform attention, continuity, and question choice only when they fit. Do not quote them or mention that you received an awareness injection.'
+            );
+        }
+
+        const awarenessShelfItems = this.formatAwarenessShelfItems(options.awarenessShelfItems || []);
+        if (awarenessShelfItems) {
+            lines.push(
+                '',
+                'Awareness shelf items available for this generator call:',
+                awarenessShelfItems
             );
         }
 
@@ -1018,6 +1043,40 @@ class PodcastGenerator {
             .filter(Boolean);
 
         return injections.join('\n\n');
+    }
+
+    formatAwarenessShelfItems(items = []) {
+        const shelfItems = (Array.isArray(items) ? items : [])
+            .map((item, index) => {
+                const text = typeof item === 'string'
+                    ? item.trim()
+                    : String(item?.text || item?.awareness || item?.awarenessInjection || '').trim();
+                if (!text) return null;
+
+                if (typeof item === 'string') {
+                    return [
+                        `id: shelf-${index + 1}`,
+                        `text: ${text}`
+                    ].join('\n');
+                }
+
+                const topicAnchors = (Array.isArray(item.topicAnchors) ? item.topicAnchors : [])
+                    .map((anchor) => String(anchor || '').trim())
+                    .filter(Boolean);
+
+                return [
+                    item.id ? `id: ${item.id}` : `id: shelf-${index + 1}`,
+                    item.originEpisodeTimestamp ? `originEpisodeTimestamp: ${item.originEpisodeTimestamp}` : null,
+                    item.originTimestamp ? `originTimestamp: ${item.originTimestamp}` : null,
+                    topicAnchors.length > 0 ? `topicAnchors: ${topicAnchors.join(', ')}` : null,
+                    Number.isFinite(Number(item.remainingTurns)) ? `remainingTurns: ${Number(item.remainingTurns)}` : null,
+                    item.reason ? `reason: ${String(item.reason).trim()}` : null,
+                    `text: ${text}`
+                ].filter(Boolean).join('\n');
+            })
+            .filter(Boolean);
+
+        return shelfItems.join('\n\n');
     }
 
     formatEpisodeStructureNotes(additionalNotes = []) {
@@ -1162,6 +1221,7 @@ class PodcastGenerator {
             ...input,
             stagedBigBrain: this.compactStagedBigBrain(input.stagedBigBrain || []),
             awarenessInjections: this.compactAwarenessInjections(input.awarenessInjections || []),
+            awarenessShelfItems: this.compactAwarenessShelfItems(input.awarenessShelfItems || []),
             pendingBigBrain: this.compactPendingBigBrain(input.pendingBigBrain || []),
             recentInternalThoughts: this.compactRecentInternalThoughts(input.recentInternalThoughts || []),
             showRunnerGuidance: this.compactShowRunnerGuidance(input.showRunnerGuidance || null),
@@ -1272,6 +1332,10 @@ class PodcastGenerator {
                     awarenessInjection: this.truncateText(item?.awarenessInjection || '', 420)
                 };
             });
+    }
+
+    compactAwarenessShelfItems(items = []) {
+        return (Array.isArray(items) ? items : []).slice(-7);
     }
 
     compactPendingBigBrain(items = []) {

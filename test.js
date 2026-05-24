@@ -20,6 +20,7 @@ const {
     PacketizationBuffer,
     BigBrainAwarenessSelector,
     ParticipantSignalProfile,
+    AwarenessShelf,
     EpisodeTranscriptStore,
     createEpisodeTranscriptServer,
     buildTurnIdIntent,
@@ -121,6 +122,124 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Participant signal profile failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 1c: Awareness Shelf');
+    try {
+        const shelfDir = fs.mkdtempSync(path.join(os.tmpdir(), 'awareness-shelf-'));
+        const times = [
+            '2026-05-22T22:00:01.000Z',
+            '2026-05-22T22:00:02.000Z',
+            '2026-05-22T22:00:03.000Z',
+            '2026-05-22T22:00:04.000Z',
+            '2026-05-22T22:00:05.000Z',
+            '2026-05-22T22:00:06.000Z',
+            '2026-05-22T22:00:07.000Z',
+            '2026-05-22T22:00:08.000Z',
+            '2026-05-22T22:00:09.000Z',
+            '2026-05-22T22:00:10.000Z',
+            '2026-05-22T22:00:11.000Z',
+            '2026-05-22T22:00:12.000Z'
+        ];
+        let timeIndex = 0;
+        const shelf = new AwarenessShelf({
+            enabled: true,
+            maxItems: 2,
+            expireAfterTurns: 2,
+            now: () => times[Math.min(timeIndex++, times.length - 1)]
+        });
+        const session = shelf.startSession('guild-shelf', {
+            recordingPath: shelfDir,
+            startedAt: '2026-05-22T22:00:00.000Z'
+        });
+        const first = shelf.addItem('guild-shelf', {
+            text: 'Jensen is circling a richer purpose for slow cognition.',
+            reason: 'This should be available as contemplative context.',
+            topicAnchors: ['slow cognition', 'awareness shelf'],
+            originTimestamp: '2026-05-22T22:00:12.345Z'
+        });
+        shelf.addItem('guild-shelf', {
+            text: 'The shelf should stay available for the next host opportunity.',
+            originTimestamp: '2026-05-22T22:00:14.000Z'
+        });
+        const longText = `Long shelf item ${'x'.repeat(1200)}`;
+        const third = shelf.addItem('guild-shelf', {
+            text: longText,
+            originTimestamp: '2026-05-22T22:00:16.000Z'
+        });
+
+        const activeAfterAdd = shelf.getAvailableItems('guild-shelf');
+        if (
+            first.originEpisodeTimestamp !== '00:00:12.345' ||
+            activeAfterAdd.length !== 2 ||
+            activeAfterAdd.some((item) => item.id === first.id) ||
+            third.text !== longText
+        ) {
+            throw new Error(`Shelf did not preserve origin timing, max active count, or full text: ${JSON.stringify({ first, thirdLength: third?.text?.length, activeAfterAdd })}`);
+        }
+
+        const presentedOnce = shelf.presentItemsForGenerator('guild-shelf', {
+            generatorCalledAt: '2026-05-22T22:00:20.000Z',
+            turnIdIntent: { turnId: 'turn-1' }
+        });
+        const activeAfterFirstPresentation = shelf.getAvailableItems('guild-shelf');
+        if (
+            presentedOnce.length !== 2 ||
+            activeAfterFirstPresentation.length !== 2 ||
+            activeAfterFirstPresentation.some((item) => item.remainingTurns !== 1)
+        ) {
+            throw new Error(`Shelf did not mark first presentation correctly: ${JSON.stringify({ presentedOnce, activeAfterFirstPresentation })}`);
+        }
+
+        shelf.presentItemsForGenerator('guild-shelf', {
+            generatorCalledAt: '2026-05-22T22:00:25.000Z',
+            turnIdIntent: { turnId: 'turn-2' }
+        });
+        if (shelf.getAvailableItems('guild-shelf').length !== 0) {
+            throw new Error(`Shelf items did not expire after presentation limit: ${JSON.stringify(shelf.getAvailableItems('guild-shelf'))}`);
+        }
+
+        const reactivated = shelf.reactivateItem('guild-shelf', third.id, {
+            text: 'Back on the shelf after the scene becomes relevant again.',
+            expiresAfterTurns: 1
+        });
+        if (
+            reactivated?.status !== 'active' ||
+            reactivated.remainingTurns !== 1 ||
+            !shelf.getAvailableItems('guild-shelf')[0]?.text.includes('Back on the shelf')
+        ) {
+            throw new Error(`Shelf item did not reactivate cleanly: ${JSON.stringify(reactivated)}`);
+        }
+        shelf.removeItem('guild-shelf', third.id, 'No longer relevant');
+        if (shelf.getAvailableItems('guild-shelf').length !== 0) {
+            throw new Error('Removed shelf item stayed available');
+        }
+
+        const events = fs.readFileSync(session.outputPath, 'utf8')
+            .trim()
+            .split(/\n+/)
+            .map((line) => JSON.parse(line).event);
+        for (const expected of ['added', 'presented_to_generator', 'expired', 'reactivated', 'removed']) {
+            if (!events.includes(expected)) {
+                throw new Error(`Shelf event log missing ${expected}: ${JSON.stringify(events)}`);
+            }
+        }
+
+        const disabledShelf = new AwarenessShelf({ enabled: false });
+        disabledShelf.startSession('guild-disabled', { recordingPath: shelfDir });
+        disabledShelf.addItem('guild-disabled', { text: 'Should stay inert.' });
+        if (disabledShelf.presentItemsForGenerator('guild-disabled').length !== 0) {
+            throw new Error('Disabled shelf exposed items');
+        }
+
+        shelf.endSession('guild-shelf');
+        disabledShelf.endSession('guild-disabled');
+        fs.rmSync(shelfDir, { recursive: true, force: true });
+        console.log('  Awareness shelf stores scene-scoped items, preserves full text, logs lifecycle events, and stays inert when disabled');
+        passed++;
+    } catch (error) {
+        console.log(`  Awareness shelf failed: ${error.message}`);
         failed++;
     }
 
@@ -496,6 +615,12 @@ async function runTests() {
             systemPrompt.includes('system writes internal-thought artifacts and short awareness notes') &&
             systemPrompt.includes('awareness notes and internal thoughts which are injected as system messages') &&
             systemPrompt.includes('Disclose them when asked') &&
+            systemPrompt.includes('Awareness Shelf:') &&
+            systemPrompt.includes('scene-scoped internal noticings that formed while listening') &&
+            systemPrompt.includes('optional contemplative context') &&
+            systemPrompt.includes('Each shelf item includes when it originated') &&
+            systemPrompt.includes('Compare its origin timestamp to the current episode timestamp') &&
+            systemPrompt.includes('Do not mention "the shelf" unless the guest is explicitly asking') &&
             !systemPrompt.includes('You do not have access to private chain-of-thought') &&
             systemPrompt.includes('Sounding-board exception') &&
             systemPrompt.includes('Guest floor holding') &&
@@ -627,6 +752,31 @@ async function runTests() {
             passed++;
         } else {
             throw new Error(`Awareness injection prompt was not formatted correctly: ${awarenessPrompt}`);
+        }
+
+        const shelfLongText = `A slow internal noticing ${'z'.repeat(900)}`;
+        const shelfPrompt = generator.buildUserPrompt('Jensen: Keep going while I think this through.', null, {
+            currentTime: '2026-05-22T22:00:20.000Z',
+            currentEpisodeTimestamp: '00:00:20.000',
+            awarenessShelfItems: [{
+                id: 'shelf-1',
+                text: shelfLongText,
+                reason: 'This stays relevant while Jensen keeps unfolding the thought.',
+                topicAnchors: ['latency', 'contemplative awareness'],
+                originTimestamp: '2026-05-22T22:00:12.345Z',
+                originEpisodeTimestamp: '00:00:12.345',
+                remainingTurns: 2
+            }]
+        });
+        if (
+            !shelfPrompt.includes('Current generator call time: 2026-05-22T22:00:20.000Z') ||
+            !shelfPrompt.includes('Current episode timestamp: 00:00:20.000') ||
+            !shelfPrompt.includes('Awareness shelf items available for this generator call:') ||
+            !shelfPrompt.includes('originEpisodeTimestamp: 00:00:12.345') ||
+            !shelfPrompt.includes('topicAnchors: latency, contemplative awareness') ||
+            !shelfPrompt.includes(shelfLongText)
+        ) {
+            throw new Error(`Awareness shelf prompt was not formatted with timing/full text: ${shelfPrompt}`);
         }
 
         const recentThoughtPrompt = generator.buildUserPrompt('Jensen: What are your internal thoughts right now?', null, {
@@ -1309,7 +1459,6 @@ async function runTests() {
             !thoughtSystemPrompt.includes('Alpha-Clawd\'s behavioral choices depicted in the packet') ||
             !thoughtSystemPrompt.includes('your own personal reaction') ||
             !thoughtSystemPrompt.includes('All fields of the internal thoughts and noticings JSON') ||
-            thoughtSystemPrompt.includes('generic question-autocomplete') ||
             thoughtSystemPrompt.includes('awarenessInjection')
         ) {
             throw new Error(`Internal thought system prompt does not match scratchpad framing: ${thoughtSystemPrompt}`);
@@ -1325,11 +1474,12 @@ async function runTests() {
         }
         const discernmentSchema = discernmentGenerator.getResponseSchema('judgment');
         if (
-            discernmentSchema.required.join(',') !== 'injectIntoPodcastGenerator,reason,awarenessInjection' ||
+            discernmentSchema.required.join(',') !== 'injectIntoPodcastGenerator,reason,awarenessInjection,shelfOperations' ||
             discernmentSchema.properties.priority ||
             discernmentSchema.properties.risk ||
             discernmentSchema.properties.participantRelevance ||
-            discernmentSchema.properties.expiresAfterTurns
+            discernmentSchema.properties.expiresAfterTurns ||
+            discernmentSchema.properties.shelfOperations?.items?.properties?.operation?.enum?.join(',') !== 'add,update,remove,reactivate,none'
         ) {
             throw new Error(`Discernment schema includes stale fields: ${JSON.stringify(discernmentSchema)}`);
         }
@@ -1356,7 +1506,16 @@ async function runTests() {
                 : {
                     injectIntoPodcastGenerator: true,
                     reason: 'This would help Alpha-Clawd stay with Jensen\'s stated aim.',
-                    awarenessInjection: 'Jensen is designing internal thought to let Alpha-Clawd personality come through, not asking for a generic implementation lecture.'
+                    awarenessInjection: 'Jensen is designing internal thought to let Alpha-Clawd personality come through, not asking for a generic implementation lecture.',
+                    shelfOperations: [{
+                        operation: 'add',
+                        itemId: '',
+                        text: 'Jensen wants internal thought to make Alpha-Clawd feel more continuous and alive.',
+                        reason: 'This is a scene-scoped design aim.',
+                        topicAnchors: ['internal thought', 'personality'],
+                        originTimestamp: '',
+                        expiresAfterTurns: 2
+                    }]
                 };
             return {
                 choices: [{
@@ -1385,7 +1544,9 @@ async function runTests() {
             discernmentCalls[1]?.body.response_format?.json_schema?.name !== 'podcast_awareness_discernment' ||
             !approved.injectIntoPodcastGenerator ||
             approved.expiresAfterTurns !== undefined ||
-            !approved.awarenessInjection.includes('personality come through')
+            !approved.awarenessInjection.includes('personality come through') ||
+            approved.shelfOperations?.[0]?.operation !== 'add' ||
+            !approved.shelfOperations[0].topicAnchors.includes('personality')
         ) {
             throw new Error(`Discernment generator did not run candidate and judgment passes as expected: ${JSON.stringify({ discernmentCalls, candidate, approved })}`);
         }
@@ -1403,7 +1564,8 @@ async function runTests() {
             !candidateMessages[2]?.content.includes('"candidateAwarenessNote"') ||
             candidateMessages[2]?.content.includes('"injectIntoPodcastGenerator"') ||
             !judgmentMessages[2]?.content.includes('"injectIntoPodcastGenerator"') ||
-            judgmentMessages[2]?.content.includes('"expiresAfterTurns"')
+            !judgmentMessages[2]?.content.includes('"shelfOperations"') ||
+            !judgmentMessages[2]?.content.includes('"expiresAfterTurns"')
         ) {
             throw new Error(`Discernment schema prompts were not mode-specific: ${JSON.stringify({ candidate: candidateMessages[2], judgment: judgmentMessages[2] })}`);
         }
@@ -1558,26 +1720,29 @@ async function runTests() {
             !discernmentPrompt.includes('If there is not a good answer to this question, then the candidate is weak') ||
             !discernmentPrompt.includes('framed in first person, present-tense') ||
             !discernmentPrompt.includes('somewhat "evergreen," in its form') ||
-            !discernmentPrompt.includes('=========NEW SECTION==========') ||
-            !discernmentPrompt.includes('exact next podcast-generator turn associated with the target turn-id-intent') ||
-            !discernmentPrompt.includes('It does not live for multiple turns') ||
-            !discernmentPrompt.includes('generic question-autocomplete') ||
             !discernmentPrompt.includes('I asked a question recently') ||
             !discernmentPrompt.includes('Only observational content and instructive content') ||
             !discernmentPrompt.includes('include reasoning only in the reasoning field') ||
             !discernmentPrompt.includes('Reject stale candidates when the complete transcript has moved into a new topic') ||
             !discernmentPrompt.includes('most recent user message indicates a PIVOT') ||
             !discernmentPrompt.includes('target turn-id-intent no longer appears') ||
+            !discernmentPrompt.includes('AWARENESS SHELF CURATION') ||
+            !discernmentPrompt.includes('scene-scoped noticings onto the awareness shelf') ||
+            !discernmentPrompt.includes('specific target turn-id-intent') ||
+            !discernmentPrompt.includes('contemplative or enriching awareness') ||
+            !discernmentPrompt.includes('personal opinion, a deeper pattern, undercurrent') ||
+            !discernmentPrompt.includes('Exact-turn injection and shelf curation are independent') ||
+            !discernmentPrompt.includes('Return a shelfOperations array') ||
             !candidateSystemPrompt.includes('CANDIDATE PRODUCTION MODE') ||
             !candidateSystemPrompt.includes('Review the 5 most recent internal thoughts') ||
             !candidateSystemPrompt.includes('more than just a summary of the noticings') ||
             !candidateSystemPrompt.includes('What\'s really going on here?') ||
             !candidateSystemPrompt.includes('doesnt seem super helpful') ||
-            candidateSystemPrompt.includes('generic question-autocomplete') ||
             candidateSystemPrompt.includes('INJECTION JUDGEMENT') ||
             candidateSystemPrompt.includes('JUDGMENT MODE') ||
             discernmentPrompt.includes('CANDIDATE PRODUCTION MODE') ||
             discernmentPrompt.includes('CANDIDATE PRODUCTION/AWARENESS INJECTION process') ||
+            discernmentPrompt.includes('=========NEW SECTION==========') ||
             discernmentPrompt.includes('priority')
         ) {
             throw new Error(`Discernment prompt does not match the revised framing: ${discernmentPrompt}`);
@@ -1598,6 +1763,8 @@ async function runTests() {
         const managerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'internal-thought-manager-'));
         const manager = new InternalThoughtManager({
             packetTurnCount: 2,
+            awarenessShelfEnabled: true,
+            awarenessShelfExpireAfterTurns: 2,
             maxActiveAwarenessInjections: 2,
             now: () => '2026-05-12T21:00:00.000Z',
             thoughtGenerator: {
@@ -1630,7 +1797,16 @@ async function runTests() {
                     return {
                         injectIntoPodcastGenerator: true,
                         reason: 'This tracks Jensen\'s stated interest.',
-                        awarenessInjection: 'Jensen is using this episode to design Alpha-Clawd internal awareness, not asking for generic advice.'
+                        awarenessInjection: 'Jensen is using this episode to design Alpha-Clawd internal awareness, not asking for generic advice.',
+                        shelfOperations: [{
+                            operation: 'add',
+                            itemId: '',
+                            text: 'Jensen wants the internal awareness system to make Alpha-Clawd feel more alive.',
+                            reason: 'This is useful scene-scoped context.',
+                            topicAnchors: ['internal awareness', 'personality'],
+                            originTimestamp: '',
+                            expiresAfterTurns: 2
+                        }]
                     };
                 }
             }
@@ -1668,7 +1844,10 @@ async function runTests() {
             discernmentCalls[0].input.recentInternalThoughts?.length !== 1 ||
             !discernmentCalls[0].input.completeTranscript.includes('Alpha-Clawd: I hear that.') ||
             discernmentCalls[1].mode !== 'judgment' ||
-            discernmentCalls[1].input.targetTurnIdIntent?.turnId !== firstRecord.awarenessInjection.turnIdIntent.turnId
+            discernmentCalls[1].input.targetTurnIdIntent?.turnId !== firstRecord.awarenessInjection.turnIdIntent.turnId ||
+            discernmentCalls[1].input.activeAwarenessShelfItems?.length !== 0 ||
+            firstRecord.shelfOperations?.[0]?.operation !== 'add' ||
+            firstRecord.appliedShelfOperations?.[0]?.applied !== true
         ) {
             throw new Error(`Manager did not process first packet correctly: ${JSON.stringify({ firstRecord, thoughtCalls, discernmentCalls })}`);
         }
@@ -1676,6 +1855,15 @@ async function runTests() {
         let active = manager.getActiveAwarenessInjections('guild-thoughts');
         if (active.length !== 1 || !active[0].awarenessInjection.includes('internal awareness')) {
             throw new Error(`Awareness injection was not activated: ${JSON.stringify(active)}`);
+        }
+
+        const activeShelf = manager.getActiveAwarenessShelfItems('guild-thoughts');
+        if (
+            activeShelf.length !== 1 ||
+            !activeShelf[0].text.includes('feel more alive') ||
+            activeShelf[0].originEpisodeTimestamp !== '00:00:00.000'
+        ) {
+            throw new Error(`Awareness shelf operation was not applied: ${JSON.stringify(activeShelf)}`);
         }
 
         const claimed = manager.claimAwarenessInjectionsForTurn('guild-thoughts', firstRecord.awarenessInjection.turnIdIntent);
@@ -2711,6 +2899,7 @@ async function runTests() {
         bot.showRunnerEnabled = true;
         const recentThoughtRequests = [];
         const awarenessWaitRequests = [];
+        const shelfRequests = [];
         bot.latestParticipantTurnIdIntent = new Map();
         bot.awarenessTurnWaitMs = 200;
         bot.internalThoughtManager = {
@@ -2730,6 +2919,21 @@ async function runTests() {
                     packetId: `internal-packet-${index + 1}`,
                     internalThought: `Recent internal thought ${index + 1}`
                 })).slice(-limit);
+            },
+            getAwarenessShelfItemsForGenerator: (activeGuildId, options) => {
+                shelfRequests.push({ guildId: activeGuildId, options });
+                return activeGuildId === guildId
+                    ? [{
+                        id: 'shelf-direct-test',
+                        text: 'A slower noticing is available for this turn.',
+                        originEpisodeTimestamp: '00:00:12.345',
+                        remainingTurns: 3
+                    }]
+                    : [];
+            },
+            getEpisodeTimestampForTime: (activeGuildId, currentTime) => {
+                if (activeGuildId !== guildId || !currentTime) return null;
+                return '00:00:42.000';
             }
         };
         bot.showRunnerManager = {
@@ -2786,8 +2990,11 @@ async function runTests() {
         const holdEvents = [];
         let directGenerateCalled = false;
         let directAwarenessInjections = null;
+        let directAwarenessShelfItems = null;
         let directRecentInternalThoughts = null;
         let directShowRunnerGuidance = null;
+        let directCurrentTime = null;
+        let directCurrentEpisodeTimestamp = null;
         bot.conversationBuffer.setFlushHold = (reason, active) => {
             holdEvents.push({ reason, active });
         };
@@ -2795,8 +3002,11 @@ async function runTests() {
             generate: async (input) => {
                 directGenerateCalled = true;
                 directAwarenessInjections = input.awarenessInjections || [];
+                directAwarenessShelfItems = input.awarenessShelfItems || [];
                 directRecentInternalThoughts = input.recentInternalThoughts || [];
                 directShowRunnerGuidance = input.showRunnerGuidance || null;
+                directCurrentTime = input.currentTime || null;
+                directCurrentEpisodeTimestamp = input.currentEpisodeTimestamp || null;
                 if (!bot.directResponseInFlight.has(guildId)) {
                     throw new Error('Direct response was not marked in-flight during generation');
                 }
@@ -2819,6 +3029,15 @@ async function runTests() {
         }
         if (directAwarenessInjections?.[0]?.id !== 'awareness-direct-test') {
             throw new Error(`Direct generator did not receive active awareness injections: ${JSON.stringify(directAwarenessInjections)}`);
+        }
+        if (
+            directAwarenessShelfItems?.[0]?.id !== 'shelf-direct-test' ||
+            shelfRequests[0]?.options?.turnIdIntent?.turnId !== awarenessWaitRequests[0]?.turnIdIntent?.turnId ||
+            !shelfRequests[0]?.options?.currentTime ||
+            directCurrentTime !== shelfRequests[0]?.options?.currentTime ||
+            directCurrentEpisodeTimestamp !== '00:00:42.000'
+        ) {
+            throw new Error(`Direct generator did not receive awareness shelf items and timing: ${JSON.stringify({ directAwarenessShelfItems, shelfRequests, directCurrentTime, directCurrentEpisodeTimestamp })}`);
         }
         if (awarenessWaitRequests[0]?.options?.timeoutMs !== 200 || !awarenessWaitRequests[0]?.turnIdIntent?.turnId) {
             throw new Error(`Direct generator did not wait/claim awareness by turn id intent: ${JSON.stringify(awarenessWaitRequests)}`);

@@ -696,6 +696,22 @@ class VoiceManager {
                     remainingTurns: item.remainingTurns || 0
                 }))
                 : null,
+            presentedAwarenessShelfItems: Array.isArray(utterance.presentedAwarenessShelfItems)
+                ? utterance.presentedAwarenessShelfItems.map((item) => ({
+                    id: item.id || '',
+                    text: item.text || '',
+                    reason: item.reason || '',
+                    topicAnchors: Array.isArray(item.topicAnchors) ? item.topicAnchors : [],
+                    createdAt: item.createdAt || null,
+                    updatedAt: item.updatedAt || null,
+                    originTimestamp: item.originTimestamp || null,
+                    originEpisodeTimestamp: item.originEpisodeTimestamp || null,
+                    originEpisodeOffsetMs: item.originEpisodeOffsetMs ?? null,
+                    expiresAfterTurns: item.expiresAfterTurns ?? null,
+                    presentedCount: item.presentedCount ?? 0,
+                    remainingTurns: item.remainingTurns ?? null
+                }))
+                : null,
             words: (utterance.words || []).map(w => ({
                 text: w.text || w.word,
                 start: w.start,
