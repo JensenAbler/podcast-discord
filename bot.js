@@ -121,6 +121,7 @@ class AlphaClawdVoiceBot {
         this.participantActivityVersion = new Map(); // guildId -> monotonic counter for floor-taking changes
         this.participantActivityTimers = new Map(); // guildId -> Map<userId, timeout>
         this.participantActivityConfirmDelayMs = Number(process.env.PODCAST_PARTICIPANT_ACTIVITY_CONFIRM_MS || 200);
+        this.participantFloorContinuationMs = Number(process.env.PODCAST_PARTICIPANT_FLOOR_CONTINUATION_MS || 75);
         this.participantSignalProfiles = new Map(); // guildId -> Map<userId, ParticipantSignalProfile>
         this.participantSignalStates = new Map(); // guildId -> Map<userId, raw VAD/evidence state>
         this.consecutiveGeneratorSilences = new Map(); // guildId -> consecutive shouldRespond=false decisions
@@ -362,29 +363,25 @@ class AlphaClawdVoiceBot {
         this.voiceManager.setEndpointingHandler((guildId, userId, metadata = {}) => {
             if (metadata.active) {
                 console.log(`[Bot] Endpoint debounce armed for ${userId} (${metadata.reason}, ${metadata.debounceMs}ms)`);
-                if (this.hasParticipantSpeechEvidenceConfirmed(guildId, userId)) {
-                    this.markInternalThoughtEndpointing(guildId, userId, true);
-                    this.conversationBuffer.markEndpointing(userId, true);
-                } else {
-                    console.log(`[Bot] Endpoint debounce for ${userId} is low-evidence; not granting floor authority yet`);
-                }
+                this.markInternalThoughtEndpointing(guildId, userId, true);
+                this.conversationBuffer?.markEndpointing?.(userId, true);
             } else {
                 this.markInternalThoughtEndpointing(guildId, userId, false);
-                this.conversationBuffer.markEndpointing(userId, false);
+                this.conversationBuffer?.markEndpointing?.(userId, false);
             }
         });
 
         this.voiceManager.setAsrDispatchedHandler((guildId, userId, metadata = {}) => {
             console.log(`[Bot] ASR dispatched to Fish for ${userId} (${metadata.audioBytes} bytes, ${metadata.reason})`);
+            this.markInternalThoughtAsrPending(guildId, userId, metadata);
+            this.conversationBuffer?.markAsrPending?.(userId, metadata);
             if (this.hasSpeechEvidenceForFloor(guildId, userId, metadata)) {
                 this.confirmParticipantSpeechEvidence(guildId, userId, {
                     ...metadata,
                     source: 'ASR dispatched'
                 });
-                this.markInternalThoughtAsrPending(guildId, userId, metadata);
-                this.conversationBuffer.markAsrPending(userId, metadata);
             } else {
-                console.log(`[Bot] ASR dispatch for ${userId} is below floor-evidence threshold; awaiting transcript before changing floor state`);
+                console.log(`[Bot] ASR dispatch for ${userId} is below floor-evidence threshold; tracking ASR without floor authority`);
             }
         });
 
@@ -958,6 +955,8 @@ class AlphaClawdVoiceBot {
                 floorConfirmed: false,
                 startedAt: null,
                 evidenceAt: null,
+                floorReleasedAt: null,
+                continuationUntil: null,
                 hostPlaybackContextAtStart: null
             };
             states.set(userId, state);
@@ -1041,36 +1040,44 @@ class AlphaClawdVoiceBot {
         return snapshot;
     }
 
+    getParticipantFloorContinuationMs() {
+        return Number.isFinite(this.participantFloorContinuationMs)
+            ? Math.max(0, this.participantFloorContinuationMs)
+            : 75;
+    }
+
     noteRawParticipantVadStart(guildId, userId) {
         const now = Date.now();
         const state = this.getParticipantSignalState(guildId, userId, true);
         const context = this.getHostPlaybackContext(guildId, now);
-        const hadConfirmedFloor = Boolean(state.floorConfirmed || state.speechEvidence);
+        const canContinueSameUtterance = Number.isFinite(state.continuationUntil) && now <= state.continuationUntil;
 
         state.rawActive = true;
-        state.startedAt = state.startedAt || now;
-        state.hostPlaybackContextAtStart = state.hostPlaybackContextAtStart || context;
+        state.startedAt = canContinueSameUtterance ? (state.startedAt || now) : now;
+        state.hostPlaybackContextAtStart = canContinueSameUtterance
+            ? (state.hostPlaybackContextAtStart || context)
+            : context;
 
         this.recordParticipantSignal(guildId, userId, 'raw_vad_start', {
             at: now,
             hostPlaybackContext: context
         });
 
-        if (hadConfirmedFloor) {
+        if (canContinueSameUtterance) {
             state.speechEvidence = true;
             state.floorConfirmed = true;
-            console.log(`[Bot] User ${userId} raw VAD resumed with existing speech evidence; reasserting floor authority`);
+            state.continuationUntil = null;
+            console.log(`[Bot] User ${userId} raw VAD continued within debounce window; restoring floor authority`);
             this.setInternalThoughtUserSpeaking(guildId, userId, true);
-            this.conversationBuffer.setUserSpeaking(userId, true);
-            this.confirmParticipantActivity(guildId, userId, 'confirmed speech resumed');
+            this.conversationBuffer?.setUserSpeaking?.(userId, true);
             return;
         }
 
         state.speechEvidence = false;
         state.floorConfirmed = false;
-        state.startedAt = now;
         state.evidenceAt = null;
-        state.hostPlaybackContextAtStart = context;
+        state.floorReleasedAt = null;
+        state.continuationUntil = null;
 
         console.log(`[Bot] User ${userId} raw VAD started; awaiting speech evidence before taking floor authority`);
     }
@@ -1084,9 +1091,13 @@ class AlphaClawdVoiceBot {
 
         if (hadConfirmedFloor) {
             this.setInternalThoughtUserSpeaking(guildId, userId, false);
-            this.conversationBuffer.setUserSpeaking(userId, false);
+            this.conversationBuffer?.setUserSpeaking?.(userId, false);
             if (state) {
                 state.rawActive = false;
+                state.speechEvidence = false;
+                state.floorConfirmed = false;
+                state.floorReleasedAt = Date.now();
+                state.continuationUntil = state.floorReleasedAt + this.getParticipantFloorContinuationMs();
             }
             return;
         }
@@ -1137,6 +1148,7 @@ class AlphaClawdVoiceBot {
 
         state.speechEvidence = true;
         state.evidenceAt = now;
+        state.continuationUntil = null;
 
         this.recordParticipantSignal(guildId, userId, 'speech_evidence', {
             ...metadata,
@@ -1158,7 +1170,7 @@ class AlphaClawdVoiceBot {
             `(frames=${metadata.speakingFrames || 0}, threshold=${metadata.threshold || 1}, source=${reason})`
         );
         this.setInternalThoughtUserSpeaking(guildId, userId, true);
-        this.conversationBuffer.setUserSpeaking(userId, true);
+        this.conversationBuffer?.setUserSpeaking?.(userId, true);
         this.confirmParticipantActivity(guildId, userId, reason);
         return true;
     }
@@ -1340,11 +1352,7 @@ class AlphaClawdVoiceBot {
 
     hasCurrentParticipantFloor(guildId) {
         const floorState = this.getParticipantFloorState(guildId);
-        return (
-            floorState.activeSpeakerCount > 0 ||
-            floorState.endpointingSpeakerCount > 0 ||
-            floorState.pendingAsrCount > 0
-        );
+        return floorState.activeSpeakerCount > 0;
     }
 
     async waitForParticipantFloorToSettle(guildId, timeoutMs = this.getParticipantActivityConfirmDelayMs() + 25) {

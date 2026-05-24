@@ -3104,6 +3104,7 @@ async function runTests() {
         bot.participantActivityVersion = new Map([[guildId, 0]]);
         bot.participantActivityTimers = new Map();
         bot.participantActivityConfirmDelayMs = 20;
+        bot.participantFloorContinuationMs = 25;
         let testBufferState = {
             state: BufferState.IDLE,
             utteranceCount: 0,
@@ -3243,6 +3244,22 @@ async function runTests() {
         bot.setInternalThoughtUserSpeaking = () => {};
         bot.stopBigBrainToolTone = () => {};
 
+        testBufferState = {
+            ...testBufferState,
+            activeSpeakerCount: 0,
+            endpointingSpeakerCount: 1,
+            pendingAsrCount: 1,
+            activeSpeakers: []
+        };
+        if (bot.hasCurrentParticipantFloor(guildId)) {
+            throw new Error('Endpointing or pending ASR incorrectly counted as current participant floor');
+        }
+        testBufferState = {
+            ...testBufferState,
+            endpointingSpeakerCount: 0,
+            pendingAsrCount: 0
+        };
+
         const rawVadBaseline = bot.getParticipantActivityVersion(guildId);
         const rawVadSpeakingEventCount = bufferSpeakingEvents.length;
         bot.noteRawParticipantVadStart(guildId, 'user-raw-vad');
@@ -3270,18 +3287,43 @@ async function runTests() {
             throw new Error(`Speech evidence did not mark the buffer active: ${JSON.stringify(bufferSpeakingEvents)}`);
         }
         bot.noteRawParticipantVadStop(guildId, 'user-evidence');
+        if (bot.hasCurrentParticipantFloor(guildId)) {
+            throw new Error('VAD stop did not release participant floor');
+        }
 
-        const resumeBaseline = bot.getParticipantActivityVersion(guildId);
+        const continuationBaseline = bot.getParticipantActivityVersion(guildId);
         bot.noteRawParticipantVadStart(guildId, 'user-evidence');
-        if (bot.getParticipantActivityVersion(guildId) <= resumeBaseline) {
-            throw new Error('Confirmed same-buffer resume did not refresh participant activity');
+        if (bot.getParticipantActivityVersion(guildId) !== continuationBaseline) {
+            throw new Error('Same-utterance continuation incorrectly refreshed participant activity');
         }
         if (!bot.hasCurrentParticipantFloor(guildId)) {
-            throw new Error('Confirmed same-buffer resume did not reassert current participant floor');
+            throw new Error('Same-utterance continuation did not restore current participant floor');
         }
-        const resumeWaitResult = await bot.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
-        if (resumeWaitResult.waited) {
-            throw new Error(`Confirmed same-buffer resume was treated as pending raw VAD: ${JSON.stringify(resumeWaitResult)}`);
+        const continuationWaitResult = await bot.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
+        if (continuationWaitResult.waited) {
+            throw new Error(`Same-utterance continuation was treated as pending raw VAD: ${JSON.stringify(continuationWaitResult)}`);
+        }
+        bot.noteRawParticipantVadStop(guildId, 'user-evidence');
+
+        await sleep(bot.getParticipantFloorContinuationMs() + 15);
+        const expiredResumeBaseline = bot.getParticipantActivityVersion(guildId);
+        const expiredResumeRequeueCount = staleRequeues.length;
+        bot.noteRawParticipantVadStart(guildId, 'user-evidence');
+        if (bot.getParticipantActivityVersion(guildId) !== expiredResumeBaseline) {
+            throw new Error('Expired raw VAD reused stale speech evidence to refresh participant activity');
+        }
+        if (bot.hasCurrentParticipantFloor(guildId)) {
+            throw new Error('Expired raw VAD reused stale speech evidence to take participant floor');
+        }
+        if (bot.discardStaleDirectResponse(guildId, {
+            source: 'buffer',
+            participantActivityBaseline: expiredResumeBaseline,
+            flushedUtterances: [{ speaker: 'Jensen', transcription: 'expired raw VAD should not stale this' }]
+        }, 'after expired raw VAD')) {
+            throw new Error('Expired raw VAD incorrectly invalidated a direct response');
+        }
+        if (staleRequeues.length !== expiredResumeRequeueCount) {
+            throw new Error(`Expired raw VAD requeued utterances: ${JSON.stringify(staleRequeues)}`);
         }
         bot.noteRawParticipantVadStop(guildId, 'user-evidence');
 
