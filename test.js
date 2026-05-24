@@ -3305,6 +3305,27 @@ async function runTests() {
         }
         bot.noteRawParticipantVadStop(guildId, 'user-evidence');
 
+        const chainedFlapBaseline = bot.getParticipantActivityVersion(guildId);
+        const chainedFlapRequeueCount = staleRequeues.length;
+        bot.noteRawParticipantVadStart(guildId, 'user-evidence');
+        if (bot.getParticipantActivityVersion(guildId) !== chainedFlapBaseline) {
+            throw new Error('Second same-utterance flap incorrectly refreshed participant activity');
+        }
+        if (bot.hasCurrentParticipantFloor(guildId)) {
+            throw new Error('Second same-utterance flap inherited floor without fresh speech evidence');
+        }
+        if (bot.discardStaleDirectResponse(guildId, {
+            source: 'buffer',
+            participantActivityBaseline: chainedFlapBaseline,
+            flushedUtterances: [{ speaker: 'Jensen', transcription: 'second flap should not stale this' }]
+        }, 'after second same-utterance flap')) {
+            throw new Error('Second same-utterance flap incorrectly invalidated a direct response');
+        }
+        if (staleRequeues.length !== chainedFlapRequeueCount) {
+            throw new Error(`Second same-utterance flap requeued utterances: ${JSON.stringify(staleRequeues)}`);
+        }
+        bot.noteRawParticipantVadStop(guildId, 'user-evidence');
+
         await sleep(bot.getParticipantFloorContinuationMs() + 15);
         const expiredResumeBaseline = bot.getParticipantActivityVersion(guildId);
         const expiredResumeRequeueCount = staleRequeues.length;

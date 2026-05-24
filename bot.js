@@ -953,6 +953,8 @@ class AlphaClawdVoiceBot {
                 rawActive: false,
                 speechEvidence: false,
                 floorConfirmed: false,
+                floorHasFreshSpeechEvidence: false,
+                continuationUsed: false,
                 startedAt: null,
                 evidenceAt: null,
                 floorReleasedAt: null,
@@ -1050,7 +1052,9 @@ class AlphaClawdVoiceBot {
         const now = Date.now();
         const state = this.getParticipantSignalState(guildId, userId, true);
         const context = this.getHostPlaybackContext(guildId, now);
-        const canContinueSameUtterance = Number.isFinite(state.continuationUntil) && now <= state.continuationUntil;
+        const canContinueSameUtterance = !state.continuationUsed &&
+            Number.isFinite(state.continuationUntil) &&
+            now <= state.continuationUntil;
 
         state.rawActive = true;
         state.startedAt = canContinueSameUtterance ? (state.startedAt || now) : now;
@@ -1064,8 +1068,10 @@ class AlphaClawdVoiceBot {
         });
 
         if (canContinueSameUtterance) {
-            state.speechEvidence = true;
+            state.speechEvidence = false;
             state.floorConfirmed = true;
+            state.floorHasFreshSpeechEvidence = false;
+            state.continuationUsed = true;
             state.continuationUntil = null;
             console.log(`[Bot] User ${userId} raw VAD continued within debounce window; restoring floor authority`);
             this.setInternalThoughtUserSpeaking(guildId, userId, true);
@@ -1075,6 +1081,8 @@ class AlphaClawdVoiceBot {
 
         state.speechEvidence = false;
         state.floorConfirmed = false;
+        state.floorHasFreshSpeechEvidence = false;
+        state.continuationUsed = false;
         state.evidenceAt = null;
         state.floorReleasedAt = null;
         state.continuationUntil = null;
@@ -1085,6 +1093,7 @@ class AlphaClawdVoiceBot {
     noteRawParticipantVadStop(guildId, userId) {
         const state = this.getParticipantSignalState(guildId, userId, false);
         const hadConfirmedFloor = Boolean(state?.floorConfirmed);
+        const canOfferContinuation = Boolean(state?.floorHasFreshSpeechEvidence && !state?.continuationUsed);
 
         console.log(`[Bot] User ${userId} raw VAD stopped${hadConfirmedFloor ? '' : ' before speech evidence'}`);
         this.clearProvisionalParticipantActivity(guildId, userId, 'speaking stop');
@@ -1096,8 +1105,11 @@ class AlphaClawdVoiceBot {
                 state.rawActive = false;
                 state.speechEvidence = false;
                 state.floorConfirmed = false;
+                state.floorHasFreshSpeechEvidence = false;
                 state.floorReleasedAt = Date.now();
-                state.continuationUntil = state.floorReleasedAt + this.getParticipantFloorContinuationMs();
+                state.continuationUntil = canOfferContinuation
+                    ? state.floorReleasedAt + this.getParticipantFloorContinuationMs()
+                    : null;
             }
             return;
         }
@@ -1148,6 +1160,8 @@ class AlphaClawdVoiceBot {
 
         state.speechEvidence = true;
         state.evidenceAt = now;
+        state.floorHasFreshSpeechEvidence = true;
+        state.continuationUsed = false;
         state.continuationUntil = null;
 
         this.recordParticipantSignal(guildId, userId, 'speech_evidence', {
@@ -1177,7 +1191,7 @@ class AlphaClawdVoiceBot {
 
     hasParticipantSpeechEvidenceConfirmed(guildId, userId) {
         const state = this.getParticipantSignalState(guildId, userId, false);
-        return Boolean(state?.floorConfirmed);
+        return Boolean(state?.floorConfirmed && state?.floorHasFreshSpeechEvidence);
     }
 
     hasSpeechEvidenceForFloor(guildId, userId, metadata = {}) {
