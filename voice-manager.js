@@ -40,6 +40,14 @@ class VoiceManager {
             recordingDir: options.recordingDir || getRecordingDir(),
             silenceDuration: options.silenceDuration || 2000, // 2 seconds
             enableTranscription: options.enableTranscription !== false, // Default true
+            voiceJoinAttempts: this.parsePositiveInt(
+                options.voiceJoinAttempts ?? process.env.PODCAST_VOICE_JOIN_ATTEMPTS,
+                2
+            ),
+            voiceJoinReadyTimeoutMs: this.parsePositiveInt(
+                options.voiceJoinReadyTimeoutMs ?? process.env.PODCAST_VOICE_JOIN_READY_TIMEOUT_MS,
+                30000
+            ),
             ...options
         };
 
@@ -77,23 +85,7 @@ class VoiceManager {
 
         console.log(`[VoiceManager] Joining voice channel: ${channel.name} (${channel.id})`);
 
-        // Create voice connection with the legacy encryption mode for broad deploy compatibility.
-        const connection = joinVoiceChannel({
-            channelId: channel.id,
-            guildId: channel.guild.id,
-            adapterCreator: channel.guild.voiceAdapterCreator,
-            selfDeaf: false,
-            selfMute: false,
-        });
-
-        // Wait for connection to be ready
-        try {
-            await entersState(connection, VoiceConnectionStatus.Ready, 30000);
-            console.log(`[VoiceManager] Connected to ${channel.name}`);
-        } catch (error) {
-            connection.destroy();
-            throw new Error(`Failed to join voice channel: ${error.message}`);
-        }
+        const connection = await this.connectToVoiceChannel(channel);
 
         // Store connection
         this.connections.set(guildId, connection);
@@ -163,6 +155,65 @@ class VoiceManager {
             channelName: channel.name,
             status: 'connected'
         };
+    }
+
+    async connectToVoiceChannel(channel) {
+        const attempts = this.parsePositiveInt(this.options.voiceJoinAttempts, 2);
+        const readyTimeoutMs = this.parsePositiveInt(this.options.voiceJoinReadyTimeoutMs, 30000);
+        let lastError = null;
+
+        for (let attempt = 1; attempt <= attempts; attempt += 1) {
+            const connection = joinVoiceChannel({
+                channelId: channel.id,
+                guildId: channel.guild.id,
+                adapterCreator: channel.guild.voiceAdapterCreator,
+                selfDeaf: false,
+                selfMute: false
+            });
+            this.attachVoiceConnectionDebugLogging(connection, channel, attempt, attempts);
+
+            try {
+                await entersState(connection, VoiceConnectionStatus.Ready, readyTimeoutMs);
+                console.log(`[VoiceManager] Connected to ${channel.name} on attempt ${attempt}/${attempts}`);
+                return connection;
+            } catch (error) {
+                lastError = error;
+                console.warn(`[VoiceManager] Voice join attempt ${attempt}/${attempts} failed for ${channel.name}: ${error.message}; finalStatus=${connection.state.status}`);
+                this.destroyVoiceConnection(connection, `join attempt ${attempt} failed`);
+                if (attempt < attempts) {
+                    await this.delay(1000);
+                }
+            }
+        }
+
+        throw new Error(`Failed to join voice channel after ${attempts} attempt${attempts === 1 ? '' : 's'}: ${lastError?.message || 'unknown error'}`);
+    }
+
+    attachVoiceConnectionDebugLogging(connection, channel, attempt, attempts) {
+        connection.on('stateChange', (oldState, newState) => {
+            console.log(`[VoiceManager] Voice join state ${channel.name} attempt ${attempt}/${attempts}: ${oldState.status} -> ${newState.status}`);
+        });
+
+        connection.on('debug', (message) => {
+            console.log(`[VoiceManager] Voice debug ${channel.name} attempt ${attempt}/${attempts}: ${message}`);
+        });
+    }
+
+    destroyVoiceConnection(connection, reason = 'cleanup') {
+        if (!connection || connection.state.status === VoiceConnectionStatus.Destroyed) {
+            return;
+        }
+
+        try {
+            connection.destroy();
+            console.log(`[VoiceManager] Destroyed voice connection (${reason})`);
+        } catch (error) {
+            console.warn(`[VoiceManager] Failed to destroy voice connection (${reason}): ${error.message}`);
+        }
+    }
+
+    delay(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     /**
@@ -258,7 +309,7 @@ class VoiceManager {
         // Destroy connection (internal)
         const connection = this.connections.get(guildId);
         if (connection) {
-            connection.destroy();
+            this.destroyVoiceConnection(connection, 'leave channel');
             this.connections.delete(guildId);
         }
         this.connectionChannels.delete(guildId);
@@ -913,6 +964,14 @@ class VoiceManager {
         const receiver = this.receivers.get(guildId);
         if (!receiver) return null;
         return receiver.speakerTracker;
+    }
+
+    parsePositiveInt(value, fallback) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+            return fallback;
+        }
+        return Math.floor(parsed);
     }
 }
 
