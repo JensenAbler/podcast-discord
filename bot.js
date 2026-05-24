@@ -1157,6 +1157,8 @@ class AlphaClawdVoiceBot {
         const now = Date.now();
         const state = this.getParticipantSignalState(guildId, userId, true);
         const context = state.hostPlaybackContextAtStart || this.getHostPlaybackContext(guildId, now);
+        const alreadyHadFloor = Boolean(state.floorConfirmed);
+        const alreadyHadFreshSpeechEvidence = Boolean(state.floorHasFreshSpeechEvidence);
 
         state.speechEvidence = true;
         state.evidenceAt = now;
@@ -1170,7 +1172,18 @@ class AlphaClawdVoiceBot {
             hostPlaybackContext: context
         });
 
-        if (state.floorConfirmed) {
+        if (alreadyHadFloor) {
+            if (!alreadyHadFreshSpeechEvidence) {
+                const reason = metadata.source || 'speech evidence';
+                if (!this.getHostPlaybackContext(guildId, now).duringHostPlayback) {
+                    this.stopBigBrainToolTone(guildId, 'participant speech evidence');
+                }
+                console.log(
+                    `[Bot] Fresh speech evidence confirmed for ${userId} during continuation ` +
+                    `(frames=${metadata.speakingFrames || 0}, threshold=${metadata.threshold || 1}, source=${reason})`
+                );
+                this.confirmParticipantActivity(guildId, userId, reason);
+            }
             return true;
         }
 

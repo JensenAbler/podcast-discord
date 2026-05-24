@@ -3326,6 +3326,57 @@ async function runTests() {
         }
         bot.noteRawParticipantVadStop(guildId, 'user-evidence');
 
+        bot.noteRawParticipantVadStart(guildId, 'user-refresh-evidence');
+        bot.confirmParticipantSpeechEvidence(guildId, 'user-refresh-evidence', {
+            speakingFrames: 4,
+            threshold: 1,
+            source: 'test initial refresh evidence'
+        });
+        bot.noteRawParticipantVadStop(guildId, 'user-refresh-evidence');
+
+        bot.noteRawParticipantVadStart(guildId, 'user-refresh-evidence');
+        if (!bot.hasCurrentParticipantFloor(guildId)) {
+            throw new Error('Refresh-evidence continuation did not inherit the one-shot floor');
+        }
+        const refreshEvidenceBaseline = bot.getParticipantActivityVersion(guildId);
+        bot.confirmParticipantSpeechEvidence(guildId, 'user-refresh-evidence', {
+            speakingFrames: 5,
+            threshold: 1,
+            source: 'test fresh evidence during continuation'
+        });
+        if (bot.getParticipantActivityVersion(guildId) <= refreshEvidenceBaseline) {
+            throw new Error('Fresh evidence during continuation did not confirm participant activity');
+        }
+        bot.noteRawParticipantVadStop(guildId, 'user-refresh-evidence');
+
+        const refreshedOneShotBaseline = bot.getParticipantActivityVersion(guildId);
+        bot.noteRawParticipantVadStart(guildId, 'user-refresh-evidence');
+        if (bot.getParticipantActivityVersion(guildId) !== refreshedOneShotBaseline) {
+            throw new Error('Refreshed one-shot continuation incorrectly refreshed participant activity before new evidence');
+        }
+        if (!bot.hasCurrentParticipantFloor(guildId)) {
+            throw new Error('Fresh evidence during continuation did not refresh the one-shot floor');
+        }
+        bot.noteRawParticipantVadStop(guildId, 'user-refresh-evidence');
+
+        const spentRefreshedOneShotBaseline = bot.getParticipantActivityVersion(guildId);
+        const spentRefreshedOneShotRequeueCount = staleRequeues.length;
+        bot.noteRawParticipantVadStart(guildId, 'user-refresh-evidence');
+        if (bot.hasCurrentParticipantFloor(guildId)) {
+            throw new Error('Spent refreshed one-shot continuation chained without fresh speech evidence');
+        }
+        if (bot.discardStaleDirectResponse(guildId, {
+            source: 'buffer',
+            participantActivityBaseline: spentRefreshedOneShotBaseline,
+            flushedUtterances: [{ speaker: 'Jensen', transcription: 'spent refreshed continuation should not stale this' }]
+        }, 'after spent refreshed continuation')) {
+            throw new Error('Spent refreshed one-shot continuation incorrectly invalidated a direct response');
+        }
+        if (staleRequeues.length !== spentRefreshedOneShotRequeueCount) {
+            throw new Error(`Spent refreshed one-shot continuation requeued utterances: ${JSON.stringify(staleRequeues)}`);
+        }
+        bot.noteRawParticipantVadStop(guildId, 'user-refresh-evidence');
+
         await sleep(bot.getParticipantFloorContinuationMs() + 15);
         const expiredResumeBaseline = bot.getParticipantActivityVersion(guildId);
         const expiredResumeRequeueCount = staleRequeues.length;
