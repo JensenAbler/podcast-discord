@@ -123,6 +123,7 @@ class AlphaClawdVoiceBot {
         this.participantActivityConfirmDelayMs = Number(process.env.PODCAST_PARTICIPANT_ACTIVITY_CONFIRM_MS || 200);
         this.participantSignalProfiles = new Map(); // guildId -> Map<userId, ParticipantSignalProfile>
         this.participantSignalStates = new Map(); // guildId -> Map<userId, raw VAD/evidence state>
+        this.consecutiveGeneratorSilences = new Map(); // guildId -> consecutive shouldRespond=false decisions
         this.hostPlaybackState = new Map(); // guildId -> { active, startedAt, endedAt }
         this.latestParticipantTurnIdIntent = new Map(); // guildId -> deterministic turn intent for latest participant utterance
         this.awarenessTurnWaitMs = Number(process.env.PODCAST_AWARENESS_TURN_WAIT_MS ?? 200);
@@ -840,6 +841,33 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    getConsecutiveGeneratorSilences(guildId) {
+        const count = this.consecutiveGeneratorSilences?.get?.(guildId) || 0;
+        return Number.isFinite(Number(count))
+            ? Math.max(0, Math.floor(Number(count)))
+            : 0;
+    }
+
+    resetConsecutiveGeneratorSilences(guildId) {
+        if (!guildId) return 0;
+        if (!this.consecutiveGeneratorSilences) {
+            this.consecutiveGeneratorSilences = new Map();
+        }
+        this.consecutiveGeneratorSilences.set(guildId, 0);
+        return 0;
+    }
+
+    recordGeneratorSilence(guildId, source = 'generator') {
+        if (!guildId) return 0;
+        if (!this.consecutiveGeneratorSilences) {
+            this.consecutiveGeneratorSilences = new Map();
+        }
+        const next = this.getConsecutiveGeneratorSilences(guildId) + 1;
+        this.consecutiveGeneratorSilences.set(guildId, next);
+        console.log(`[Bot] Consecutive generator silence decisions=${next} (${source})`);
+        return next;
+    }
+
     getParticipantActivityVersion(guildId) {
         return this.participantActivityVersion?.get?.(guildId) || 0;
     }
@@ -1353,6 +1381,7 @@ class AlphaClawdVoiceBot {
                 awarenessInjections,
                 awarenessShelfItems,
                 showRunnerGuidance,
+                consecutiveSilenceTurns: this.getConsecutiveGeneratorSilences(guildId),
                 ...generatorTiming,
                 remember: false
             });
@@ -1363,6 +1392,9 @@ class AlphaClawdVoiceBot {
             }
 
             if (!response.shouldRespond) {
+                if (this.getParticipantActivityVersion(guildId) === participantActivityBaseline) {
+                    this.recordGeneratorSilence(guildId, 'idle');
+                }
                 console.log(`[Bot] Idle generator chose silence`);
                 return;
             }
@@ -2568,6 +2600,7 @@ class AlphaClawdVoiceBot {
      */
     async grantConsent(guildId, topic) {
         this.recordingState.set(guildId, this.RecordingState.RECORDING);
+        this.resetConsecutiveGeneratorSilences(guildId);
         const consentTimestamp = new Date().toISOString();
 
         // Disable all cron jobs to prevent interruptions during podcast
@@ -2699,6 +2732,7 @@ class AlphaClawdVoiceBot {
             if (wasRecording) {
                 this.stopIdleDecisionLoop(guildId);
                 this.podcastGenerator.endSession();
+                this.consecutiveGeneratorSilences?.delete?.(guildId);
             }
 
             // Notify Gateway/OpenClaw when it is driving responses, mirroring is enabled,
@@ -2811,6 +2845,7 @@ class AlphaClawdVoiceBot {
         this.consentWaiters.delete(guildId);
         this.isProcessing.set(guildId, false);
         this.stopIdleDecisionLoop(guildId);
+        this.consecutiveGeneratorSilences?.delete?.(guildId);
         this.clearParticipantActivityTimers(guildId);
         this.podcastGenerator.endSession();
         await this.endShowRunnerSession(guildId);
@@ -2971,6 +3006,7 @@ class AlphaClawdVoiceBot {
                 awarenessShelfItems,
                 showRunnerGuidance,
                 recentInternalThoughts: this.getRecentInternalThoughtsForGenerator(guildId, transcript, utterances),
+                consecutiveSilenceTurns: this.getConsecutiveGeneratorSilences(guildId),
                 ...generatorTiming,
                 remember: false
             });
@@ -3003,6 +3039,7 @@ class AlphaClawdVoiceBot {
                     try { toRemember = await response.completed; } catch {}
                 }
                 this.podcastGenerator.rememberTurn?.(transcript, toRemember);
+                this.recordGeneratorSilence(guildId, 'buffer');
                 console.log(`[Bot] Direct generator chose silence`);
                 return;
             }
@@ -4460,6 +4497,7 @@ class AlphaClawdVoiceBot {
             this.voiceManager.saveTranscriptEntry(guildId, transcriptEntry);
             this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);
             this.observeShowRunnerTranscriptEntry(guildId, transcriptEntry);
+            this.resetConsecutiveGeneratorSilences(guildId);
 
             if (typeof options.rememberTranscript === 'string') {
                 this.podcastGenerator.rememberTurn?.(options.rememberTranscript, finalResponse);
@@ -4601,6 +4639,7 @@ class AlphaClawdVoiceBot {
             this.voiceManager.saveTranscriptEntry(guildId, transcriptEntry);
             this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);
             this.observeShowRunnerTranscriptEntry(guildId, transcriptEntry);
+            this.resetConsecutiveGeneratorSilences(guildId);
 
             if (typeof options.rememberTranscript === 'string') {
                 this.podcastGenerator?.rememberTurn?.(options.rememberTranscript, {

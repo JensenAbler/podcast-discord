@@ -795,7 +795,7 @@ class PodcastGenerator {
             '',
             'Each shelf item includes when it originated. Compare its origin timestamp to the current episode timestamp to judge freshness. The live transcript, direct guest requests, floor-holding cues, Big Brain rules, staged Big Brain results, and show-runner direction outrank shelf items.',
             '',
-            'If you use a shelf item, weave its insight naturally into your response. Do not mention "the shelf" unless the guest is explicitly asking about runtime internal-thought artifacts.',
+            'If you use a shelf item, weave its insight naturally into your response. A good moment to bring in items from the shelf might be: you decided not to speak on your previous turn, and its your turn again, but no one else has said anything. This is a clue that they might be waiting for you to fill the silence, and you can use the "internal thoughts" of the awareness shelf to do so. Do not mention "the shelf" unless the guest is explicitly asking about runtime internal-thought artifacts.',
             '',
             `Session topic: ${this.session.topic}`,
             `Known speakers: ${this.session.speakers.length > 0 ? this.session.speakers.join(', ') : 'unknown live speakers'}`,
@@ -850,6 +850,9 @@ class PodcastGenerator {
         const currentEpisodeTimestamp = String(options.currentEpisodeTimestamp || '').trim();
         if (currentEpisodeTimestamp) {
             lines.push(`Current episode timestamp: ${currentEpisodeTimestamp}`);
+        }
+        if (Number.isFinite(Number(options.consecutiveSilenceTurns))) {
+            lines.push(`Consecutive prior Alpha-Clawd silence decisions: ${Math.max(0, Math.floor(Number(options.consecutiveSilenceTurns)))}`);
         }
 
         const inlineTranscript = this.formatTranscriptWithPauses(options.utterances || []);

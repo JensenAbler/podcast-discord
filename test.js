@@ -620,6 +620,7 @@ async function runTests() {
             systemPrompt.includes('optional contemplative context') &&
             systemPrompt.includes('Each shelf item includes when it originated') &&
             systemPrompt.includes('Compare its origin timestamp to the current episode timestamp') &&
+            systemPrompt.includes('decided not to speak on your previous turn') &&
             systemPrompt.includes('Do not mention "the shelf" unless the guest is explicitly asking') &&
             !systemPrompt.includes('You do not have access to private chain-of-thought') &&
             systemPrompt.includes('Sounding-board exception') &&
@@ -777,6 +778,13 @@ async function runTests() {
             !shelfPrompt.includes(shelfLongText)
         ) {
             throw new Error(`Awareness shelf prompt was not formatted with timing/full text: ${shelfPrompt}`);
+        }
+
+        const silenceCountPrompt = generator.buildUserPrompt('Jensen: Continue.', null, {
+            consecutiveSilenceTurns: 2
+        });
+        if (!silenceCountPrompt.includes('Consecutive prior Alpha-Clawd silence decisions: 2')) {
+            throw new Error(`Generator prompt did not include consecutive silence count: ${silenceCountPrompt}`);
         }
 
         const recentThoughtPrompt = generator.buildUserPrompt('Jensen: What are your internal thoughts right now?', null, {
@@ -2995,6 +3003,7 @@ async function runTests() {
         let directShowRunnerGuidance = null;
         let directCurrentTime = null;
         let directCurrentEpisodeTimestamp = null;
+        const directSilenceCounts = [];
         bot.conversationBuffer.setFlushHold = (reason, active) => {
             holdEvents.push({ reason, active });
         };
@@ -3007,6 +3016,7 @@ async function runTests() {
                 directShowRunnerGuidance = input.showRunnerGuidance || null;
                 directCurrentTime = input.currentTime || null;
                 directCurrentEpisodeTimestamp = input.currentEpisodeTimestamp || null;
+                directSilenceCounts.push(input.consecutiveSilenceTurns);
                 if (!bot.directResponseInFlight.has(guildId)) {
                     throw new Error('Direct response was not marked in-flight during generation');
                 }
@@ -3048,6 +3058,9 @@ async function runTests() {
         if (directRecentInternalThoughts.length !== 0 || recentThoughtRequests.length !== 0) {
             throw new Error(`Direct generator received recent internal thoughts without a trigger: ${JSON.stringify({ directRecentInternalThoughts, recentThoughtRequests })}`);
         }
+        if (directSilenceCounts[0] !== 0 || bot.getConsecutiveGeneratorSilences(guildId) !== 1) {
+            throw new Error(`Direct generator did not receive or record silence streak correctly: ${JSON.stringify({ directSilenceCounts, streak: bot.getConsecutiveGeneratorSilences(guildId) })}`);
+        }
 
         directGenerateCalled = false;
         directShowRunnerGuidance = null;
@@ -3063,6 +3076,9 @@ async function runTests() {
             recentThoughtRequests.at(-1)?.limit !== 7
         ) {
             throw new Error(`Direct generator did not receive seven recent internal thoughts on introspection trigger: ${JSON.stringify({ directGenerateCalled, directRecentInternalThoughts, recentThoughtRequests })}`);
+        }
+        if (directSilenceCounts.at(-1) !== 1 || bot.getConsecutiveGeneratorSilences(guildId) !== 2) {
+            throw new Error(`Direct generator did not carry consecutive silence streak into the next call: ${JSON.stringify({ directSilenceCounts, streak: bot.getConsecutiveGeneratorSilences(guildId) })}`);
         }
 
         directGenerateCalled = false;
