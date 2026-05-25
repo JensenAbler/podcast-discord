@@ -3098,6 +3098,7 @@ async function runTests() {
         const staleRequeues = [];
         const bufferSpeakingEvents = [];
         const markAsrPendingEvents = [];
+        const markAsrCompleteEvents = [];
         let playCalled = false;
         let transcriptSaved = false;
         let cooldownStarted = false;
@@ -3132,6 +3133,14 @@ async function runTests() {
             },
             markAsrPending: (userId, metadata) => {
                 markAsrPendingEvents.push({ userId, metadata });
+            },
+            markAsrComplete: (userId) => {
+                markAsrCompleteEvents.push(userId);
+                testBufferState = {
+                    ...testBufferState,
+                    pendingAsrCount: 0,
+                    pendingAsrSpeakers: []
+                };
             },
             startCooldown: () => {
                 cooldownStarted = true;
@@ -3298,6 +3307,31 @@ async function runTests() {
         if (bot.hasCurrentParticipantFloor(guildId)) {
             throw new Error('ASR dispatch incorrectly granted participant floor');
         }
+
+        const pendingBeforeStopDispatch = markAsrPendingEvents.length;
+        bot.recordingState.set(guildId, bot.RecordingState.STOPPING);
+        bot.handleAsrDispatched(guildId, 'user-after-stop', {
+            reason: 'test post-stop ASR',
+            audioBytes: 6789,
+            speakingFrames: 20,
+            threshold: 1
+        });
+        if (markAsrPendingEvents.length !== pendingBeforeStopDispatch) {
+            throw new Error(`ASR dispatch outside active recording marked conversation-buffer pending: ${JSON.stringify(markAsrPendingEvents)}`);
+        }
+
+        testBufferState = {
+            ...testBufferState,
+            pendingAsrCount: 1,
+            pendingAsrSpeakers: ['user-after-stop']
+        };
+        if (!bot.clearConversationBufferAsrPendingIfPresent('user-after-stop', 'test ignored ASR result')) {
+            throw new Error('Ignored ASR result did not clear matching conversation-buffer pending entry');
+        }
+        if (markAsrCompleteEvents.at(-1) !== 'user-after-stop' || testBufferState.pendingAsrCount !== 0) {
+            throw new Error(`Ignored ASR result cleared the wrong pending state: ${JSON.stringify({ markAsrCompleteEvents, testBufferState })}`);
+        }
+        bot.recordingState.set(guildId, bot.RecordingState.RECORDING);
 
         bot.noteRawParticipantVadStart(guildId, 'user-evidence');
         bot.confirmParticipantSpeechEvidence(guildId, 'user-evidence', {

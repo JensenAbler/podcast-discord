@@ -343,6 +343,11 @@ class AlphaClawdVoiceBot {
                     providerError: utterance.providerError,
                     timestamp: utterance.timestamp || Date.now()
                 });
+            } else {
+                this.clearConversationBufferAsrPendingIfPresent(
+                    utterance.userId,
+                    'ASR result outside active recording'
+                );
             }
             this.clearCompletedParticipantSignalState(guildId, utterance.userId, 'ASR result handled');
         });
@@ -1195,8 +1200,40 @@ class AlphaClawdVoiceBot {
     handleAsrDispatched(guildId, userId, metadata = {}) {
         console.log(`[Bot] ASR dispatched to Fish for ${userId} (${metadata.audioBytes} bytes, ${metadata.reason})`);
         this.markInternalThoughtAsrPending(guildId, userId, metadata);
-        this.conversationBuffer?.markAsrPending?.(userId, metadata);
-        console.log(`[Bot] ASR dispatch for ${userId} is tracking transcript work without changing floor authority`);
+        if (this.isRecordingActive(guildId)) {
+            this.conversationBuffer?.markAsrPending?.(userId, metadata);
+            console.log(`[Bot] ASR dispatch for ${userId} is tracking transcript work without changing floor authority`);
+            return;
+        }
+
+        const state = this.recordingState?.get?.(guildId) || this.getRecordingStateValue('IDLE');
+        console.log(`[Bot] ASR dispatch for ${userId} skipped conversation-buffer pending while recording state is ${state}`);
+    }
+
+    clearConversationBufferAsrPendingIfPresent(userId, reason = 'ASR result outside active recording') {
+        const buffer = this.conversationBuffer;
+        if (!buffer?.markAsrComplete) return false;
+
+        const state = buffer.getState?.();
+        const normalizedUserId = buffer.normalizeUserId?.(userId) || (userId != null ? String(userId) : null);
+
+        if (state) {
+            const pendingSpeakers = Array.isArray(state.pendingAsrSpeakers)
+                ? state.pendingAsrSpeakers.map(speakerId => String(speakerId))
+                : null;
+
+            if (pendingSpeakers && normalizedUserId && !pendingSpeakers.includes(normalizedUserId)) {
+                return false;
+            }
+
+            if (!pendingSpeakers && Number(state.pendingAsrCount || 0) <= 0) {
+                return false;
+            }
+        }
+
+        buffer.markAsrComplete(userId);
+        console.log(`[Bot] Cleared conversation-buffer ASR pending for ${userId || 'unknown user'} (${reason})`);
+        return true;
     }
 
     hasParticipantSpeechEvidenceConfirmed(guildId, userId) {
@@ -2634,6 +2671,7 @@ class AlphaClawdVoiceBot {
      * Grant consent and start recording
      */
     async grantConsent(guildId, topic) {
+        this.conversationBuffer?.clear?.();
         this.recordingState.set(guildId, this.RecordingState.RECORDING);
         this.resetConsecutiveGeneratorSilences(guildId);
         const consentTimestamp = new Date().toISOString();
