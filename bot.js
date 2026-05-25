@@ -372,17 +372,7 @@ class AlphaClawdVoiceBot {
         });
 
         this.voiceManager.setAsrDispatchedHandler((guildId, userId, metadata = {}) => {
-            console.log(`[Bot] ASR dispatched to Fish for ${userId} (${metadata.audioBytes} bytes, ${metadata.reason})`);
-            this.markInternalThoughtAsrPending(guildId, userId, metadata);
-            this.conversationBuffer?.markAsrPending?.(userId, metadata);
-            if (this.hasSpeechEvidenceForFloor(guildId, userId, metadata)) {
-                this.confirmParticipantSpeechEvidence(guildId, userId, {
-                    ...metadata,
-                    source: 'ASR dispatched'
-                });
-            } else {
-                console.log(`[Bot] ASR dispatch for ${userId} is below floor-evidence threshold; tracking ASR without floor authority`);
-            }
+            this.handleAsrDispatched(guildId, userId, metadata);
         });
 
         this.voiceManager.setVadDiscardedHandler((guildId, userId, metadata = {}) => {
@@ -1202,23 +1192,16 @@ class AlphaClawdVoiceBot {
         return true;
     }
 
+    handleAsrDispatched(guildId, userId, metadata = {}) {
+        console.log(`[Bot] ASR dispatched to Fish for ${userId} (${metadata.audioBytes} bytes, ${metadata.reason})`);
+        this.markInternalThoughtAsrPending(guildId, userId, metadata);
+        this.conversationBuffer?.markAsrPending?.(userId, metadata);
+        console.log(`[Bot] ASR dispatch for ${userId} is tracking transcript work without changing floor authority`);
+    }
+
     hasParticipantSpeechEvidenceConfirmed(guildId, userId) {
         const state = this.getParticipantSignalState(guildId, userId, false);
         return Boolean(state?.floorConfirmed && state?.floorHasFreshSpeechEvidence);
-    }
-
-    hasSpeechEvidenceForFloor(guildId, userId, metadata = {}) {
-        if (this.hasParticipantSpeechEvidenceConfirmed(guildId, userId)) {
-            return true;
-        }
-
-        const stats = {
-            speakingFrames: metadata.speakingFrames || 0,
-            silentFrames: metadata.silentFrames || 0,
-            totalFrames: metadata.totalFrames || 0
-        };
-        const threshold = this.getSpeechEvidenceFrameThreshold(guildId, userId, stats, metadata);
-        return stats.speakingFrames >= threshold;
     }
 
     getSpeechEvidenceFrameThreshold(guildId, userId, stats = {}, metadata = {}) {

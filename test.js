@@ -3097,6 +3097,7 @@ async function runTests() {
 
         const staleRequeues = [];
         const bufferSpeakingEvents = [];
+        const markAsrPendingEvents = [];
         let playCalled = false;
         let transcriptSaved = false;
         let cooldownStarted = false;
@@ -3128,6 +3129,9 @@ async function runTests() {
                     activeSpeakerCount: speaking ? 1 : 0,
                     activeSpeakers: speaking ? [userId] : []
                 };
+            },
+            markAsrPending: (userId, metadata) => {
+                markAsrPendingEvents.push({ userId, metadata });
             },
             startCooldown: () => {
                 cooldownStarted = true;
@@ -3272,6 +3276,27 @@ async function runTests() {
         bot.noteRawParticipantVadStop(guildId, 'user-raw-vad');
         if (bot.getParticipantActivityVersion(guildId) !== rawVadBaseline) {
             throw new Error('Raw VAD stop incorrectly confirmed participant activity');
+        }
+
+        const asrOnlyBaseline = bot.getParticipantActivityVersion(guildId);
+        const asrOnlySpeakingEventCount = bufferSpeakingEvents.length;
+        bot.handleAsrDispatched(guildId, 'user-asr-only', {
+            reason: 'test completed speech',
+            audioBytes: 12345,
+            speakingFrames: 50,
+            threshold: 1
+        });
+        if (markAsrPendingEvents.at(-1)?.userId !== 'user-asr-only') {
+            throw new Error(`ASR dispatch did not mark pending transcript work: ${JSON.stringify(markAsrPendingEvents)}`);
+        }
+        if (bot.getParticipantActivityVersion(guildId) !== asrOnlyBaseline) {
+            throw new Error('ASR dispatch incorrectly confirmed participant activity');
+        }
+        if (bufferSpeakingEvents.length !== asrOnlySpeakingEventCount) {
+            throw new Error(`ASR dispatch incorrectly changed buffer speaking state: ${JSON.stringify(bufferSpeakingEvents)}`);
+        }
+        if (bot.hasCurrentParticipantFloor(guildId)) {
+            throw new Error('ASR dispatch incorrectly granted participant floor');
         }
 
         bot.noteRawParticipantVadStart(guildId, 'user-evidence');
