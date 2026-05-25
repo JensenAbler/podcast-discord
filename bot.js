@@ -79,6 +79,7 @@ const { PodcastGenerator } = require('./podcast-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
 const { ShowRunnerManager } = require('./showrunner-manager');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
+const { PureBrainGenerator } = require('./purebrain-generator');
 const { buildTurnIdIntent } = require('./turn-intent');
 const { ParticipantSignalProfile } = require('./participant-signal-profile');
 
@@ -156,6 +157,18 @@ class AlphaClawdVoiceBot {
         this.bigBrainToolToneLastAt = new Map(); // guildId -> ms timestamp
         this.pendingBigBrainResponses = new Map(); // runId -> pending handoff
         this.stagedBigBrainResponses = new Map(); // guildId -> completed handoffs awaiting host integration
+        this.pureBrainEnabled = options.pureBrainEnabled !== undefined
+            ? Boolean(options.pureBrainEnabled)
+            : process.env.PODCAST_PURE_BRAIN_ENABLED !== 'false';
+        this.pureBrainGenerator = options.pureBrainGenerator || new PureBrainGenerator({
+            apiKey: options.pureBrainApiKey,
+            model: options.pureBrainModel,
+            baseUrl: options.pureBrainBaseUrl,
+            timeout: options.pureBrainTimeout,
+            maxTokens: options.pureBrainMaxTokens
+        });
+        this.pendingPureBrainResponses = new Map(); // runId -> pending direct Opus handoff
+        this.stagedPureBrainResponses = new Map(); // guildId -> completed pureBrain handoffs awaiting host integration
         this.internalThoughtsEnabled = options.internalThoughtsEnabled !== undefined
             ? Boolean(options.internalThoughtsEnabled)
             : process.env.PODCAST_INTERNAL_THOUGHTS_ENABLED === 'true';
@@ -805,6 +818,12 @@ class AlphaClawdVoiceBot {
         this.idleDecisionHandledSpeechAt.delete(guildId);
         this.participantActivityVersion.delete(guildId);
         this.stagedBigBrainResponses?.delete?.(guildId);
+        this.stagedPureBrainResponses?.delete?.(guildId);
+        for (const [runId, pending] of Array.from(this.pendingPureBrainResponses?.entries?.() || [])) {
+            if (pending.guildId === guildId) {
+                this.pendingPureBrainResponses.delete(runId);
+            }
+        }
         this.stopBigBrainToolTone(guildId, 'idle loop stopped');
         this.stopBigBrainAmbientBed(guildId, 'idle loop stopped');
         this.clearParticipantActivityTimers(guildId);
@@ -1450,6 +1469,8 @@ class AlphaClawdVoiceBot {
                 idleSeconds,
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
+                stagedPureBrain: this.getStagedPureBrainForGenerator(guildId),
+                pendingPureBrain: this.getPendingPureBrainForGenerator(guildId),
                 awarenessInjections,
                 awarenessShelfItems,
                 showRunnerGuidance,
@@ -1460,6 +1481,11 @@ class AlphaClawdVoiceBot {
 
             if (this.shouldSuppressDuplicateBigBrainStall(guildId, response)) {
                 console.log('[Bot] Idle generator requested bigBrain while one is already pending; suppressing duplicate stall');
+                return;
+            }
+
+            if (this.shouldSuppressDuplicatePureBrainStall(guildId, response)) {
+                console.log('[Bot] Idle generator requested pureBrain while one is already pending; suppressing duplicate stall');
                 return;
             }
 
@@ -1495,7 +1521,19 @@ class AlphaClawdVoiceBot {
                         participantActivityBaseline: this.getParticipantActivityVersion(guildId)
                     });
                 }
+                if (finalResponse.pureBrain?.requested) {
+                    await this.dispatchPureBrainTurn(guildId, finalResponse, {
+                        source: 'idle',
+                        transcript: '',
+                        awarenessInjections,
+                        awarenessShelfItems,
+                        currentTime: generatorTiming.currentTime,
+                        currentEpisodeTimestamp: generatorTiming.currentEpisodeTimestamp,
+                        participantActivityBaseline: this.getParticipantActivityVersion(guildId)
+                    });
+                }
                 this.consumeStagedBigBrainFromResponse(guildId, finalResponse);
+                this.consumeStagedPureBrainFromResponse(guildId, finalResponse);
             }
         } catch (error) {
             console.error('[Bot] Idle generator failed:', error);
@@ -3075,6 +3113,7 @@ class AlphaClawdVoiceBot {
         });
         const showRunnerGuidance = this.getShowRunnerGuidanceForGenerator(guildId);
         let bigBrainDispatch = null;
+        let pureBrainDispatch = null;
 
         try {
             let response = await this.beginGeneratorTurn({
@@ -3083,6 +3122,8 @@ class AlphaClawdVoiceBot {
                 wordData,
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
+                stagedPureBrain: this.getStagedPureBrainForGenerator(guildId),
+                pendingPureBrain: this.getPendingPureBrainForGenerator(guildId),
                 awarenessInjections,
                 awarenessShelfItems,
                 showRunnerGuidance,
@@ -3092,17 +3133,29 @@ class AlphaClawdVoiceBot {
                 remember: false
             });
 
-            if (this.hasPendingBigBrain(guildId) && response?.isStreaming) {
-                response = await this.settleGeneratorResponse(response, 'pending bigBrain duplicate check');
+            if ((this.hasPendingBigBrain(guildId) || this.hasPendingPureBrain(guildId)) && response?.isStreaming) {
+                response = await this.settleGeneratorResponse(response, 'pending handoff duplicate check');
             }
 
             if (this.shouldSuppressDuplicateBigBrainStall(guildId, response)) {
                 this.podcastGenerator.rememberTurn?.(transcript, {
                     shouldRespond: false,
                     speech: '',
-                    bigBrain: { requested: false, reason: '', consumedRunId: '' }
+                    bigBrain: { requested: false, reason: '', consumedRunId: '' },
+                    pureBrain: { requested: false, reason: '', consumedRunId: '' }
                 });
                 console.log('[Bot] Direct generator requested bigBrain while one is already pending; suppressing duplicate stall');
+                return;
+            }
+
+            if (this.shouldSuppressDuplicatePureBrainStall(guildId, response)) {
+                this.podcastGenerator.rememberTurn?.(transcript, {
+                    shouldRespond: false,
+                    speech: '',
+                    bigBrain: { requested: false, reason: '', consumedRunId: '' },
+                    pureBrain: { requested: false, reason: '', consumedRunId: '' }
+                });
+                console.log('[Bot] Direct generator requested pureBrain while one is already pending; suppressing duplicate stall');
                 return;
             }
 
@@ -3153,8 +3206,29 @@ class AlphaClawdVoiceBot {
                     }
                 };
             }
+            if ((playbackResult?.played || playbackResult?.stale) && finalResponse.pureBrain?.requested) {
+                if (playbackResult?.stale) {
+                    console.log('[Bot] pureBrain request survived stale host response; dispatching without spoken stall');
+                }
+                pureBrainDispatch = {
+                    response: finalResponse,
+                    options: {
+                        source: playbackResult?.stale ? 'buffer-stale' : 'buffer',
+                        transcript,
+                        utterances,
+                        wordData,
+                        awarenessInjections,
+                        awarenessShelfItems,
+                        currentTime: generatorTiming.currentTime,
+                        currentEpisodeTimestamp: generatorTiming.currentEpisodeTimestamp,
+                        participantActivityBaseline: this.getParticipantActivityVersion(guildId),
+                        stallSpoken: playbackResult?.played === true
+                    }
+                };
+            }
             if (playbackResult?.played) {
                 this.consumeStagedBigBrainFromResponse(guildId, finalResponse);
+                this.consumeStagedPureBrainFromResponse(guildId, finalResponse);
             }
         } catch (error) {
             console.error('[Bot] Direct generator failed:', error);
@@ -3184,6 +3258,13 @@ class AlphaClawdVoiceBot {
                 guildId,
                 bigBrainDispatch.response,
                 bigBrainDispatch.options
+            );
+        }
+        if (pureBrainDispatch) {
+            await this.dispatchPureBrainTurn(
+                guildId,
+                pureBrainDispatch.response,
+                pureBrainDispatch.options
             );
         }
     }
@@ -3350,7 +3431,8 @@ class AlphaClawdVoiceBot {
             shouldRespond,
             speech: '',
             text: '',
-            bigBrain: { requested: false, reason: '' },
+            bigBrain: { requested: false, reason: '', consumedRunId: '' },
+            pureBrain: { requested: false, reason: '', consumedRunId: '' },
             speechStream: stream.speechStream,
             completed: stream.completed,
             isStreaming: true
@@ -3396,6 +3478,41 @@ class AlphaClawdVoiceBot {
                 answer: item.answer,
                 requestedAt: item.requestedAt,
                 answeredAt: item.answeredAt
+            }));
+    }
+
+    hasPendingPureBrain(guildId) {
+        return Array.from(this.pendingPureBrainResponses?.values?.() || [])
+            .some((pending) => pending.guildId === guildId);
+    }
+
+    getPendingPureBrainForGenerator(guildId) {
+        return Array.from(this.pendingPureBrainResponses?.values?.() || [])
+            .filter((pending) => pending.guildId === guildId)
+            .slice(0, 1)
+            .map((pending) => ({
+                runId: pending.runId,
+                reason: pending.reason,
+                transcript: pending.transcript || '',
+                requestedAt: pending.requestedAt
+            }));
+    }
+
+    shouldSuppressDuplicatePureBrainStall(guildId, response = {}) {
+        return Boolean(response?.pureBrain?.requested && this.hasPendingPureBrain(guildId));
+    }
+
+    getStagedPureBrainForGenerator(guildId) {
+        return (this.stagedPureBrainResponses?.get?.(guildId) || [])
+            .slice(0, 3)
+            .map((item) => ({
+                runId: item.runId,
+                reason: item.reason,
+                transcript: item.transcript,
+                answer: item.answer,
+                requestedAt: item.requestedAt,
+                answeredAt: item.answeredAt,
+                model: item.model
             }));
     }
 
@@ -4090,6 +4207,57 @@ class AlphaClawdVoiceBot {
         return true;
     }
 
+    stagePureBrainResponse(guildId, pending, answer, metadata = {}) {
+        if (!guildId || !answer) {
+            return null;
+        }
+        if (!this.stagedPureBrainResponses) {
+            this.stagedPureBrainResponses = new Map();
+        }
+
+        const staged = {
+            runId: pending.runId,
+            reason: pending.reason,
+            transcript: pending.transcript || '',
+            answer,
+            model: metadata.model || pending.model || '',
+            requestedAt: pending.requestedAt,
+            answeredAt: new Date().toISOString()
+        };
+        const existing = this.stagedPureBrainResponses.get(guildId) || [];
+        const withoutDuplicate = existing.filter((item) => item.runId !== staged.runId);
+        withoutDuplicate.push(staged);
+        this.stagedPureBrainResponses.set(guildId, withoutDuplicate.slice(-3));
+        console.log(`[Bot] pureBrain response staged runId=${staged.runId}; stagedCount=${this.stagedPureBrainResponses.get(guildId).length}`);
+        return staged;
+    }
+
+    consumeStagedPureBrainFromResponse(guildId, response = {}) {
+        const consumedRunId = String(response?.pureBrain?.consumedRunId || '').trim();
+        if (!consumedRunId) {
+            return false;
+        }
+
+        const staged = this.stagedPureBrainResponses?.get?.(guildId) || [];
+        const next = staged.filter((item) => item.runId !== consumedRunId);
+        if (next.length === staged.length) {
+            console.warn(`[Bot] Generator reported unknown staged pureBrain consumption: ${consumedRunId}`);
+            return false;
+        }
+
+        if (next.length > 0) {
+            this.stagedPureBrainResponses.set(guildId, next);
+        } else {
+            this.stagedPureBrainResponses.delete(guildId);
+        }
+        console.log(`[Bot] Staged pureBrain consumed by generator: runId=${consumedRunId}`);
+        return true;
+    }
+
+    cleanupPendingPureBrain(runId) {
+        this.pendingPureBrainResponses?.delete?.(runId);
+    }
+
     resolveBigBrainTranscript(options = {}) {
         const transcript = String(options.transcript || '').trim()
             || this.podcastGenerator?.formatUtterances?.(options.utterances || [])
@@ -4214,6 +4382,106 @@ class AlphaClawdVoiceBot {
         return `${directives.join(' ')}\n\n${message}`;
     }
 
+    async dispatchPureBrainTurn(guildId, response, options = {}) {
+        if (!response?.pureBrain?.requested) {
+            return { dispatched: false, reason: 'not_requested' };
+        }
+
+        const reason = String(response.pureBrain.reason || '').trim();
+        if (!this.pureBrainEnabled) {
+            console.log(`[Bot] pureBrain requested but disabled. reason="${reason}"`);
+            return { dispatched: false, reason: 'disabled' };
+        }
+
+        const existing = Array.from(this.pendingPureBrainResponses?.values?.() || [])
+            .find((pending) => pending.guildId === guildId);
+        if (existing) {
+            console.warn(`[Bot] pureBrain request skipped because run ${existing.runId} is still pending`);
+            return { dispatched: false, reason: 'already_pending', runId: existing.runId };
+        }
+
+        const transcript = this.resolveBigBrainTranscript(options);
+        const runId = `discord-purebrain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const pending = {
+            guildId,
+            runId,
+            reason,
+            transcript,
+            requestedAt: new Date().toISOString(),
+            model: this.pureBrainGenerator?.model || '',
+            participantActivityBaseline: Number.isFinite(options.participantActivityBaseline)
+                ? options.participantActivityBaseline
+                : this.getParticipantActivityVersion(guildId)
+        };
+
+        this.pendingPureBrainResponses.set(runId, pending);
+        this.runPureBrainTurn(pending, {
+            ...options,
+            transcript,
+            reason
+        }).catch((error) => {
+            console.error(`[Bot] pureBrain run escaped runId=${runId}:`, error);
+            this.stagePureBrainFailure(runId, error, 'runtime');
+        });
+
+        console.log(`[Bot] pureBrain dispatched runId=${runId}, model=${pending.model || 'unknown'}, reason="${reason}"`);
+        return { dispatched: true, runId };
+    }
+
+    async runPureBrainTurn(pending, input = {}) {
+        try {
+            const result = await this.pureBrainGenerator.generate({
+                ...input,
+                reason: pending.reason,
+                transcript: pending.transcript,
+                currentTime: input.currentTime,
+                currentEpisodeTimestamp: input.currentEpisodeTimestamp
+            });
+
+            if (this.recordingState.get(pending.guildId) !== this.RecordingState.RECORDING) {
+                console.log(`[Bot] Dropping pureBrain response ${pending.runId}; recording is no longer active`);
+                return;
+            }
+
+            const answer = this.podcastGenerator?.sanitizeSpeech?.(result.answer) || result.answer;
+            this.stagePureBrainResponse(pending.guildId, pending, answer, {
+                model: result.model
+            });
+        } catch (error) {
+            this.stagePureBrainFailure(pending.runId, error, 'anthropic');
+        } finally {
+            this.cleanupPendingPureBrain(pending.runId);
+        }
+    }
+
+    stagePureBrainFailure(runId, rawError, source = 'anthropic') {
+        const pending = runId ? this.pendingPureBrainResponses.get(runId) : null;
+        if (!pending) {
+            return false;
+        }
+
+        const errorText = String(rawError?.message || rawError || 'PureBrain did not provide an error message.').trim();
+        const conciseError = errorText.length > 500
+            ? `${errorText.slice(0, 497)}...`
+            : errorText;
+
+        try {
+            if (this.recordingState.get(pending.guildId) === this.RecordingState.RECORDING) {
+                const stagedText = `PureBrain could not complete the Opus 3 request. ${conciseError}`;
+                this.stagePureBrainResponse(pending.guildId, pending, stagedText, {
+                    model: pending.model
+                });
+                console.warn(`[Bot] pureBrain ${source} failure staged runId=${runId}: ${conciseError}`);
+            } else {
+                console.warn(`[Bot] pureBrain ${source} failure for ${runId} after recording ended: ${conciseError}`);
+            }
+        } finally {
+            this.cleanupPendingPureBrain(runId);
+        }
+
+        return true;
+    }
+
     async dispatchBigBrainTurn(guildId, response, options = {}) {
         if (!response?.bigBrain?.requested) {
             return { dispatched: false, reason: 'not_requested' };
@@ -4316,7 +4584,8 @@ class AlphaClawdVoiceBot {
                 shouldRespond: response.shouldRespond,
                 speech: '',
                 text: '',
-                bigBrain: { requested: false, reason: '', consumedRunId: '' }
+                bigBrain: { requested: false, reason: '', consumedRunId: '' },
+                pureBrain: { requested: false, reason: '', consumedRunId: '' }
             };
         }
     }
@@ -4573,6 +4842,10 @@ class AlphaClawdVoiceBot {
             const consumedBigBrainRunId = finalResponse?.bigBrain?.consumedRunId;
             if (options.bigBrainRunId || consumedBigBrainRunId) {
                 transcriptEntry.bigBrainRunId = options.bigBrainRunId || consumedBigBrainRunId;
+            }
+            const consumedPureBrainRunId = finalResponse?.pureBrain?.consumedRunId;
+            if (options.pureBrainRunId || consumedPureBrainRunId) {
+                transcriptEntry.pureBrainRunId = options.pureBrainRunId || consumedPureBrainRunId;
             }
             const injectedAwarenessInjections = this.formatAwarenessInjectionsForTranscript(options.awarenessInjections);
             if (injectedAwarenessInjections.length > 0) {
