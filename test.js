@@ -22,6 +22,9 @@ const {
     BigBrainAwarenessSelector,
     ParticipantSignalProfile,
     AwarenessShelf,
+    RealtimePcmMixer,
+    GeminiLiveHost,
+    upsampleMono24kToStereo48k,
     EpisodeTranscriptStore,
     createEpisodeTranscriptServer,
     buildTurnIdIntent,
@@ -123,6 +126,141 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Participant signal profile failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 1c: Gemini Live PCM conversion and participant mixing');
+    try {
+        const mono24k = Buffer.alloc(4);
+        mono24k.writeInt16LE(1000, 0);
+        mono24k.writeInt16LE(-1000, 2);
+        const converted = upsampleMono24kToStereo48k(mono24k);
+        const expectedSamples = [1000, 1000, 1000, 1000, -1000, -1000, -1000, -1000];
+        const actualSamples = [];
+        for (let offset = 0; offset < converted.audio.length; offset += 2) {
+            actualSamples.push(converted.audio.readInt16LE(offset));
+        }
+        if (JSON.stringify(actualSamples) !== JSON.stringify(expectedSamples)) {
+            throw new Error(`Unexpected Gemini output conversion: ${JSON.stringify(actualSamples)}`);
+        }
+
+        let mixedFrame = null;
+        const mixer = new RealtimePcmMixer({
+            onFrame: (frame) => {
+                mixedFrame = frame;
+            }
+        });
+        const positive = createSpeechPcm(20);
+        const negative = Buffer.alloc(positive.length);
+        for (let offset = 0; offset < negative.length; offset += 2) {
+            negative.writeInt16LE(-600, offset);
+        }
+        mixer.push('speaker-a', positive);
+        mixer.push('speaker-b', negative);
+        mixer.emitFrame();
+
+        if (!mixedFrame || mixedFrame.length !== 640) {
+            throw new Error(`Expected one 20ms 16 kHz frame, got ${mixedFrame?.length || 0} bytes`);
+        }
+        if (mixedFrame.readInt16LE(0) !== 300) {
+            throw new Error(`Expected mixed sample 300, got ${mixedFrame.readInt16LE(0)}`);
+        }
+
+        console.log('  Gemini PCM resampling and concurrent participant mixing preserve frame shape');
+        passed++;
+    } catch (error) {
+        console.log(`  Gemini PCM conversion/mixing failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 1d: Gemini Live session config and streamed turn lifecycle');
+    try {
+        let connectParams = null;
+        const realtimeInputs = [];
+        let closed = false;
+        const fakeSession = {
+            sendRealtimeInput: (input) => realtimeInputs.push(input),
+            close: () => {
+                closed = true;
+            }
+        };
+        const fakeClient = {
+            live: {
+                connect: async (params) => {
+                    connectParams = params;
+                    params.callbacks.onopen();
+                    return fakeSession;
+                }
+            }
+        };
+
+        let streamBytes = Buffer.alloc(0);
+        let completedTurn = null;
+        const host = new GeminiLiveHost({
+            apiKey: 'test-key',
+            client: fakeClient,
+            systemInstruction: 'Test live host',
+            onAudioStream: ({ stream }) => {
+                stream.on('data', (chunk) => {
+                    streamBytes = Buffer.concat([streamBytes, chunk]);
+                });
+            },
+            onTurnComplete: (turn) => {
+                completedTurn = turn;
+            }
+        });
+
+        await host.start();
+        if (connectParams.config.realtimeInputConfig.activityHandling !== 'NO_INTERRUPTION') {
+            throw new Error('Gemini Live did not disable barge-in');
+        }
+        if (!connectParams.config.proactivity.proactiveAudio) {
+            throw new Error('Gemini Live proactive audio was not enabled');
+        }
+
+        host.sendAudioFrame(Buffer.alloc(640));
+        if (realtimeInputs[0]?.audio?.mimeType !== 'audio/pcm;rate=16000') {
+            throw new Error(`Unexpected realtime input: ${JSON.stringify(realtimeInputs[0])}`);
+        }
+
+        const responsePcm = Buffer.alloc(4);
+        responsePcm.writeInt16LE(250, 0);
+        responsePcm.writeInt16LE(-250, 2);
+        connectParams.callbacks.onmessage({
+            serverContent: {
+                outputTranscription: { text: 'Hello from Gemini.' },
+                modelTurn: {
+                    parts: [{
+                        inlineData: {
+                            mimeType: 'audio/pcm;rate=24000',
+                            data: responsePcm.toString('base64')
+                        }
+                    }]
+                }
+            }
+        });
+        connectParams.callbacks.onmessage({
+            serverContent: {
+                turnComplete: true
+            }
+        });
+
+        if (streamBytes.length !== 16) {
+            throw new Error(`Expected 16 Discord PCM bytes, got ${streamBytes.length}`);
+        }
+        if (completedTurn?.transcription !== 'Hello from Gemini.') {
+            throw new Error(`Missing output transcription: ${JSON.stringify(completedTurn)}`);
+        }
+
+        host.stop();
+        if (!closed) {
+            throw new Error('Gemini Live session did not close');
+        }
+
+        console.log('  Gemini Live uses proactive no-interruption audio and finalizes streamed turns');
+        passed++;
+    } catch (error) {
+        console.log(`  Gemini Live lifecycle failed: ${error.message}`);
         failed++;
     }
 
@@ -6007,10 +6145,17 @@ async function runTests() {
 
         const fakeBotAudio = Buffer.alloc(1024);
         recorder.addBotAudio(fakeBotAudio, { startTime: Date.now() });
+        const fakeLivePcm = Buffer.alloc(1920);
+        recorder.addBotAudio(fakeLivePcm, {
+            startTime: Date.now(),
+            format: 'pcm_s16le',
+            sampleRate: 48000,
+            channels: 2
+        });
         await new Promise((resolve) => setImmediate(resolve));
 
-        if (recorder.botAudioBuffer.length !== 1) {
-            throw new Error(`Expected 1 bot chunk, got ${recorder.botAudioBuffer.length}`);
+        if (recorder.botAudioBuffer.length !== 2) {
+            throw new Error(`Expected 2 bot chunks, got ${recorder.botAudioBuffer.length}`);
         }
 
         const chunk = recorder.botAudioBuffer[0];
@@ -6020,11 +6165,19 @@ async function runTests() {
         if (chunk.buffer !== fakeBotAudio) {
             throw new Error('Bot chunk buffer not stored');
         }
-        if (recorder.stats.botAudioChunks !== 1) {
-            throw new Error(`Expected botAudioChunks=1, got ${recorder.stats.botAudioChunks}`);
+        const liveChunk = recorder.botAudioBuffer[1];
+        if (
+            liveChunk.format !== 'pcm_s16le' ||
+            liveChunk.sampleRate !== 48000 ||
+            liveChunk.channels !== 2
+        ) {
+            throw new Error(`Live PCM metadata not preserved: ${JSON.stringify(liveChunk)}`);
+        }
+        if (recorder.stats.botAudioChunks !== 2) {
+            throw new Error(`Expected botAudioChunks=2, got ${recorder.stats.botAudioChunks}`);
         }
 
-        console.log('  Bot audio chunk lands in botAudioBuffer with finite timestamp');
+        console.log('  Encoded and live PCM bot audio retain timing and input-format metadata');
         passed++;
     } catch (error) {
         console.log(`  Audio Recorder bot audio failed: ${error.message}`);

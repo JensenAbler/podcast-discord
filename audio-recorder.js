@@ -305,7 +305,10 @@ class AudioRecorder {
             this.botAudioBuffer.push({
                 buffer: audioBuffer,
                 timestamp,
-                volume
+                volume,
+                format: options.format || 'encoded',
+                sampleRate: Number(options.sampleRate || 48000),
+                channels: Number(options.channels || 2)
             });
             this.stats.botAudioChunks++;
 
@@ -440,7 +443,7 @@ class AudioRecorder {
                 inputIndex++;
             }
 
-            // Process bot audio chunks (MP3 from ElevenLabs)
+            // Process bot audio chunks (normally encoded audio; live hosts may provide PCM).
             for (let i = 0; i < this.botAudioBuffer.length; i++) {
                 const chunk = this.botAudioBuffer[i];
                 const delayMs = this.getSafeDelayMs(chunk.timestamp, `bot chunk ${i}`);
@@ -448,9 +451,19 @@ class AudioRecorder {
                     continue;
                 }
 
-                const tempFile = path.join(tempDir, `bot_chunk_${i}.mp3`);
+                const isRawPcm = chunk.format === 'pcm_s16le';
+                const tempFile = path.join(tempDir, `bot_chunk_${i}.${isRawPcm ? 'raw' : 'mp3'}`);
                 fs.writeFileSync(tempFile, chunk.buffer);
-                inputs.push('-i', tempFile);
+                if (isRawPcm) {
+                    inputs.push(
+                        '-f', 's16le',
+                        '-ar', String(chunk.sampleRate || 48000),
+                        '-ac', String(chunk.channels || 2),
+                        '-i', tempFile
+                    );
+                } else {
+                    inputs.push('-i', tempFile);
+                }
 
                 const volume = chunk.volume || 0.9;
 

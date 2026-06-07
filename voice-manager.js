@@ -108,6 +108,7 @@ class VoiceManager {
             client: this.client,  // Pass Discord client for member lookups
             guildId: guildId,     // Pass guild ID for member lookups
             onUtterance: (utterance) => this.handleUtterance(guildId, utterance),
+            onAudioChunk: (userId, chunk) => this.handleAudioChunk(guildId, userId, chunk),
             onSpeakingStart: (userId) => this.handleSpeakingStart(guildId, userId),
             onSpeakingStop: (userId) => this.handleSpeakingStop(guildId, userId),
             onSpeechEvidence: (userId, metadata) => this.handleSpeechEvidence(guildId, userId, metadata),
@@ -353,6 +354,18 @@ class VoiceManager {
                     startTime: utterance.startTime
                 });
             }
+        }
+    }
+
+    /**
+     * Forward decoded 48 kHz stereo PCM while preserving the normal ASR path.
+     * @param {string} guildId - Discord guild ID
+     * @param {string} userId - Discord user ID
+     * @param {Buffer} chunk - Raw s16le PCM
+     */
+    handleAudioChunk(guildId, userId, chunk) {
+        if (this.onAudioChunk) {
+            this.onAudioChunk(guildId, userId, chunk);
         }
     }
 
@@ -881,6 +894,14 @@ class VoiceManager {
      */
     setUtteranceHandler(handler) {
         this.onUtterance = handler;
+    }
+
+    /**
+     * Set the decoded PCM handler callback.
+     * @param {Function} handler - (guildId, userId, chunk) => void
+     */
+    setAudioChunkHandler(handler) {
+        this.onAudioChunk = handler;
     }
 
     /**
