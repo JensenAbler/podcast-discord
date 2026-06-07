@@ -20,7 +20,7 @@ const { ElevenLabsIntegration } = require('./elevenlabs-integration');
 const { GatewayBridge } = require('./gateway-bridge');
 const { AlphaClawdVoiceBot } = require('./bot');
 const { PodcastGenerator } = require('./podcast-generator');
-const { PureBrainGenerator } = require('./purebrain-generator');
+const { BigHeartGenerator } = require('./bigheart-generator');
 const { InternalThoughtGenerator } = require('./internal-thought-generator');
 const { DiscernmentGenerator } = require('./discernment-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
@@ -46,7 +46,7 @@ module.exports = {
     ElevenLabsIntegration,
     GatewayBridge,
     PodcastGenerator,
-    PureBrainGenerator,
+    BigHeartGenerator,
     InternalThoughtGenerator,
     DiscernmentGenerator,
     InternalThoughtManager,

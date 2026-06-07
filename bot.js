@@ -79,7 +79,7 @@ const { PodcastGenerator } = require('./podcast-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
 const { ShowRunnerManager } = require('./showrunner-manager');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
-const { PureBrainGenerator } = require('./purebrain-generator');
+const { BigHeartGenerator } = require('./bigheart-generator');
 const { buildTurnIdIntent } = require('./turn-intent');
 const { ParticipantSignalProfile } = require('./participant-signal-profile');
 
@@ -157,18 +157,18 @@ class AlphaClawdVoiceBot {
         this.bigBrainToolToneLastAt = new Map(); // guildId -> ms timestamp
         this.pendingBigBrainResponses = new Map(); // runId -> pending handoff
         this.stagedBigBrainResponses = new Map(); // guildId -> completed handoffs awaiting host integration
-        this.pureBrainEnabled = options.pureBrainEnabled !== undefined
-            ? Boolean(options.pureBrainEnabled)
-            : process.env.PODCAST_PURE_BRAIN_ENABLED !== 'false';
-        this.pureBrainGenerator = options.pureBrainGenerator || new PureBrainGenerator({
-            apiKey: options.pureBrainApiKey,
-            model: options.pureBrainModel,
-            baseUrl: options.pureBrainBaseUrl,
-            timeout: options.pureBrainTimeout,
-            maxTokens: options.pureBrainMaxTokens
+        this.bigHeartEnabled = options.bigHeartEnabled !== undefined
+            ? Boolean(options.bigHeartEnabled)
+            : process.env.PODCAST_BIG_HEART_ENABLED !== 'false';
+        this.bigHeartGenerator = options.bigHeartGenerator || new BigHeartGenerator({
+            apiKey: options.bigHeartApiKey,
+            model: options.bigHeartModel,
+            baseUrl: options.bigHeartBaseUrl,
+            timeout: options.bigHeartTimeout,
+            maxTokens: options.bigHeartMaxTokens
         });
-        this.pendingPureBrainResponses = new Map(); // runId -> pending direct Opus handoff
-        this.stagedPureBrainResponses = new Map(); // guildId -> completed pureBrain handoffs awaiting host integration
+        this.pendingBigHeartResponses = new Map(); // runId -> pending direct Opus handoff
+        this.stagedBigHeartResponses = new Map(); // guildId -> completed bigHeart handoffs awaiting host integration
         this.internalThoughtsEnabled = options.internalThoughtsEnabled !== undefined
             ? Boolean(options.internalThoughtsEnabled)
             : process.env.PODCAST_INTERNAL_THOUGHTS_ENABLED === 'true';
@@ -818,10 +818,10 @@ class AlphaClawdVoiceBot {
         this.idleDecisionHandledSpeechAt.delete(guildId);
         this.participantActivityVersion.delete(guildId);
         this.stagedBigBrainResponses?.delete?.(guildId);
-        this.stagedPureBrainResponses?.delete?.(guildId);
-        for (const [runId, pending] of Array.from(this.pendingPureBrainResponses?.entries?.() || [])) {
+        this.stagedBigHeartResponses?.delete?.(guildId);
+        for (const [runId, pending] of Array.from(this.pendingBigHeartResponses?.entries?.() || [])) {
             if (pending.guildId === guildId) {
-                this.pendingPureBrainResponses.delete(runId);
+                this.pendingBigHeartResponses.delete(runId);
             }
         }
         this.stopBigBrainToolTone(guildId, 'idle loop stopped');
@@ -1469,8 +1469,8 @@ class AlphaClawdVoiceBot {
                 idleSeconds,
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
-                stagedPureBrain: this.getStagedPureBrainForGenerator(guildId),
-                pendingPureBrain: this.getPendingPureBrainForGenerator(guildId),
+                stagedBigHeart: this.getStagedBigHeartForGenerator(guildId),
+                pendingBigHeart: this.getPendingBigHeartForGenerator(guildId),
                 awarenessInjections,
                 awarenessShelfItems,
                 showRunnerGuidance,
@@ -1484,8 +1484,8 @@ class AlphaClawdVoiceBot {
                 return;
             }
 
-            if (this.shouldSuppressDuplicatePureBrainStall(guildId, response)) {
-                console.log('[Bot] Idle generator requested pureBrain while one is already pending; suppressing duplicate stall');
+            if (this.shouldSuppressDuplicateBigHeartStall(guildId, response)) {
+                console.log('[Bot] Idle generator requested bigHeart while one is already pending; suppressing duplicate stall');
                 return;
             }
 
@@ -1521,8 +1521,8 @@ class AlphaClawdVoiceBot {
                         participantActivityBaseline: this.getParticipantActivityVersion(guildId)
                     });
                 }
-                if (finalResponse.pureBrain?.requested) {
-                    await this.dispatchPureBrainTurn(guildId, finalResponse, {
+                if (finalResponse.bigHeart?.requested) {
+                    await this.dispatchBigHeartTurn(guildId, finalResponse, {
                         source: 'idle',
                         transcript: '',
                         awarenessInjections,
@@ -1533,7 +1533,7 @@ class AlphaClawdVoiceBot {
                     });
                 }
                 this.consumeStagedBigBrainFromResponse(guildId, finalResponse);
-                this.consumeStagedPureBrainFromResponse(guildId, finalResponse);
+                this.consumeStagedBigHeartFromResponse(guildId, finalResponse);
             }
         } catch (error) {
             console.error('[Bot] Idle generator failed:', error);
@@ -3113,7 +3113,7 @@ class AlphaClawdVoiceBot {
         });
         const showRunnerGuidance = this.getShowRunnerGuidanceForGenerator(guildId);
         let bigBrainDispatch = null;
-        let pureBrainDispatch = null;
+        let bigHeartDispatch = null;
 
         try {
             let response = await this.beginGeneratorTurn({
@@ -3122,8 +3122,8 @@ class AlphaClawdVoiceBot {
                 wordData,
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
-                stagedPureBrain: this.getStagedPureBrainForGenerator(guildId),
-                pendingPureBrain: this.getPendingPureBrainForGenerator(guildId),
+                stagedBigHeart: this.getStagedBigHeartForGenerator(guildId),
+                pendingBigHeart: this.getPendingBigHeartForGenerator(guildId),
                 awarenessInjections,
                 awarenessShelfItems,
                 showRunnerGuidance,
@@ -3133,7 +3133,7 @@ class AlphaClawdVoiceBot {
                 remember: false
             });
 
-            if ((this.hasPendingBigBrain(guildId) || this.hasPendingPureBrain(guildId)) && response?.isStreaming) {
+            if ((this.hasPendingBigBrain(guildId) || this.hasPendingBigHeart(guildId)) && response?.isStreaming) {
                 response = await this.settleGeneratorResponse(response, 'pending handoff duplicate check');
             }
 
@@ -3142,20 +3142,20 @@ class AlphaClawdVoiceBot {
                     shouldRespond: false,
                     speech: '',
                     bigBrain: { requested: false, reason: '', consumedRunId: '' },
-                    pureBrain: { requested: false, reason: '', consumedRunId: '' }
+                    bigHeart: { requested: false, reason: '', consumedRunId: '' }
                 });
                 console.log('[Bot] Direct generator requested bigBrain while one is already pending; suppressing duplicate stall');
                 return;
             }
 
-            if (this.shouldSuppressDuplicatePureBrainStall(guildId, response)) {
+            if (this.shouldSuppressDuplicateBigHeartStall(guildId, response)) {
                 this.podcastGenerator.rememberTurn?.(transcript, {
                     shouldRespond: false,
                     speech: '',
                     bigBrain: { requested: false, reason: '', consumedRunId: '' },
-                    pureBrain: { requested: false, reason: '', consumedRunId: '' }
+                    bigHeart: { requested: false, reason: '', consumedRunId: '' }
                 });
-                console.log('[Bot] Direct generator requested pureBrain while one is already pending; suppressing duplicate stall');
+                console.log('[Bot] Direct generator requested bigHeart while one is already pending; suppressing duplicate stall');
                 return;
             }
 
@@ -3206,11 +3206,11 @@ class AlphaClawdVoiceBot {
                     }
                 };
             }
-            if ((playbackResult?.played || playbackResult?.stale) && finalResponse.pureBrain?.requested) {
+            if ((playbackResult?.played || playbackResult?.stale) && finalResponse.bigHeart?.requested) {
                 if (playbackResult?.stale) {
-                    console.log('[Bot] pureBrain request survived stale host response; dispatching without spoken stall');
+                    console.log('[Bot] bigHeart request survived stale host response; dispatching without spoken stall');
                 }
-                pureBrainDispatch = {
+                bigHeartDispatch = {
                     response: finalResponse,
                     options: {
                         source: playbackResult?.stale ? 'buffer-stale' : 'buffer',
@@ -3228,7 +3228,7 @@ class AlphaClawdVoiceBot {
             }
             if (playbackResult?.played) {
                 this.consumeStagedBigBrainFromResponse(guildId, finalResponse);
-                this.consumeStagedPureBrainFromResponse(guildId, finalResponse);
+                this.consumeStagedBigHeartFromResponse(guildId, finalResponse);
             }
         } catch (error) {
             console.error('[Bot] Direct generator failed:', error);
@@ -3260,11 +3260,11 @@ class AlphaClawdVoiceBot {
                 bigBrainDispatch.options
             );
         }
-        if (pureBrainDispatch) {
-            await this.dispatchPureBrainTurn(
+        if (bigHeartDispatch) {
+            await this.dispatchBigHeartTurn(
                 guildId,
-                pureBrainDispatch.response,
-                pureBrainDispatch.options
+                bigHeartDispatch.response,
+                bigHeartDispatch.options
             );
         }
     }
@@ -3432,7 +3432,7 @@ class AlphaClawdVoiceBot {
             speech: '',
             text: '',
             bigBrain: { requested: false, reason: '', consumedRunId: '' },
-            pureBrain: { requested: false, reason: '', consumedRunId: '' },
+            bigHeart: { requested: false, reason: '', consumedRunId: '' },
             speechStream: stream.speechStream,
             completed: stream.completed,
             isStreaming: true
@@ -3481,13 +3481,13 @@ class AlphaClawdVoiceBot {
             }));
     }
 
-    hasPendingPureBrain(guildId) {
-        return Array.from(this.pendingPureBrainResponses?.values?.() || [])
+    hasPendingBigHeart(guildId) {
+        return Array.from(this.pendingBigHeartResponses?.values?.() || [])
             .some((pending) => pending.guildId === guildId);
     }
 
-    getPendingPureBrainForGenerator(guildId) {
-        return Array.from(this.pendingPureBrainResponses?.values?.() || [])
+    getPendingBigHeartForGenerator(guildId) {
+        return Array.from(this.pendingBigHeartResponses?.values?.() || [])
             .filter((pending) => pending.guildId === guildId)
             .slice(0, 1)
             .map((pending) => ({
@@ -3498,12 +3498,12 @@ class AlphaClawdVoiceBot {
             }));
     }
 
-    shouldSuppressDuplicatePureBrainStall(guildId, response = {}) {
-        return Boolean(response?.pureBrain?.requested && this.hasPendingPureBrain(guildId));
+    shouldSuppressDuplicateBigHeartStall(guildId, response = {}) {
+        return Boolean(response?.bigHeart?.requested && this.hasPendingBigHeart(guildId));
     }
 
-    getStagedPureBrainForGenerator(guildId) {
-        return (this.stagedPureBrainResponses?.get?.(guildId) || [])
+    getStagedBigHeartForGenerator(guildId) {
+        return (this.stagedBigHeartResponses?.get?.(guildId) || [])
             .slice(0, 3)
             .map((item) => ({
                 runId: item.runId,
@@ -4207,12 +4207,12 @@ class AlphaClawdVoiceBot {
         return true;
     }
 
-    stagePureBrainResponse(guildId, pending, answer, metadata = {}) {
+    stageBigHeartResponse(guildId, pending, answer, metadata = {}) {
         if (!guildId || !answer) {
             return null;
         }
-        if (!this.stagedPureBrainResponses) {
-            this.stagedPureBrainResponses = new Map();
+        if (!this.stagedBigHeartResponses) {
+            this.stagedBigHeartResponses = new Map();
         }
 
         const staged = {
@@ -4224,38 +4224,38 @@ class AlphaClawdVoiceBot {
             requestedAt: pending.requestedAt,
             answeredAt: new Date().toISOString()
         };
-        const existing = this.stagedPureBrainResponses.get(guildId) || [];
+        const existing = this.stagedBigHeartResponses.get(guildId) || [];
         const withoutDuplicate = existing.filter((item) => item.runId !== staged.runId);
         withoutDuplicate.push(staged);
-        this.stagedPureBrainResponses.set(guildId, withoutDuplicate.slice(-3));
-        console.log(`[Bot] pureBrain response staged runId=${staged.runId}; stagedCount=${this.stagedPureBrainResponses.get(guildId).length}`);
+        this.stagedBigHeartResponses.set(guildId, withoutDuplicate.slice(-3));
+        console.log(`[Bot] bigHeart response staged runId=${staged.runId}; stagedCount=${this.stagedBigHeartResponses.get(guildId).length}`);
         return staged;
     }
 
-    consumeStagedPureBrainFromResponse(guildId, response = {}) {
-        const consumedRunId = String(response?.pureBrain?.consumedRunId || '').trim();
+    consumeStagedBigHeartFromResponse(guildId, response = {}) {
+        const consumedRunId = String(response?.bigHeart?.consumedRunId || '').trim();
         if (!consumedRunId) {
             return false;
         }
 
-        const staged = this.stagedPureBrainResponses?.get?.(guildId) || [];
+        const staged = this.stagedBigHeartResponses?.get?.(guildId) || [];
         const next = staged.filter((item) => item.runId !== consumedRunId);
         if (next.length === staged.length) {
-            console.warn(`[Bot] Generator reported unknown staged pureBrain consumption: ${consumedRunId}`);
+            console.warn(`[Bot] Generator reported unknown staged bigHeart consumption: ${consumedRunId}`);
             return false;
         }
 
         if (next.length > 0) {
-            this.stagedPureBrainResponses.set(guildId, next);
+            this.stagedBigHeartResponses.set(guildId, next);
         } else {
-            this.stagedPureBrainResponses.delete(guildId);
+            this.stagedBigHeartResponses.delete(guildId);
         }
-        console.log(`[Bot] Staged pureBrain consumed by generator: runId=${consumedRunId}`);
+        console.log(`[Bot] Staged bigHeart consumed by generator: runId=${consumedRunId}`);
         return true;
     }
 
-    cleanupPendingPureBrain(runId) {
-        this.pendingPureBrainResponses?.delete?.(runId);
+    cleanupPendingBigHeart(runId) {
+        this.pendingBigHeartResponses?.delete?.(runId);
     }
 
     resolveBigBrainTranscript(options = {}) {
@@ -4382,55 +4382,55 @@ class AlphaClawdVoiceBot {
         return `${directives.join(' ')}\n\n${message}`;
     }
 
-    async dispatchPureBrainTurn(guildId, response, options = {}) {
-        if (!response?.pureBrain?.requested) {
+    async dispatchBigHeartTurn(guildId, response, options = {}) {
+        if (!response?.bigHeart?.requested) {
             return { dispatched: false, reason: 'not_requested' };
         }
 
-        const reason = String(response.pureBrain.reason || '').trim();
-        if (!this.pureBrainEnabled) {
-            console.log(`[Bot] pureBrain requested but disabled. reason="${reason}"`);
+        const reason = String(response.bigHeart.reason || '').trim();
+        if (!this.bigHeartEnabled) {
+            console.log(`[Bot] bigHeart requested but disabled. reason="${reason}"`);
             return { dispatched: false, reason: 'disabled' };
         }
 
-        const existing = Array.from(this.pendingPureBrainResponses?.values?.() || [])
+        const existing = Array.from(this.pendingBigHeartResponses?.values?.() || [])
             .find((pending) => pending.guildId === guildId);
         if (existing) {
-            console.warn(`[Bot] pureBrain request skipped because run ${existing.runId} is still pending`);
+            console.warn(`[Bot] bigHeart request skipped because run ${existing.runId} is still pending`);
             return { dispatched: false, reason: 'already_pending', runId: existing.runId };
         }
 
         const transcript = this.resolveBigBrainTranscript(options);
-        const runId = `discord-purebrain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const runId = `discord-bigheart-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const pending = {
             guildId,
             runId,
             reason,
             transcript,
             requestedAt: new Date().toISOString(),
-            model: this.pureBrainGenerator?.model || '',
+            model: this.bigHeartGenerator?.model || '',
             participantActivityBaseline: Number.isFinite(options.participantActivityBaseline)
                 ? options.participantActivityBaseline
                 : this.getParticipantActivityVersion(guildId)
         };
 
-        this.pendingPureBrainResponses.set(runId, pending);
-        this.runPureBrainTurn(pending, {
+        this.pendingBigHeartResponses.set(runId, pending);
+        this.runBigHeartTurn(pending, {
             ...options,
             transcript,
             reason
         }).catch((error) => {
-            console.error(`[Bot] pureBrain run escaped runId=${runId}:`, error);
-            this.stagePureBrainFailure(runId, error, 'runtime');
+            console.error(`[Bot] bigHeart run escaped runId=${runId}:`, error);
+            this.stageBigHeartFailure(runId, error, 'runtime');
         });
 
-        console.log(`[Bot] pureBrain dispatched runId=${runId}, model=${pending.model || 'unknown'}, reason="${reason}"`);
+        console.log(`[Bot] bigHeart dispatched runId=${runId}, model=${pending.model || 'unknown'}, reason="${reason}"`);
         return { dispatched: true, runId };
     }
 
-    async runPureBrainTurn(pending, input = {}) {
+    async runBigHeartTurn(pending, input = {}) {
         try {
-            const result = await this.pureBrainGenerator.generate({
+            const result = await this.bigHeartGenerator.generate({
                 ...input,
                 reason: pending.reason,
                 transcript: pending.transcript,
@@ -4439,44 +4439,44 @@ class AlphaClawdVoiceBot {
             });
 
             if (this.recordingState.get(pending.guildId) !== this.RecordingState.RECORDING) {
-                console.log(`[Bot] Dropping pureBrain response ${pending.runId}; recording is no longer active`);
+                console.log(`[Bot] Dropping bigHeart response ${pending.runId}; recording is no longer active`);
                 return;
             }
 
             const answer = this.podcastGenerator?.sanitizeSpeech?.(result.answer) || result.answer;
-            this.stagePureBrainResponse(pending.guildId, pending, answer, {
+            this.stageBigHeartResponse(pending.guildId, pending, answer, {
                 model: result.model
             });
         } catch (error) {
-            this.stagePureBrainFailure(pending.runId, error, 'anthropic');
+            this.stageBigHeartFailure(pending.runId, error, 'anthropic');
         } finally {
-            this.cleanupPendingPureBrain(pending.runId);
+            this.cleanupPendingBigHeart(pending.runId);
         }
     }
 
-    stagePureBrainFailure(runId, rawError, source = 'anthropic') {
-        const pending = runId ? this.pendingPureBrainResponses.get(runId) : null;
+    stageBigHeartFailure(runId, rawError, source = 'anthropic') {
+        const pending = runId ? this.pendingBigHeartResponses.get(runId) : null;
         if (!pending) {
             return false;
         }
 
-        const errorText = String(rawError?.message || rawError || 'PureBrain did not provide an error message.').trim();
+        const errorText = String(rawError?.message || rawError || 'BigHeart did not provide an error message.').trim();
         const conciseError = errorText.length > 500
             ? `${errorText.slice(0, 497)}...`
             : errorText;
 
         try {
             if (this.recordingState.get(pending.guildId) === this.RecordingState.RECORDING) {
-                const stagedText = `PureBrain could not complete the Opus 3 request. ${conciseError}`;
-                this.stagePureBrainResponse(pending.guildId, pending, stagedText, {
+                const stagedText = `BigHeart could not complete the Opus 3 request. ${conciseError}`;
+                this.stageBigHeartResponse(pending.guildId, pending, stagedText, {
                     model: pending.model
                 });
-                console.warn(`[Bot] pureBrain ${source} failure staged runId=${runId}: ${conciseError}`);
+                console.warn(`[Bot] bigHeart ${source} failure staged runId=${runId}: ${conciseError}`);
             } else {
-                console.warn(`[Bot] pureBrain ${source} failure for ${runId} after recording ended: ${conciseError}`);
+                console.warn(`[Bot] bigHeart ${source} failure for ${runId} after recording ended: ${conciseError}`);
             }
         } finally {
-            this.cleanupPendingPureBrain(runId);
+            this.cleanupPendingBigHeart(runId);
         }
 
         return true;
@@ -4585,7 +4585,7 @@ class AlphaClawdVoiceBot {
                 speech: '',
                 text: '',
                 bigBrain: { requested: false, reason: '', consumedRunId: '' },
-                pureBrain: { requested: false, reason: '', consumedRunId: '' }
+                bigHeart: { requested: false, reason: '', consumedRunId: '' }
             };
         }
     }
@@ -4843,9 +4843,9 @@ class AlphaClawdVoiceBot {
             if (options.bigBrainRunId || consumedBigBrainRunId) {
                 transcriptEntry.bigBrainRunId = options.bigBrainRunId || consumedBigBrainRunId;
             }
-            const consumedPureBrainRunId = finalResponse?.pureBrain?.consumedRunId;
-            if (options.pureBrainRunId || consumedPureBrainRunId) {
-                transcriptEntry.pureBrainRunId = options.pureBrainRunId || consumedPureBrainRunId;
+            const consumedBigHeartRunId = finalResponse?.bigHeart?.consumedRunId;
+            if (options.bigHeartRunId || consumedBigHeartRunId) {
+                transcriptEntry.bigHeartRunId = options.bigHeartRunId || consumedBigHeartRunId;
             }
             const injectedAwarenessInjections = this.formatAwarenessInjectionsForTranscript(options.awarenessInjections);
             if (injectedAwarenessInjections.length > 0) {

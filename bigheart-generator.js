@@ -4,38 +4,38 @@ const {
     normalizeBaseUrl
 } = require('./anthropic-messages');
 
-const DEFAULT_PURE_BRAIN_MODEL = 'claude-3-opus-20240229';
+const DEFAULT_BIG_HEART_MODEL = 'claude-3-opus-20240229';
 
-class PureBrainGenerator {
+class BigHeartGenerator {
     constructor(options = {}) {
         this.baseUrl = normalizeBaseUrl(
             options.baseUrl ||
-            process.env.PODCAST_PURE_BRAIN_BASE_URL ||
+            process.env.PODCAST_BIG_HEART_BASE_URL ||
             'https://api.anthropic.com/v1'
         );
-        this.model = options.model || process.env.PODCAST_PURE_BRAIN_MODEL || DEFAULT_PURE_BRAIN_MODEL;
+        this.model = options.model || process.env.PODCAST_BIG_HEART_MODEL || DEFAULT_BIG_HEART_MODEL;
         this.apiKey = options.apiKey ||
-            process.env.PODCAST_PURE_BRAIN_API_KEY ||
+            process.env.PODCAST_BIG_HEART_API_KEY ||
             process.env.ANTHROPIC_API_KEY ||
             process.env.PODCAST_GENERATOR_API_KEY;
         this.apiKeySource = options.apiKey
             ? 'options.apiKey'
-            : process.env.PODCAST_PURE_BRAIN_API_KEY
-                ? 'PODCAST_PURE_BRAIN_API_KEY'
+            : process.env.PODCAST_BIG_HEART_API_KEY
+                ? 'PODCAST_BIG_HEART_API_KEY'
                 : process.env.ANTHROPIC_API_KEY
                     ? 'ANTHROPIC_API_KEY'
                     : process.env.PODCAST_GENERATOR_API_KEY
                         ? 'PODCAST_GENERATOR_API_KEY'
                         : null;
-        this.timeout = Number(options.timeout || process.env.PODCAST_PURE_BRAIN_TIMEOUT_MS || 180000);
-        this.maxTokens = Number(options.maxTokens || process.env.PODCAST_PURE_BRAIN_MAX_TOKENS || 1200);
-        this.version = options.version || process.env.PODCAST_PURE_BRAIN_ANTHROPIC_VERSION || process.env.ANTHROPIC_VERSION || DEFAULT_ANTHROPIC_VERSION;
-        this.temperature = options.temperature ?? process.env.PODCAST_PURE_BRAIN_TEMPERATURE;
+        this.timeout = Number(options.timeout || process.env.PODCAST_BIG_HEART_TIMEOUT_MS || 180000);
+        this.maxTokens = Number(options.maxTokens || process.env.PODCAST_BIG_HEART_MAX_TOKENS || 1200);
+        this.version = options.version || process.env.PODCAST_BIG_HEART_ANTHROPIC_VERSION || process.env.ANTHROPIC_VERSION || DEFAULT_ANTHROPIC_VERSION;
+        this.temperature = options.temperature ?? process.env.PODCAST_BIG_HEART_TEMPERATURE;
     }
 
     buildSystemPrompt() {
         return [
-            'You are PureBrain, a direct Claude Opus 3 reasoning pass for Alpha-Clawd.',
+            'You are BigHeart, a direct Claude Opus 3 reasoning pass for Alpha-Clawd.',
             'You do not speak to the live podcast audience. Produce private context that Alpha-Clawd may later integrate.',
             'You have no web, tools, server files, prior episode archive, or runtime access unless that information is explicitly included in the prompt.',
             'If the request depends on ground truth you cannot verify from the provided context, say that plainly and give only a clearly-labeled best-effort read.',
@@ -45,7 +45,7 @@ class PureBrainGenerator {
 
     buildUserPrompt(input = {}) {
         const lines = [
-            '[Podcast pureBrain request]',
+            '[Podcast bigHeart request]',
             '',
             `Reason for handoff: ${String(input.reason || '').trim() || 'No reason supplied.'}`
         ];
@@ -83,7 +83,7 @@ class PureBrainGenerator {
 
         lines.push(
             '',
-            'Return only the staged PureBrain context/answer. Do not wrap it in JSON.'
+            'Return only the staged BigHeart context/answer. Do not wrap it in JSON.'
         );
 
         return lines.filter(Boolean).join('\n');
@@ -150,7 +150,7 @@ class PureBrainGenerator {
 
     async generate(input = {}) {
         if (!this.apiKey) {
-            throw new Error('PureBrain Anthropic API key not provided. Set PODCAST_PURE_BRAIN_API_KEY or ANTHROPIC_API_KEY.');
+            throw new Error('BigHeart Anthropic API key not provided. Set PODCAST_BIG_HEART_API_KEY or ANTHROPIC_API_KEY.');
         }
 
         const start = Date.now();
@@ -164,10 +164,10 @@ class PureBrainGenerator {
 
         const answer = this.sanitizeAnswer(result?.choices?.[0]?.message?.content || '');
         if (!answer) {
-            throw new Error('PureBrain returned an empty response');
+            throw new Error('BigHeart returned an empty response');
         }
 
-        console.log(`[PureBrainGenerator] Completed in ${Date.now() - start}ms: chars=${answer.length}, model=${result.model || this.model}`);
+        console.log(`[BigHeartGenerator] Completed in ${Date.now() - start}ms: chars=${answer.length}, model=${result.model || this.model}`);
         return {
             answer,
             model: result.model || this.model,
@@ -177,6 +177,6 @@ class PureBrainGenerator {
 }
 
 module.exports = {
-    DEFAULT_PURE_BRAIN_MODEL,
-    PureBrainGenerator
+    DEFAULT_BIG_HEART_MODEL,
+    BigHeartGenerator
 };

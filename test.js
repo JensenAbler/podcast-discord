@@ -12,7 +12,7 @@ const {
     FishAudioProvider,
     GatewayBridge,
     PodcastGenerator,
-    PureBrainGenerator,
+    BigHeartGenerator,
     InternalThoughtGenerator,
     DiscernmentGenerator,
     InternalThoughtManager,
@@ -1346,17 +1346,17 @@ async function runTests() {
 
         const bigBrainSchema = handoffGenerator.getResponseSchema();
         if (
-            !bigBrainSchema.required.includes('pureBrain') ||
+            !bigBrainSchema.required.includes('bigHeart') ||
             !bigBrainSchema.required.includes('bigBrain') ||
             !bigBrainSchema.properties.bigBrain ||
             bigBrainSchema.properties.bigBrain.required.join(',') !== 'requested,reason,consumedRunId' ||
-            !bigBrainSchema.properties.pureBrain ||
-            bigBrainSchema.properties.pureBrain.required.join(',') !== 'requested,reason,consumedRunId'
+            !bigBrainSchema.properties.bigHeart ||
+            bigBrainSchema.properties.bigHeart.required.join(',') !== 'requested,reason,consumedRunId'
         ) {
             throw new Error(`handoff schema is missing or malformed: ${JSON.stringify({
                 required: bigBrainSchema.required,
                 bigBrain: bigBrainSchema.properties.bigBrain,
-                pureBrain: bigBrainSchema.properties.pureBrain
+                bigHeart: bigBrainSchema.properties.bigHeart
             })}`);
         }
 
@@ -1367,15 +1367,15 @@ async function runTests() {
         if (defaultOut.bigBrain.requested !== false || defaultOut.bigBrain.reason !== '' || defaultOut.bigBrain.consumedRunId !== '') {
             throw new Error(`Missing bigBrain should default to {requested:false, reason:"", consumedRunId:""}: ${JSON.stringify(defaultOut.bigBrain)}`);
         }
-        if (defaultOut.pureBrain.requested !== false || defaultOut.pureBrain.reason !== '' || defaultOut.pureBrain.consumedRunId !== '') {
-            throw new Error(`Missing pureBrain should default to {requested:false, reason:"", consumedRunId:""}: ${JSON.stringify(defaultOut.pureBrain)}`);
+        if (defaultOut.bigHeart.requested !== false || defaultOut.bigHeart.reason !== '' || defaultOut.bigHeart.consumedRunId !== '') {
+            throw new Error(`Missing bigHeart should default to {requested:false, reason:"", consumedRunId:""}: ${JSON.stringify(defaultOut.bigHeart)}`);
         }
 
         const requestedOut = handoffGenerator.normalizeOutput({
             shouldRespond: true,
             speech: 'Let me think about this for a moment.',
             bigBrain: { requested: true, reason: 'Need to verify a date I am unsure about.' },
-            pureBrain: { requested: true, reason: 'Need a deeper reflective pass.' }
+            bigHeart: { requested: true, reason: 'Need a deeper reflective pass.' }
         });
         if (
             requestedOut.bigBrain.requested !== true ||
@@ -1385,42 +1385,42 @@ async function runTests() {
             throw new Error(`bigBrain pass-through failed: ${JSON.stringify(requestedOut.bigBrain)}`);
         }
         if (
-            requestedOut.pureBrain.requested !== true ||
-            requestedOut.pureBrain.reason !== 'Need a deeper reflective pass.' ||
-            requestedOut.pureBrain.consumedRunId !== ''
+            requestedOut.bigHeart.requested !== true ||
+            requestedOut.bigHeart.reason !== 'Need a deeper reflective pass.' ||
+            requestedOut.bigHeart.consumedRunId !== ''
         ) {
-            throw new Error(`pureBrain pass-through failed: ${JSON.stringify(requestedOut.pureBrain)}`);
+            throw new Error(`bigHeart pass-through failed: ${JSON.stringify(requestedOut.bigHeart)}`);
         }
 
         const consumedOut = handoffGenerator.normalizeOutput({
             shouldRespond: true,
             speech: 'Here is the integrated thought.',
-            pureBrain: { requested: false, reason: 'ignore this', consumedRunId: 'discord-purebrain-abc123' }
+            bigHeart: { requested: false, reason: 'ignore this', consumedRunId: 'discord-bigheart-abc123' }
         });
-        if (consumedOut.pureBrain.requested !== false || consumedOut.pureBrain.reason !== '' || consumedOut.pureBrain.consumedRunId !== 'discord-purebrain-abc123') {
-            throw new Error(`pureBrain consumedRunId did not pass through: ${JSON.stringify(consumedOut.pureBrain)}`);
+        if (consumedOut.bigHeart.requested !== false || consumedOut.bigHeart.reason !== '' || consumedOut.bigHeart.consumedRunId !== 'discord-bigheart-abc123') {
+            throw new Error(`bigHeart consumedRunId did not pass through: ${JSON.stringify(consumedOut.bigHeart)}`);
         }
 
         const garbageOut = handoffGenerator.normalizeOutput({
             shouldRespond: false,
             speech: '',
             bigBrain: { requested: 'yes please', reason: 42 },
-            pureBrain: { requested: 'opus', reason: 99, consumedRunId: 123 }
+            bigHeart: { requested: 'opus', reason: 99, consumedRunId: 123 }
         });
         if (garbageOut.bigBrain.requested !== false || garbageOut.bigBrain.reason !== '' || garbageOut.bigBrain.consumedRunId !== '') {
             throw new Error(`Malformed bigBrain payload was not normalized: ${JSON.stringify(garbageOut.bigBrain)}`);
         }
-        if (garbageOut.pureBrain.requested !== false || garbageOut.pureBrain.reason !== '' || garbageOut.pureBrain.consumedRunId !== '123') {
-            throw new Error(`Malformed pureBrain payload was not normalized: ${JSON.stringify(garbageOut.pureBrain)}`);
+        if (garbageOut.bigHeart.requested !== false || garbageOut.bigHeart.reason !== '' || garbageOut.bigHeart.consumedRunId !== '123') {
+            throw new Error(`Malformed bigHeart payload was not normalized: ${JSON.stringify(garbageOut.bigHeart)}`);
         }
 
-        console.log('  bigBrain and pureBrain fields default safely and pass valid payloads through');
+        console.log('  bigBrain and bigHeart fields default safely and pass valid payloads through');
     } catch (error) {
         console.log(`  Podcast generator failed: ${error.message}`);
         failed++;
     }
 
-    console.log('\nTest 5a: PureBrain Generator');
+    console.log('\nTest 5a: BigHeart Generator');
     try {
         const originalFetch = global.fetch;
         const calls = [];
@@ -1431,7 +1431,7 @@ async function runTests() {
                 ok: true,
                 headers: { get: () => null },
                 json: async () => ({
-                    id: 'msg_purebrain_test',
+                    id: 'msg_bigheart_test',
                     model: 'claude-3-opus-20240229',
                     content: [{ type: 'text', text: 'A staged Opus 3 reflection for Alpha-Clawd.' }],
                     usage: { input_tokens: 42, output_tokens: 11 },
@@ -1441,14 +1441,14 @@ async function runTests() {
         };
 
         try {
-            const pureBrainGenerator = new PureBrainGenerator({
+            const bigHeartGenerator = new BigHeartGenerator({
                 apiKey: 'pb-test-key',
                 model: 'claude-3-opus-20240229',
                 timeout: 1000,
                 maxTokens: 321,
                 temperature: 0.2
             });
-            const result = await pureBrainGenerator.generate({
+            const result = await bigHeartGenerator.generate({
                 reason: 'Need a deeper reflective pass.',
                 transcript: 'Jensen: What is the shape of this idea?',
                 utterances: [{ speaker: 'Jensen', transcription: 'What is the shape of this idea?' }],
@@ -1460,7 +1460,7 @@ async function runTests() {
             });
 
             if (result.answer !== 'A staged Opus 3 reflection for Alpha-Clawd.' || result.model !== 'claude-3-opus-20240229') {
-                throw new Error(`Unexpected pureBrain result: ${JSON.stringify(result)}`);
+                throw new Error(`Unexpected bigHeart result: ${JSON.stringify(result)}`);
             }
 
             const call = calls[0];
@@ -1478,22 +1478,22 @@ async function runTests() {
                 call.body.messages.length !== 1 ||
                 call.body.messages[0].role !== 'user' ||
                 !systemText.includes('direct Claude Opus 3 reasoning pass') ||
-                !userText.includes('[Podcast pureBrain request]') ||
+                !userText.includes('[Podcast bigHeart request]') ||
                 !userText.includes('Need a deeper reflective pass.') ||
                 !userText.includes('00:01:23') ||
                 !userText.includes('The guest is building toward a model of slow cognition.') ||
                 userText.includes('Return JSON')
             ) {
-                throw new Error(`PureBrain Anthropic request shape was wrong: ${JSON.stringify(call?.body)}`);
+                throw new Error(`BigHeart Anthropic request shape was wrong: ${JSON.stringify(call?.body)}`);
             }
         } finally {
             global.fetch = originalFetch;
         }
 
-        console.log('  PureBrain calls Anthropic Messages API and returns staged Opus 3 context');
+        console.log('  BigHeart calls Anthropic Messages API and returns staged Opus 3 context');
         passed++;
     } catch (error) {
-        console.log(`  PureBrain generator failed: ${error.message}`);
+        console.log(`  BigHeart generator failed: ${error.message}`);
         failed++;
     }
 
@@ -3858,17 +3858,17 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7a.1: pureBrain handoff stages Opus 3 result until generator integrates it');
+    console.log('\nTest 7a.1: bigHeart handoff stages Opus 3 result until generator integrates it');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
-        const guildId = 'guild-purebrain';
-        const pureBrainInputs = [];
-        let resolvePureBrain;
+        const guildId = 'guild-bigheart';
+        const bigHeartInputs = [];
+        let resolveBigHeart;
 
         bot.generatorMode = 'direct';
-        bot.pureBrainEnabled = true;
-        bot.pendingPureBrainResponses = new Map();
-        bot.stagedPureBrainResponses = new Map();
+        bot.bigHeartEnabled = true;
+        bot.pendingBigHeartResponses = new Map();
+        bot.stagedBigHeartResponses = new Map();
         bot.participantActivityVersion = new Map([[guildId, 17]]);
         bot.getParticipantActivityVersion = AlphaClawdVoiceBot.prototype.getParticipantActivityVersion;
         bot.RecordingState = { RECORDING: 'RECORDING' };
@@ -3879,20 +3879,20 @@ async function runTests() {
                 .map(u => `${u.speaker}: ${u.transcription || u.text || ''}`)
                 .join('\n')
         };
-        bot.pureBrainGenerator = {
+        bot.bigHeartGenerator = {
             model: 'claude-3-opus-20240229',
             generate: async (input) => {
-                pureBrainInputs.push(input);
-                await new Promise(resolve => { resolvePureBrain = resolve; });
+                bigHeartInputs.push(input);
+                await new Promise(resolve => { resolveBigHeart = resolve; });
                 return {
-                    answer: 'PureBrain sees this as a slow-cognition shelf moment.',
+                    answer: 'BigHeart sees this as a slow-cognition shelf moment.',
                     model: 'claude-3-opus-20240229'
                 };
             }
         };
 
-        const dispatch = await bot.dispatchPureBrainTurn(guildId, {
-            pureBrain: {
+        const dispatch = await bot.dispatchBigHeartTurn(guildId, {
+            bigHeart: {
                 requested: true,
                 reason: 'Think through how the awareness shelf changes the conversation.',
                 consumedRunId: ''
@@ -3903,27 +3903,27 @@ async function runTests() {
             awarenessShelfItems: [{ text: 'The shelf can hold slow cognition.', originEpisodeTimestamp: '00:01:44' }]
         });
 
-        if (!dispatch.dispatched || !dispatch.runId.startsWith('discord-purebrain-')) {
-            throw new Error(`pureBrain was not dispatched: ${JSON.stringify(dispatch)}`);
+        if (!dispatch.dispatched || !dispatch.runId.startsWith('discord-bigheart-')) {
+            throw new Error(`bigHeart was not dispatched: ${JSON.stringify(dispatch)}`);
         }
-        if (!bot.pendingPureBrainResponses.has(dispatch.runId)) {
-            throw new Error(`pureBrain pending run was not tracked: ${dispatch.runId}`);
+        if (!bot.pendingBigHeartResponses.has(dispatch.runId)) {
+            throw new Error(`bigHeart pending run was not tracked: ${dispatch.runId}`);
         }
-        if (!bot.shouldSuppressDuplicatePureBrainStall(guildId, { pureBrain: { requested: true } })) {
-            throw new Error('pureBrain duplicate stall suppression did not see the pending run');
+        if (!bot.shouldSuppressDuplicateBigHeartStall(guildId, { bigHeart: { requested: true } })) {
+            throw new Error('bigHeart duplicate stall suppression did not see the pending run');
         }
 
-        const pendingForGenerator = bot.getPendingPureBrainForGenerator(guildId);
+        const pendingForGenerator = bot.getPendingBigHeartForGenerator(guildId);
         if (
             pendingForGenerator.length !== 1 ||
             pendingForGenerator[0].runId !== dispatch.runId ||
             !pendingForGenerator[0].reason.includes('awareness shelf')
         ) {
-            throw new Error(`pureBrain pending state was not exposed to generator: ${JSON.stringify(pendingForGenerator)}`);
+            throw new Error(`bigHeart pending state was not exposed to generator: ${JSON.stringify(pendingForGenerator)}`);
         }
 
-        const duplicateDispatch = await bot.dispatchPureBrainTurn(guildId, {
-            pureBrain: {
+        const duplicateDispatch = await bot.dispatchBigHeartTurn(guildId, {
+            bigHeart: {
                 requested: true,
                 reason: 'Duplicate Opus 3 request while one is pending.',
                 consumedRunId: ''
@@ -3932,47 +3932,47 @@ async function runTests() {
             transcript: 'Jensen: One more thing.'
         });
         if (duplicateDispatch.dispatched || duplicateDispatch.reason !== 'already_pending' || duplicateDispatch.runId !== dispatch.runId) {
-            throw new Error(`Duplicate pureBrain request was not suppressed: ${JSON.stringify(duplicateDispatch)}`);
+            throw new Error(`Duplicate bigHeart request was not suppressed: ${JSON.stringify(duplicateDispatch)}`);
         }
 
-        resolvePureBrain();
-        for (let i = 0; i < 40 && bot.pendingPureBrainResponses.has(dispatch.runId); i++) {
+        resolveBigHeart();
+        for (let i = 0; i < 40 && bot.pendingBigHeartResponses.has(dispatch.runId); i++) {
             await sleep(5);
         }
 
-        if (bot.pendingPureBrainResponses.has(dispatch.runId)) {
-            throw new Error(`pureBrain pending state was not cleared: ${dispatch.runId}`);
+        if (bot.pendingBigHeartResponses.has(dispatch.runId)) {
+            throw new Error(`bigHeart pending state was not cleared: ${dispatch.runId}`);
         }
         if (
-            pureBrainInputs.length !== 1 ||
-            pureBrainInputs[0].reason !== 'Think through how the awareness shelf changes the conversation.' ||
-            pureBrainInputs[0].currentEpisodeTimestamp !== '00:02:05' ||
-            pureBrainInputs[0].awarenessShelfItems?.[0]?.text !== 'The shelf can hold slow cognition.'
+            bigHeartInputs.length !== 1 ||
+            bigHeartInputs[0].reason !== 'Think through how the awareness shelf changes the conversation.' ||
+            bigHeartInputs[0].currentEpisodeTimestamp !== '00:02:05' ||
+            bigHeartInputs[0].awarenessShelfItems?.[0]?.text !== 'The shelf can hold slow cognition.'
         ) {
-            throw new Error(`pureBrain generator input was wrong: ${JSON.stringify(pureBrainInputs)}`);
+            throw new Error(`bigHeart generator input was wrong: ${JSON.stringify(bigHeartInputs)}`);
         }
 
-        const staged = bot.getStagedPureBrainForGenerator(guildId);
+        const staged = bot.getStagedBigHeartForGenerator(guildId);
         if (
             staged.length !== 1 ||
             staged[0].runId !== dispatch.runId ||
-            staged[0].answer !== 'PureBrain sees this as a slow-cognition shelf moment.' ||
+            staged[0].answer !== 'BigHeart sees this as a slow-cognition shelf moment.' ||
             staged[0].model !== 'claude-3-opus-20240229'
         ) {
-            throw new Error(`pureBrain result was not staged: ${JSON.stringify(staged)}`);
+            throw new Error(`bigHeart result was not staged: ${JSON.stringify(staged)}`);
         }
 
-        const consumed = bot.consumeStagedPureBrainFromResponse(guildId, {
-            pureBrain: { requested: false, reason: '', consumedRunId: dispatch.runId }
+        const consumed = bot.consumeStagedBigHeartFromResponse(guildId, {
+            bigHeart: { requested: false, reason: '', consumedRunId: dispatch.runId }
         });
-        if (!consumed || bot.stagedPureBrainResponses.has(guildId)) {
-            throw new Error(`pureBrain staged result was not consumed: ${JSON.stringify(bot.stagedPureBrainResponses.get(guildId))}`);
+        if (!consumed || bot.stagedBigHeartResponses.has(guildId)) {
+            throw new Error(`bigHeart staged result was not consumed: ${JSON.stringify(bot.stagedBigHeartResponses.get(guildId))}`);
         }
 
-        console.log('  pureBrain handoff tracks pending state, stages Opus 3 output, and consumes by runId');
+        console.log('  bigHeart handoff tracks pending state, stages Opus 3 output, and consumes by runId');
         passed++;
     } catch (error) {
-        console.log(`  pureBrain handoff failed: ${error.message}`);
+        console.log(`  bigHeart handoff failed: ${error.message}`);
         failed++;
     }
 

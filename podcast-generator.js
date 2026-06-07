@@ -22,7 +22,7 @@ const {
  * speech field out token-by-token, so we can hand characters to Fish TTS
  * before the full payload has finished generating.
  *
- * Intended for the schema { shouldRespond, speech, bigBrain, pureBrain }. Tolerates
+ * Intended for the schema { shouldRespond, speech, bigBrain, bigHeart }. Tolerates
  * keys arriving in any order, but requires the speech value to be a JSON
  * string. JSON escapes (\", \n, \uXXXX, etc.) are decoded incrementally;
  * if a chunk lands mid-escape we wait for the rest of the bytes before
@@ -138,7 +138,7 @@ class IncrementalSpeechReader {
                 shouldRespond: this.shouldRespondValue ?? this.fullSpeech.length > 0,
                 speech: this.fullSpeech,
                 bigBrain: { requested: false, reason: '', consumedRunId: '' },
-                pureBrain: { requested: false, reason: '', consumedRunId: '' }
+                bigHeart: { requested: false, reason: '', consumedRunId: '' }
             };
         }
     }
@@ -339,12 +339,12 @@ class PodcastGenerator {
         if (input.remember !== false) {
             this.rememberTurn(transcript, output);
         }
-        console.log(`[PodcastGenerator] Completed in ${duration}ms: respond=${output.shouldRespond}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}, pureBrain=${output.pureBrain.requested}`);
+        console.log(`[PodcastGenerator] Completed in ${duration}ms: respond=${output.shouldRespond}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}, bigHeart=${output.bigHeart.requested}`);
         if (output.bigBrain.requested) {
             console.log(`[PodcastGenerator] bigBrain requested. reason="${output.bigBrain.reason}"`);
         }
-        if (output.pureBrain.requested) {
-            console.log(`[PodcastGenerator] pureBrain requested. reason="${output.pureBrain.reason}"`);
+        if (output.bigHeart.requested) {
+            console.log(`[PodcastGenerator] bigHeart requested. reason="${output.bigHeart.reason}"`);
         }
         return output;
     }
@@ -524,12 +524,12 @@ class PodcastGenerator {
                 this.logUsage({ provider: request.provider, usage: lastUsage }, keyConfigSnapshot);
             }
             const duration = Date.now() - startTime;
-            console.log(`[PodcastGenerator] Streaming completed in ${duration}ms: respond=${output.shouldRespond}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}, pureBrain=${output.pureBrain.requested}`);
+            console.log(`[PodcastGenerator] Streaming completed in ${duration}ms: respond=${output.shouldRespond}, chars=${output.speech.length}, bigBrain=${output.bigBrain.requested}, bigHeart=${output.bigHeart.requested}`);
             if (output.bigBrain.requested) {
                 console.log(`[PodcastGenerator] bigBrain requested. reason="${output.bigBrain.reason}"`);
             }
-            if (output.pureBrain.requested) {
-                console.log(`[PodcastGenerator] pureBrain requested. reason="${output.pureBrain.reason}"`);
+            if (output.bigHeart.requested) {
+                console.log(`[PodcastGenerator] bigHeart requested. reason="${output.bigHeart.reason}"`);
             }
 
             // Resolve in case the deltas never explicitly carried shouldRespond
@@ -836,10 +836,10 @@ class PodcastGenerator {
             , '- When a completed bigBrain answer is staged in the user prompt, it is on deck, not mandatory. Integrate it only when it fits the current flow. If you use it in speech, set consumedRunId to its runId; otherwise leave consumedRunId empty.'
             , '- If a staged bigBrain item is a failure message, do not answer the original factual question from vibes or training data. Be honest that Open Claw could not verify it, name the failure briefly if useful, and invite a retry later only if that fits the flow.'
             , ''
-            , 'pureBrain (direct Claude Opus 3 handoff):'
-            , '- pureBrain is available as a separate direct Opus 3 pass. Its activation criteria are not defined yet.'
-            , '- If you set pureBrain.requested=true, keep speech to a brief in-character stall and put the handoff request in pureBrain.reason. Choose at most one handoff option per turn.'
-            , '- When a completed pureBrain result is staged in the user prompt, it is on deck, not mandatory. Integrate it only when it fits the current flow. If you use it in speech, set pureBrain.consumedRunId to its runId; otherwise leave consumedRunId empty.'
+            , 'bigHeart (direct Claude Opus 3 handoff):'
+            , '- bigHeart is available as a separate direct Opus 3 pass. Its activation criteria are not defined yet.'
+            , '- If you set bigHeart.requested=true, keep speech to a brief in-character stall and put the handoff request in bigHeart.reason. Choose at most one handoff option per turn.'
+            , '- When a completed bigHeart result is staged in the user prompt, it is on deck, not mandatory. Integrate it only when it fits the current flow. If you use it in speech, set bigHeart.consumedRunId to its runId; otherwise leave consumedRunId empty.'
         ].join('\n');
     }
 
@@ -942,27 +942,27 @@ class PodcastGenerator {
             );
         }
 
-        const pendingPureBrain = this.formatPendingPureBrain(options.pendingPureBrain || []);
-        if (pendingPureBrain) {
+        const pendingBigHeart = this.formatPendingBigHeart(options.pendingBigHeart || []);
+        if (pendingBigHeart) {
             lines.push(
                 '',
-                'PureBrain request already pending:',
-                pendingPureBrain,
+                'BigHeart request already pending:',
+                pendingBigHeart,
                 '',
-                'Do not request PureBrain again or speak another PureBrain stall while this is pending. If the guest is only checking whether the pending request is done, prefer a short status acknowledgment or silence. Set pureBrain.requested=false.'
+                'Do not request BigHeart again or speak another BigHeart stall while this is pending. If the guest is only checking whether the pending request is done, prefer a short status acknowledgment or silence. Set bigHeart.requested=false.'
             );
         }
 
-        const stagedPureBrain = this.formatStagedPureBrain(options.stagedPureBrain || [], {
-            maxAnswerChars: options.maxStagedPureBrainAnswerChars || this.maxStagedBigBrainAnswerChars
+        const stagedBigHeart = this.formatStagedBigHeart(options.stagedBigHeart || [], {
+            maxAnswerChars: options.maxStagedBigHeartAnswerChars || this.maxStagedBigBrainAnswerChars
         });
-        if (stagedPureBrain) {
+        if (stagedBigHeart) {
             lines.push(
                 '',
-                'Staged pureBrain result(s), not yet spoken:',
-                stagedPureBrain,
+                'Staged bigHeart result(s), not yet spoken:',
+                stagedBigHeart,
                 '',
-                'These are direct Claude Opus 3 notes waiting on deck. Use one only when it fits the current conversational moment. If you speak one, weave it into the flow naturally and set pureBrain.consumedRunId to that runId. If it would interrupt or the guest is still developing the thought, leave consumedRunId empty; it will stay staged.'
+                'These are direct Claude Opus 3 notes waiting on deck. Use one only when it fits the current conversational moment. If you speak one, weave it into the flow naturally and set bigHeart.consumedRunId to that runId. If it would interrupt or the guest is still developing the thought, leave consumedRunId empty; it will stay staged.'
             );
         }
 
@@ -1055,7 +1055,7 @@ class PodcastGenerator {
         return pending.join('\n\n');
     }
 
-    formatStagedPureBrain(items = [], options = {}) {
+    formatStagedBigHeart(items = [], options = {}) {
         const maxAnswerChars = this.parsePositiveInt(options.maxAnswerChars, this.maxStagedBigBrainAnswerChars);
         const maxReasonChars = this.parsePositiveInt(options.maxReasonChars, 420);
         const maxTranscriptChars = this.parsePositiveInt(options.maxTranscriptChars, 700);
@@ -1074,7 +1074,7 @@ class PodcastGenerator {
                     `runId: ${runId}`,
                     compactReason ? `why it was requested: ${compactReason}` : null,
                     compactTranscript ? `triggering transcript: ${compactTranscript}` : null,
-                    `PureBrain answer: ${compactAnswer}`
+                    `BigHeart answer: ${compactAnswer}`
                 ].filter(Boolean).join('\n');
             })
             .filter(Boolean);
@@ -1082,7 +1082,7 @@ class PodcastGenerator {
         return staged.join('\n\n');
     }
 
-    formatPendingPureBrain(items = []) {
+    formatPendingBigHeart(items = []) {
         const pending = (Array.isArray(items) ? items : [items])
             .map((item) => {
                 const runId = String(item?.runId || '').trim();
@@ -1306,15 +1306,15 @@ class PodcastGenerator {
         const compactUserContent = this.buildUserPrompt(transcript, input.wordData, {
             ...input,
             stagedBigBrain: this.compactStagedBigBrain(input.stagedBigBrain || []),
-            stagedPureBrain: this.compactStagedPureBrain(input.stagedPureBrain || []),
+            stagedBigHeart: this.compactStagedBigHeart(input.stagedBigHeart || []),
             awarenessInjections: this.compactAwarenessInjections(input.awarenessInjections || []),
             awarenessShelfItems: this.compactAwarenessShelfItems(input.awarenessShelfItems || []),
             pendingBigBrain: this.compactPendingBigBrain(input.pendingBigBrain || []),
-            pendingPureBrain: this.compactPendingPureBrain(input.pendingPureBrain || []),
+            pendingBigHeart: this.compactPendingBigHeart(input.pendingBigHeart || []),
             recentInternalThoughts: this.compactRecentInternalThoughts(input.recentInternalThoughts || []),
             showRunnerGuidance: this.compactShowRunnerGuidance(input.showRunnerGuidance || null),
             maxStagedBigBrainAnswerChars: Math.min(this.maxStagedBigBrainAnswerChars, 900),
-            maxStagedPureBrainAnswerChars: Math.min(this.maxStagedBigBrainAnswerChars, 900)
+            maxStagedBigHeartAnswerChars: Math.min(this.maxStagedBigBrainAnswerChars, 900)
         });
         fitted = [
             systemMessage,
@@ -1408,7 +1408,7 @@ class PodcastGenerator {
             }));
     }
 
-    compactStagedPureBrain(items = []) {
+    compactStagedBigHeart(items = []) {
         return this.compactStagedBigBrain(items);
     }
 
@@ -1442,7 +1442,7 @@ class PodcastGenerator {
             }));
     }
 
-    compactPendingPureBrain(items = []) {
+    compactPendingBigHeart(items = []) {
         return this.compactPendingBigBrain(items);
     }
 
@@ -1762,7 +1762,7 @@ class PodcastGenerator {
                         shouldRespond: false,
                         speech: '',
                         bigBrain: { requested: false, reason: '', consumedRunId: '' },
-                        pureBrain: { requested: false, reason: '', consumedRunId: '' }
+                        bigHeart: { requested: false, reason: '', consumedRunId: '' }
                     })
                 }
             }]
@@ -2027,7 +2027,7 @@ class PodcastGenerator {
         return {
             type: 'object',
             additionalProperties: false,
-            required: ['shouldRespond', 'speech', 'bigBrain', 'pureBrain'],
+            required: ['shouldRespond', 'speech', 'bigBrain', 'bigHeart'],
             properties: {
                 shouldRespond: {
                     type: 'boolean',
@@ -2057,7 +2057,7 @@ class PodcastGenerator {
                         }
                     }
                 },
-                pureBrain: {
+                bigHeart: {
                     type: 'object',
                     additionalProperties: false,
                     required: ['requested', 'reason', 'consumedRunId'],
@@ -2065,15 +2065,15 @@ class PodcastGenerator {
                     properties: {
                         requested: {
                             type: 'boolean',
-                            description: 'Set to true when this turn should be handed to the direct Opus 3 pureBrain pass.'
+                            description: 'Set to true when this turn should be handed to the direct Opus 3 bigHeart pass.'
                         },
                         reason: {
                             type: 'string',
-                            description: 'Short (1-2 sentences) explanation of what pureBrain should think through. Empty string when requested is false.'
+                            description: 'Short (1-2 sentences) explanation of what bigHeart should think through. Empty string when requested is false.'
                         },
                         consumedRunId: {
                             type: 'string',
-                            description: 'If this speech integrates a staged pureBrain answer, set this to that staged runId. Otherwise empty string.'
+                            description: 'If this speech integrates a staged bigHeart answer, set this to that staged runId. Otherwise empty string.'
                         }
                     }
                 }
@@ -2092,7 +2092,7 @@ class PodcastGenerator {
             speech,
             text: speech,
             bigBrain: this.normalizeBigBrain(output?.bigBrain),
-            pureBrain: this.normalizePureBrain(output?.pureBrain)
+            bigHeart: this.normalizeBigHeart(output?.bigHeart)
         };
     }
 
@@ -2103,7 +2103,7 @@ class PodcastGenerator {
         return { requested, reason, consumedRunId };
     }
 
-    normalizePureBrain(value) {
+    normalizeBigHeart(value) {
         const requested = Boolean(value && value.requested === true);
         const reason = requested ? String(value?.reason || '').trim() : '';
         const consumedRunId = requested ? '' : String(value?.consumedRunId || '').trim();
