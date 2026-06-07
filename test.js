@@ -217,6 +217,9 @@ async function runTests() {
         if (!connectParams.config.proactivity.proactiveAudio) {
             throw new Error('Gemini Live proactive audio was not enabled');
         }
+        if ('transparent' in connectParams.config.sessionResumption) {
+            throw new Error('Gemini Developer API does not support transparent session resumption');
+        }
 
         host.sendAudioFrame(Buffer.alloc(640));
         if (realtimeInputs[0]?.audio?.mimeType !== 'audio/pcm;rate=16000') {

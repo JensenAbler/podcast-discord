@@ -134,8 +134,7 @@ class GeminiLiveHost {
                         : ActivityHandling.START_OF_ACTIVITY_INTERRUPTS
                 },
                 sessionResumption: {
-                    handle: handle || undefined,
-                    transparent: true
+                    handle: handle || undefined
                 },
                 contextWindowCompression: {
                     triggerTokens: '24000',
