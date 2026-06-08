@@ -36,7 +36,7 @@ class GeminiLiveHost {
         this.model = options.model ||
             process.env.PODCAST_GEMINI_LIVE_MODEL ||
             'gemini-2.5-flash-native-audio-preview-12-2025';
-        this.voice = options.voice || process.env.PODCAST_GEMINI_LIVE_VOICE || 'Charon';
+        this.voice = options.voice || process.env.PODCAST_GEMINI_LIVE_VOICE || 'Aoede';
         this.systemInstruction = options.systemInstruction || '';
         this.client = options.client || null;
         this.clientFactory = options.clientFactory || ((apiKey) => new GoogleGenAI({

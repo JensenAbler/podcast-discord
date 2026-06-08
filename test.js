@@ -217,6 +217,9 @@ async function runTests() {
         if (!connectParams.config.proactivity.proactiveAudio) {
             throw new Error('Gemini Live proactive audio was not enabled');
         }
+        if (connectParams.config.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName !== 'Aoede') {
+            throw new Error('Gemini Live did not use the Aoede voice by default');
+        }
         if ('transparent' in connectParams.config.sessionResumption) {
             throw new Error('Gemini Developer API does not support transparent session resumption');
         }
