@@ -65,6 +65,21 @@ class VoiceManager {
             fs.mkdirSync(this.options.recordingDir, { recursive: true });
         }
 
+        this.recoveryPromise = AudioRecorder.recoverIncompleteRecordings(this.options.recordingDir)
+            .then((recoveries) => {
+                for (const recovery of recoveries) {
+                    console.log(
+                        `[VoiceManager] Recovered interrupted episode audio: ` +
+                        `${recovery.episodePath} (${recovery.stems.length} stems)`
+                    );
+                }
+                return recoveries;
+            })
+            .catch((error) => {
+                console.error(`[VoiceManager] Interrupted recording recovery failed: ${error.message}`);
+                return [];
+            });
+
         this.handleVoiceStateUpdate = this.handleVoiceStateUpdate.bind(this);
         this.client.on('voiceStateUpdate', this.handleVoiceStateUpdate);
     }
@@ -342,18 +357,10 @@ class VoiceManager {
             this.onUtterance(guildId, utterance);
         }
 
-        // If recording, save utterance to transcript and mixed audio
+        // Decoded participant PCM is journaled continuously in handleAudioChunk.
+        // A completed utterance only contributes transcript metadata here.
         if (this.isRecording.get(guildId)) {
             this.saveTranscriptEntry(guildId, utterance);
-
-            // Add speaker audio to mixed recording
-            const recorder = this.recorders.get(guildId);
-            if (recorder && utterance.audioBuffer) {
-                recorder.addSpeakerAudio(utterance.userId, utterance.audioBuffer, {
-                    volume: 1.0,
-                    startTime: utterance.startTime
-                });
-            }
         }
     }
 
@@ -364,6 +371,15 @@ class VoiceManager {
      * @param {Buffer} chunk - Raw s16le PCM
      */
     handleAudioChunk(guildId, userId, chunk) {
+        if (this.isRecording.get(guildId)) {
+            const recorder = this.recorders.get(guildId);
+            recorder?.addParticipantAudioChunk(userId, chunk, {
+                capturedAt: Date.now(),
+                sampleRate: 48000,
+                channels: 2
+            });
+        }
+
         if (this.onAudioChunk) {
             this.onAudioChunk(guildId, userId, chunk);
         }
@@ -479,6 +495,20 @@ class VoiceManager {
         if (recorder) {
             recorder.addBotAudio(audioBuffer, { volume: 0.9, ...options });
         }
+    }
+
+    addBotPcmChunkToRecording(guildId, audioBuffer, options = {}) {
+        if (!this.isRecording.get(guildId)) return;
+        this.recorders.get(guildId)?.addBotPcmChunk(audioBuffer, options);
+    }
+
+    anchorBotAudioRecordingGroup(guildId, groupId, playbackStartedAt) {
+        if (!this.isRecording.get(guildId)) return;
+        const startTime = typeof playbackStartedAt === 'string'
+            ? Date.parse(playbackStartedAt)
+            : Number(playbackStartedAt);
+        if (!Number.isFinite(startTime)) return;
+        this.recorders.get(guildId)?.anchorBotAudioGroup(groupId, startTime);
     }
 
     /**

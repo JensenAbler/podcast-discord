@@ -10,7 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { PassThrough } = require('stream');
+const { PassThrough, Transform } = require('stream');
 const { spawn } = require('child_process');
 const { StreamType } = require('@discordjs/voice');
 
@@ -131,6 +131,7 @@ class AlphaClawdVoiceBot {
         this.sessionHostModes = new Map(); // guildId -> current | gemini-live
         this.geminiLiveHosts = new Map(); // guildId -> GeminiLiveHost
         this.geminiLiveTurnStates = new Map(); // guildId -> Map<turnId, playback state>
+        this.geminiLiveInputTranscripts = new Map(); // guildId -> Gemini input transcript fragments
         this.geminiApiKey = options.geminiApiKey || process.env.GEMINI_API_KEY;
         this.geminiLiveHostFactory = options.geminiLiveHostFactory ||
             ((hostOptions) => new GeminiLiveHost(hostOptions));
@@ -301,9 +302,16 @@ class AlphaClawdVoiceBot {
         this.voiceManager.setUtteranceHandler(async (guildId, utterance) => {
             const transcription = (utterance.transcription || '').trim();
             const recordingActive = this.isRecordingActive(guildId);
+            const geminiLive = this.isGeminiLiveSession(guildId);
 
             // Debug: inject individual utterance for Gateway UI visibility
-            if (this.debugInject && transcription && this.wsClient.isAuthenticated && this.wsClient.canInjectMessages?.()) {
+            if (
+                !geminiLive &&
+                this.debugInject &&
+                transcription &&
+                this.wsClient.isAuthenticated &&
+                this.wsClient.canInjectMessages?.()
+            ) {
                 try {
                     await this.wsClient.injectMessage(
                         `[Podcast Voice] ${utterance.speaker}: ${transcription}`,
@@ -320,20 +328,27 @@ class AlphaClawdVoiceBot {
                 this.lastParticipantSpeechAt.set(guildId, Date.now());
                 this.recordParticipantSignal(guildId, utterance.userId, 'real_transcript', utterance);
                 this.confirmParticipantActivity(guildId, utterance.userId, 'transcript');
-                const participantTurnIdIntent = this.buildGeneratorTurnIdIntent('participant', [utterance]);
-                if (participantTurnIdIntent) {
-                    this.latestParticipantTurnIdIntent.set(guildId, participantTurnIdIntent);
+                if (!geminiLive) {
+                    const participantTurnIdIntent = this.buildGeneratorTurnIdIntent('participant', [utterance]);
+                    if (participantTurnIdIntent) {
+                        this.latestParticipantTurnIdIntent.set(guildId, participantTurnIdIntent);
+                    }
+                    this.observeInternalThoughtTranscriptEntry(guildId, {
+                        ...utterance,
+                        speakerRole: utterance.speakerRole || 'guest',
+                        source: 'participant'
+                    });
+                    this.observeShowRunnerTranscriptEntry(guildId, {
+                        ...utterance,
+                        speakerRole: utterance.speakerRole || 'guest',
+                        source: 'participant'
+                    });
+                } else {
+                    console.log(
+                        `[GeminiLive] Fish shadow transcript retained for forensics only: ` +
+                        `${utterance.speaker}: ${transcription}`
+                    );
                 }
-                this.observeInternalThoughtTranscriptEntry(guildId, {
-                    ...utterance,
-                    speakerRole: utterance.speakerRole || 'guest',
-                    source: 'participant'
-                });
-                this.observeShowRunnerTranscriptEntry(guildId, {
-                    ...utterance,
-                    speakerRole: utterance.speakerRole || 'guest',
-                    source: 'participant'
-                });
             } else if (transcription) {
                 const state = this.recordingState?.get?.(guildId) || this.getRecordingStateValue('IDLE');
                 console.log(`[Bot] Ignoring participant utterance for generator while recording state is ${state}`);
@@ -490,6 +505,7 @@ class AlphaClawdVoiceBot {
             voice: process.env.PODCAST_GEMINI_LIVE_VOICE,
             systemInstruction: this.buildGeminiLiveSystemPrompt(),
             onAudioStream: (turn) => {
+                this.flushGeminiLiveInputTranscript(guildId, turn.generatedAt);
                 this.startGeminiLivePlayback(guildId, turn).catch((error) => {
                     console.error(`[GeminiLive] Playback setup failed: ${error.message}`);
                 });
@@ -501,6 +517,12 @@ class AlphaClawdVoiceBot {
             },
             onInputTranscription: (transcription) => {
                 console.log(`[GeminiLive] Input transcript: ${transcription.text}`);
+                const state = this.geminiLiveInputTranscripts.get(guildId) || {
+                    text: '',
+                    startedAt: new Date().toISOString()
+                };
+                state.text += transcription.text || '';
+                this.geminiLiveInputTranscripts.set(guildId, state);
             },
             onOutputTranscription: (transcription) => {
                 console.log(`[GeminiLive] Output transcript: ${transcription.text}`);
@@ -521,6 +543,25 @@ class AlphaClawdVoiceBot {
         console.log(`[GeminiLive] Live host active for guild ${guildId}`);
     }
 
+    flushGeminiLiveInputTranscript(guildId, completedAt = new Date().toISOString()) {
+        const state = this.geminiLiveInputTranscripts.get(guildId);
+        this.geminiLiveInputTranscripts.delete(guildId);
+        const transcription = (state?.text || '').trim();
+        if (!transcription) return;
+
+        const entry = {
+            speaker: 'Participants',
+            speakerRole: 'guest',
+            transcription,
+            timestamp: state.startedAt,
+            speechStartedAt: state.startedAt,
+            speechEndedAt: completedAt,
+            source: 'gemini-live-input'
+        };
+        this.observeInternalThoughtTranscriptEntry(guildId, entry);
+        this.observeShowRunnerTranscriptEntry(guildId, entry);
+    }
+
     async startGeminiLivePlayback(guildId, turn) {
         if (!this.isGeminiLiveSession(guildId)) {
             turn.stream.destroy();
@@ -537,11 +578,33 @@ class AlphaClawdVoiceBot {
         };
         states.set(turn.id, state);
 
+        const journaledStream = new Transform({
+            transform: (chunk, encoding, callback) => {
+                this.voiceManager.addBotPcmChunkToRecording(guildId, chunk, {
+                    sourceId: 'gemini-live',
+                    groupId: turn.id,
+                    capturedAt: Date.now(),
+                    sampleRate: 48000,
+                    channels: 2,
+                    volume: 1
+                });
+                callback(null, chunk);
+            }
+        });
+        turn.stream.pipe(journaledStream);
+
         this.duckBigBrainAmbientBed(guildId, 'Gemini Live response starting');
-        state.setup = this.voiceManager.speakWithTiming(guildId, turn.stream, {
+        state.setup = this.voiceManager.speakWithTiming(guildId, journaledStream, {
                 inputType: StreamType.Raw,
                 volume: 1,
-                onStart: (timing) => this.noteHostPlaybackStart(guildId, timing),
+                onStart: (timing) => {
+                    this.voiceManager.anchorBotAudioRecordingGroup(
+                        guildId,
+                        turn.id,
+                        timing.playbackStartedAt
+                    );
+                    this.noteHostPlaybackStart(guildId, timing);
+                },
                 onFinish: (timing) => this.noteHostPlaybackEnd(guildId, timing),
                 onError: () => this.noteHostPlaybackEnd(guildId)
             })
@@ -581,16 +644,6 @@ class AlphaClawdVoiceBot {
             ? Math.max(0, playbackEndedMs - playbackStartedMs)
             : 0;
 
-        if (turn.audio?.length > 0 && !Number.isNaN(playbackStartedMs)) {
-            this.voiceManager.addBotAudioToRecording(guildId, turn.audio, {
-                startTime: playbackStartedMs,
-                volume: 1,
-                format: 'pcm_s16le',
-                sampleRate: 48000,
-                channels: 2
-            });
-        }
-
         const transcriptEntry = {
             speaker: 'Alpha-Clawd',
             speakerRole: 'host',
@@ -616,6 +669,7 @@ class AlphaClawdVoiceBot {
             host.stop();
             this.geminiLiveHosts.delete(guildId);
         }
+        this.flushGeminiLiveInputTranscript(guildId);
 
         const states = this.geminiLiveTurnStates.get(guildId);
         if (states) {

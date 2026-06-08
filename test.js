@@ -6141,52 +6141,57 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 12: Audio Recorder buffers bot audio without throwing');
+    console.log('\nTest 12: Audio Recorder journals participant and host audio immediately');
     try {
         const { AudioRecorder } = require('./audio-recorder');
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'audio-journal-test-'));
         const recorder = new AudioRecorder({ outputFormat: 'wav' });
-        recorder.isRecording = true;
-        recorder.isPaused = false;
-        recorder.startTime = Date.now() - 1000;
+        recorder.startRecording(tempDir, {
+            consentGiven: true,
+            episodeName: 'journal-test'
+        });
 
         const fakeBotAudio = Buffer.alloc(1024);
         recorder.addBotAudio(fakeBotAudio, { startTime: Date.now() });
         const fakeLivePcm = Buffer.alloc(1920);
-        recorder.addBotAudio(fakeLivePcm, {
-            startTime: Date.now(),
-            format: 'pcm_s16le',
+        recorder.addBotPcmChunk(fakeLivePcm, {
+            sourceId: 'gemini-live',
+            groupId: 'turn-1',
             sampleRate: 48000,
             channels: 2
         });
-        await new Promise((resolve) => setImmediate(resolve));
+        recorder.anchorBotAudioGroup('turn-1', Date.now());
+        recorder.addParticipantAudioChunk('guest-1', Buffer.alloc(3840), {
+            sampleRate: 48000,
+            channels: 2
+        });
+        recorder.journal.forceSync();
 
-        if (recorder.botAudioBuffer.length !== 2) {
-            throw new Error(`Expected 2 bot chunks, got ${recorder.botAudioBuffer.length}`);
+        const events = recorder.journal.readEvents();
+        const encoded = events.find((event) => event.type === 'encoded');
+        const liveChunk = events.find((event) => event.type === 'pcm' && event.sourceType === 'host');
+        const participantChunk = events.find((event) => event.type === 'pcm' && event.sourceType === 'participant');
+        const anchor = events.find((event) => event.type === 'anchor' && event.groupId === 'turn-1');
+        if (!encoded || !liveChunk || !participantChunk || !anchor) {
+            throw new Error(`Missing journal events: ${events.map((event) => event.type).join(', ')}`);
         }
-
-        const chunk = recorder.botAudioBuffer[0];
-        if (!Number.isFinite(chunk.timestamp) || chunk.timestamp < 0) {
-            throw new Error(`Bot chunk timestamp invalid: ${chunk.timestamp}`);
+        const participantPath = path.join(tempDir, 'audio-journal', participantChunk.file);
+        if (fs.statSync(participantPath).size !== 3840) {
+            throw new Error('Participant PCM was not written to disk immediately');
         }
-        if (chunk.buffer !== fakeBotAudio) {
-            throw new Error('Bot chunk buffer not stored');
-        }
-        const liveChunk = recorder.botAudioBuffer[1];
-        if (
-            liveChunk.format !== 'pcm_s16le' ||
-            liveChunk.sampleRate !== 48000 ||
-            liveChunk.channels !== 2
-        ) {
-            throw new Error(`Live PCM metadata not preserved: ${JSON.stringify(liveChunk)}`);
+        if (liveChunk.groupOffsetMs !== 0 || liveChunk.sampleRate !== 48000 || liveChunk.channels !== 2) {
+            throw new Error(`Live PCM timing metadata not preserved: ${JSON.stringify(liveChunk)}`);
         }
         if (recorder.stats.botAudioChunks !== 2) {
             throw new Error(`Expected botAudioChunks=2, got ${recorder.stats.botAudioChunks}`);
         }
 
-        console.log('  Encoded and live PCM bot audio retain timing and input-format metadata');
+        recorder.destroy();
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        console.log('  Participant PCM, encoded host audio, live host PCM, and playback anchors are durable');
         passed++;
     } catch (error) {
-        console.log(`  Audio Recorder bot audio failed: ${error.message}`);
+        console.log(`  Audio Recorder journal failed: ${error.message}`);
         failed++;
     }
 
