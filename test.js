@@ -3373,13 +3373,26 @@ async function runTests() {
     console.log('\nTest 6: Conversation Buffer ASR-aware state machine');
     const savedConversationBufferEnv = {
         CONVERSATION_BUFFER_GRACE_PERIOD_MS: process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS,
+        CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS: process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS,
         CONVERSATION_BUFFER_DYNAMIC_GRACE: process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE
     };
     try {
         delete process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS;
+        delete process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS;
         delete process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE;
 
         const dynamicGraceProbe = new ConversationBuffer();
+        if (dynamicGraceProbe.config.cooldownPeriod !== 50) {
+            throw new Error(`Default post-host cooldown should be 50ms, got ${dynamicGraceProbe.config.cooldownPeriod}ms`);
+        }
+
+        process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS = '75';
+        const envCooldownProbe = new ConversationBuffer();
+        delete process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS;
+        if (envCooldownProbe.config.cooldownPeriod !== 75) {
+            throw new Error(`Cooldown env override should be 75ms, got ${envCooldownProbe.config.cooldownPeriod}ms`);
+        }
+
         const graceCases = [
             [100, 50],
             [1000, 200],
