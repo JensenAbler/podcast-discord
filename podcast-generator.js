@@ -3,8 +3,8 @@
  *
  * This bypasses the general OpenClaw/Gateway agent path for the spoken reply
  * itself. It asks a small model for one strict JSON object:
- * - shouldRespond: whether Alpha-Clawd should speak at all
  * - speech: exact TTS text
+ * - shouldRespond: whether Alpha-Clawd should speak at all
  * - bigBrain: escape-hatch handoff to the deeper agent (see schema)
  */
 const {
@@ -22,7 +22,7 @@ const {
  * speech field out token-by-token, so we can hand characters to Fish TTS
  * before the full payload has finished generating.
  *
- * Intended for the schema { shouldRespond, speech, bigBrain, bigHeart }. Tolerates
+ * Intended for the schema { speech, shouldRespond, bigBrain, bigHeart }. Tolerates
  * keys arriving in any order, but requires the speech value to be a JSON
  * string. JSON escapes (\", \n, \uXXXX, etc.) are decoded incrementally;
  * if a chunk lands mid-escape we wait for the rest of the bytes before
@@ -811,7 +811,8 @@ class PodcastGenerator {
             'Your job is to decide whether to speak.',
             '',
             'Hard contract:',
-            '- Return JSON matching the provided schema.',
+            '- Return one JSON object with fields in this exact order: speech, shouldRespond, bigBrain, bigHeart. This order also applies when only JSON mode is available and no schema is provided.',
+            '- Emit speech first. Use an empty string when shouldRespond is false.',
             '- If humans are acknowledging, thinking aloud, talking amongst themselves, or developing a thought, usually set shouldRespond=false. If a response is needed only to show presence, Minimal backchannel is allowed but should be rare because delayed bare acknowledgements can feel awkward; do not ask a question.',
             '- If shouldRespond=true, speech is exactly what the TTS should say out loud.',
             ...this.buildSpeechControlGuidance(),
@@ -1005,7 +1006,7 @@ class PodcastGenerator {
     }
 
     buildDecisionPrompt() {
-        return 'Decide whether Alpha-Clawd should speak now.';
+        return 'Produce the host turn now. Emit speech first, then shouldRespond, followed by bigBrain and bigHeart.';
     }
 
     formatStagedBigBrain(items = [], options = {}) {
@@ -2027,15 +2028,15 @@ class PodcastGenerator {
         return {
             type: 'object',
             additionalProperties: false,
-            required: ['shouldRespond', 'speech', 'bigBrain', 'bigHeart'],
+            required: ['speech', 'shouldRespond', 'bigBrain', 'bigHeart'],
             properties: {
-                shouldRespond: {
-                    type: 'boolean',
-                    description: 'Whether the host should speak now.'
-                },
                 speech: {
                     type: 'string',
                     description: 'Exact text to send to TTS. Empty string when shouldRespond is false. May include sparse Fish Audio controls when the system prompt says Fish is active.'
+                },
+                shouldRespond: {
+                    type: 'boolean',
+                    description: 'Whether the host should speak now.'
                 },
                 bigBrain: {
                     type: 'object',

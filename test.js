@@ -937,9 +937,9 @@ async function runTests() {
 
         if (
             userMessage.role === 'user' &&
-            !userMessage.content.includes('Decide whether Alpha-Clawd should speak now') &&
+            !userMessage.content.includes('Emit speech first') &&
             decisionMessage.role === 'system' &&
-            decisionMessage.content === 'Decide whether Alpha-Clawd should speak now.'
+            decisionMessage.content === 'Produce the host turn now. Emit speech first, then shouldRespond, followed by bigBrain and bigHeart.'
         ) {
             console.log('  Turn decision prompt is sent as a trailing system message');
             passed++;
@@ -950,6 +950,8 @@ async function runTests() {
         const systemPrompt = generator.buildSystemPrompt();
         if (
             systemPrompt.includes('Live speech is provisional:') &&
+            systemPrompt.includes('fields in this exact order: speech, shouldRespond, bigBrain, bigHeart') &&
+            systemPrompt.includes('This order also applies when only JSON mode is available') &&
             systemPrompt.includes('not a polished chat message') &&
             systemPrompt.includes('Read the latest utterance first:') &&
             systemPrompt.includes('Hold-space cues:') &&
@@ -1708,6 +1710,7 @@ async function runTests() {
             fallbackCalls[0].body.response_format?.type !== 'json_schema' ||
             fallbackCalls[1].body.response_format?.type !== 'json_object' ||
             fallbackCalls[1].body.reasoning_format !== 'hidden' ||
+            !fallbackCalls[1].body.messages?.[0]?.content.includes('fields in this exact order: speech, shouldRespond, bigBrain, bigHeart') ||
             fallbackOutput.speech !== 'Qwen JSON fallback works.'
         ) {
             throw new Error(`JSON object fallback did not run as expected: ${JSON.stringify({ fallbackCalls, fallbackOutput })}`);
@@ -1719,6 +1722,8 @@ async function runTests() {
 
         const bigBrainSchema = handoffGenerator.getResponseSchema();
         if (
+            bigBrainSchema.required.join(',') !== 'speech,shouldRespond,bigBrain,bigHeart' ||
+            Object.keys(bigBrainSchema.properties).join(',') !== 'speech,shouldRespond,bigBrain,bigHeart' ||
             !bigBrainSchema.required.includes('bigHeart') ||
             !bigBrainSchema.required.includes('bigBrain') ||
             !bigBrainSchema.properties.bigBrain ||
@@ -1728,6 +1733,7 @@ async function runTests() {
         ) {
             throw new Error(`handoff schema is missing or malformed: ${JSON.stringify({
                 required: bigBrainSchema.required,
+                properties: Object.keys(bigBrainSchema.properties),
                 bigBrain: bigBrainSchema.properties.bigBrain,
                 bigHeart: bigBrainSchema.properties.bigHeart
             })}`);
@@ -6613,7 +6619,45 @@ async function runTests() {
             throw new Error(`g: truncated finalize mismatch: ${JSON.stringify(g_final)}`);
         }
 
-        console.log('  IncrementalSpeechReader handles full, chunked, escaped, mid-escape, and truncated streams');
+        // h) Speech-first response: chunks arrive before shouldRespond parses.
+        const r8 = new IncrementalSpeechReader();
+        const h_first = r8.push('{"speech":"Hello');
+        if (h_first.shouldRespond !== null || h_first.chunks.join('') !== 'Hello') {
+            throw new Error(`h: expected speech before shouldRespond, got ${JSON.stringify(h_first)}`);
+        }
+        const h_second = r8.push(', first.","shouldRespond":');
+        if (
+            h_second.shouldRespond !== null ||
+            h_second.chunks.join('') !== ', first.' ||
+            !h_second.speechComplete
+        ) {
+            throw new Error(`h: speech should complete before shouldRespond parses: ${JSON.stringify(h_second)}`);
+        }
+        const h_third = r8.push('true,"bigBrain":{"requested":false,"reason":"","consumedRunId":""},"bigHeart":{"requested":false,"reason":"","consumedRunId":""}}');
+        if (h_third.shouldRespond !== true || h_third.chunks.length !== 0) {
+            throw new Error(`h: shouldRespond should parse after streamed speech: ${JSON.stringify(h_third)}`);
+        }
+
+        // i) Speech-first silence: empty speech completes without triggering a chunk.
+        const r9 = new IncrementalSpeechReader();
+        const i_first = r9.push('{"speech":""');
+        if (
+            i_first.shouldRespond !== null ||
+            i_first.chunks.length !== 0 ||
+            !i_first.speechComplete
+        ) {
+            throw new Error(`i: empty speech should complete while shouldRespond remains pending: ${JSON.stringify(i_first)}`);
+        }
+        const i_second = r9.push(',"shouldRespond":false,"bigBrain":{"requested":false,"reason":"","consumedRunId":""},"bigHeart":{"requested":false,"reason":"","consumedRunId":""}}');
+        if (i_second.shouldRespond !== false || i_second.chunks.length !== 0) {
+            throw new Error(`i: silence should resolve false with no speech chunks: ${JSON.stringify(i_second)}`);
+        }
+        const i_final = r9.finalize();
+        if (i_final.shouldRespond !== false || i_final.speech !== '') {
+            throw new Error(`i: silence finalize mismatch: ${JSON.stringify(i_final)}`);
+        }
+
+        console.log('  IncrementalSpeechReader handles both field orders, including speech-first response and silence turns');
         passed++;
     } catch (error) {
         console.log(`  IncrementalSpeechReader failed: ${error.message}`);
@@ -6790,7 +6834,120 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 16a: generateStreaming normalizes spoken slash separators');
+    console.log('\nTest 16a: generateStreaming gates speech-first response and silence turns correctly');
+    try {
+        const { PodcastGenerator } = require('./podcast-generator');
+        const originalFetch = globalThis.fetch;
+        const encoder = new TextEncoder();
+        const makeControlledResponse = () => {
+            let controller;
+            const body = new ReadableStream({
+                start(value) {
+                    controller = value;
+                }
+            });
+            return {
+                response: new Response(body, {
+                    status: 200,
+                    headers: { 'content-type': 'text/event-stream' }
+                }),
+                send(content) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                        choices: [{ delta: { content } }]
+                    })}\n\n`));
+                },
+                finish() {
+                    controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                    controller.close();
+                }
+            };
+        };
+
+        try {
+            const responses = [];
+            globalThis.fetch = async () => {
+                const controlled = makeControlledResponse();
+                responses.push(controlled);
+                return controlled.response;
+            };
+
+            const gen = new PodcastGenerator({
+                apiKey: 'test-key',
+                baseUrl: 'https://api.openai.test/v1',
+                model: 'test-model',
+                timeout: 1000
+            });
+
+            const responseTurn = await gen.generateStreaming({
+                transcript: 'Jensen: Say hello.',
+                remember: false
+            });
+            while (responses.length < 1) {
+                await new Promise(resolve => setImmediate(resolve));
+            }
+            const earlySpeech = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            responses[0].send(`{"speech":"${earlySpeech}`);
+            const responseDecision = await Promise.race([
+                responseTurn.shouldRespond,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('response shouldRespond did not resolve from speech chunks')), 1000))
+            ]);
+            if (responseDecision !== true) {
+                throw new Error(`speech-first response should resolve true before its field parses, got ${responseDecision}`);
+            }
+            const responseIterator = responseTurn.speechStream[Symbol.asyncIterator]();
+            const firstSpeech = await responseIterator.next();
+            if (firstSpeech.done || firstSpeech.value !== earlySpeech.slice(0, 4)) {
+                throw new Error(`speech-first response did not stream its early chunk: ${JSON.stringify(firstSpeech)}`);
+            }
+            responses[0].send('","shouldRespond":true,"bigBrain":{"requested":false,"reason":"","consumedRunId":""},"bigHeart":{"requested":false,"reason":"","consumedRunId":""}}');
+            responses[0].finish();
+            let responseSpeech = firstSpeech.value;
+            for await (const chunk of { [Symbol.asyncIterator]: () => responseIterator }) {
+                responseSpeech += chunk;
+            }
+            const responseCompleted = await responseTurn.completed;
+            if (responseSpeech !== earlySpeech || responseCompleted.speech !== earlySpeech || !responseCompleted.shouldRespond) {
+                throw new Error(`speech-first response completion mismatch: ${JSON.stringify({ responseSpeech, responseCompleted })}`);
+            }
+
+            const silenceTurn = await gen.generateStreaming({
+                transcript: 'Jensen: Actually, hold on.',
+                remember: false
+            });
+            while (responses.length < 2) {
+                await new Promise(resolve => setImmediate(resolve));
+            }
+            let silenceShouldSettled = false;
+            silenceTurn.shouldRespond.then(
+                () => { silenceShouldSettled = true; },
+                () => { silenceShouldSettled = true; }
+            );
+            responses[1].send('{"speech":""');
+            const silenceIterator = silenceTurn.speechStream[Symbol.asyncIterator]();
+            const silenceFirst = await silenceIterator.next();
+            await new Promise(resolve => setImmediate(resolve));
+            if (!silenceFirst.done || silenceShouldSettled) {
+                throw new Error(`empty speech must not resolve shouldRespond early: ${JSON.stringify({ silenceFirst, silenceShouldSettled })}`);
+            }
+            responses[1].send(',"shouldRespond":false,"bigBrain":{"requested":false,"reason":"","consumedRunId":""},"bigHeart":{"requested":false,"reason":"","consumedRunId":""}}');
+            responses[1].finish();
+            const silenceDecision = await silenceTurn.shouldRespond;
+            const silenceCompleted = await silenceTurn.completed;
+            if (silenceDecision !== false || silenceCompleted.shouldRespond !== false || silenceCompleted.speech !== '') {
+                throw new Error(`speech-first silence completion mismatch: ${JSON.stringify({ silenceDecision, silenceCompleted })}`);
+            }
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        console.log('  Speech-first chunks resolve true early; empty speech waits for shouldRespond=false');
+        passed++;
+    } catch (error) {
+        console.log(`  Streaming speech-first gating failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 16b: generateStreaming normalizes spoken slash separators');
     try {
         const { PodcastGenerator } = require('./podcast-generator');
         const originalFetch = globalThis.fetch;
@@ -6855,7 +7012,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 16b: Kimi Anthropic-compatible streaming');
+    console.log('\nTest 16c: Kimi Anthropic-compatible streaming');
     try {
         const { PodcastGenerator } = require('./podcast-generator');
         const originalFetch = globalThis.fetch;
@@ -6962,7 +7119,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 16c: Anthropic Messages streaming');
+    console.log('\nTest 16d: Anthropic Messages streaming');
     try {
         const { PodcastGenerator } = require('./podcast-generator');
         const originalFetch = globalThis.fetch;
