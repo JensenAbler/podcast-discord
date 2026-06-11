@@ -10,6 +10,7 @@ const {
     AudioReceiver,
     VoiceManager,
     FishAudioProvider,
+    downmixStereo48kToMono16k,
     GatewayBridge,
     PodcastGenerator,
     BigHeartGenerator,
@@ -525,6 +526,67 @@ async function runTests() {
             throw new Error('WAV conversion failed');
         }
 
+        const sineFrames = 480;
+        const sinePcm = Buffer.alloc(sineFrames * 4);
+        for (let frame = 0; frame < sineFrames; frame++) {
+            const phase = 2 * Math.PI * 1000 * frame / 48000;
+            sinePcm.writeInt16LE(Math.round(12000 * Math.sin(phase)), frame * 4);
+            sinePcm.writeInt16LE(Math.round(6000 * Math.sin(phase)), frame * 4 + 2);
+        }
+        const originalSinePcm = Buffer.from(sinePcm);
+        const downmixedPcm = downmixStereo48kToMono16k(sinePcm);
+        const expectedFirstSample = Math.round(
+            Array.from({ length: 3 }, (_, frame) => {
+                const offset = frame * 4;
+                return (sinePcm.readInt16LE(offset) + sinePcm.readInt16LE(offset + 2)) / 2;
+            }).reduce((sum, sample) => sum + sample, 0) / 3
+        );
+        if (downmixedPcm.length !== sinePcm.length / 6) {
+            throw new Error(`Downmix length mismatch: ${downmixedPcm.length} vs ${sinePcm.length / 6}`);
+        }
+        if (downmixedPcm.readInt16LE(0) !== expectedFirstSample) {
+            throw new Error(`Stereo averaging mismatch: ${downmixedPcm.readInt16LE(0)} vs ${expectedFirstSample}`);
+        }
+        if (!sinePcm.equals(originalSinePcm)) {
+            throw new Error('Downmix mutated the raw capture buffer');
+        }
+
+        const downmixedWav = await fishAudio.prepareAudioForSTT(downmixedPcm, {
+            sampleRate: 16000,
+            channels: 1
+        });
+        const headerChecks = {
+            riff: downmixedWav.slice(0, 4).toString('ascii'),
+            fileSize: downmixedWav.readUInt32LE(4),
+            wave: downmixedWav.slice(8, 12).toString('ascii'),
+            audioFormat: downmixedWav.readUInt16LE(20),
+            channels: downmixedWav.readUInt16LE(22),
+            sampleRate: downmixedWav.readUInt32LE(24),
+            byteRate: downmixedWav.readUInt32LE(28),
+            blockAlign: downmixedWav.readUInt16LE(32),
+            bitsPerSample: downmixedWav.readUInt16LE(34),
+            dataTag: downmixedWav.slice(36, 40).toString('ascii'),
+            dataSize: downmixedWav.readUInt32LE(40)
+        };
+        if (
+            headerChecks.riff !== 'RIFF' ||
+            headerChecks.fileSize !== downmixedPcm.length + 36 ||
+            headerChecks.wave !== 'WAVE' ||
+            headerChecks.audioFormat !== 1 ||
+            headerChecks.channels !== 1 ||
+            headerChecks.sampleRate !== 16000 ||
+            headerChecks.byteRate !== 32000 ||
+            headerChecks.blockAlign !== 2 ||
+            headerChecks.bitsPerSample !== 16 ||
+            headerChecks.dataTag !== 'data' ||
+            headerChecks.dataSize !== downmixedPcm.length ||
+            !downmixedWav.subarray(44).equals(downmixedPcm)
+        ) {
+            throw new Error(`16kHz mono WAV header mismatch: ${JSON.stringify(headerChecks)}`);
+        }
+        console.log('  48kHz stereo PCM downmixes to filtered 16kHz mono with a valid WAV header');
+        passed++;
+
         const s2Text = fishAudio.preprocessText('Hold <break time="2.2s" /> the thought.');
         const fishS1 = new FishAudioProvider({
             apiKey: process.env.FISH_AUDIO_API_KEY || 'test_fish_audio_key_placeholder',
@@ -560,7 +622,175 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 3a: Fish Audio opens its live socket while waiting for text');
+    console.log('\nTest 3a: Fish ASR shadow returns authoritative audio without waiting');
+    try {
+        let releaseShadow;
+        let shadowFinished = false;
+        const shadowGate = new Promise((resolve) => {
+            releaseShadow = resolve;
+        });
+        const trackedTasks = [];
+        const uploadedHeaders = [];
+        const fishAudio = new FishAudioProvider({
+            apiKey: 'test_fish_audio_key_placeholder',
+            asrDownmix: 'shadow'
+        });
+        fishAudio.fetchWithTimeout = async (url, options) => {
+            const uploadedWav = Buffer.from(await options.body.get('audio').arrayBuffer());
+            const channels = uploadedWav.readUInt16LE(22);
+            const sampleRate = uploadedWav.readUInt32LE(24);
+            uploadedHeaders.push({ channels, sampleRate, bytes: uploadedWav.length });
+
+            if (channels === 1) {
+                await shadowGate;
+                shadowFinished = true;
+                return {
+                    ok: true,
+                    json: async () => ({
+                        text: 'downmixed wording',
+                        duration: 2,
+                        segments: [{ text: 'downmixed wording', start: 0.5, end: 1.5 }]
+                    })
+                };
+            }
+
+            return {
+                ok: true,
+                json: async () => ({
+                    text: 'authoritative wording',
+                    duration: 2,
+                    segments: [{ text: 'authoritative wording', start: 0.25, end: 1.75 }]
+                })
+            };
+        };
+
+        const sourcePcm = createSpeechPcm(100);
+        const result = await fishAudio.transcribe(sourcePcm, {
+            trackBackgroundTask: (task) => trackedTasks.push(task)
+        });
+
+        if (result.text !== 'authoritative wording' || shadowFinished) {
+            throw new Error(`Shadow ASR delayed or replaced the authoritative result: ${JSON.stringify(result)}`);
+        }
+        if (
+            result.words.length !== 1 ||
+            result.words[0].start !== 0.25 ||
+            result.words[0].end !== 1.75
+        ) {
+            throw new Error(`Fish segment seconds were altered: ${JSON.stringify(result.words)}`);
+        }
+        if (trackedTasks.length !== 1) {
+            throw new Error(`Shadow comparison was not registered for draining: ${trackedTasks.length}`);
+        }
+
+        releaseShadow();
+        await Promise.allSettled(trackedTasks);
+        if (
+            uploadedHeaders.length !== 2 ||
+            !uploadedHeaders.some(header => header.channels === 2 && header.sampleRate === 48000) ||
+            !uploadedHeaders.some(header => header.channels === 1 && header.sampleRate === 16000)
+        ) {
+            throw new Error(`Shadow uploads used unexpected WAV formats: ${JSON.stringify(uploadedHeaders)}`);
+        }
+
+        console.log('  Shadow mode returns 48kHz text immediately, tracks 16kHz work, and preserves timing seconds');
+        passed++;
+    } catch (error) {
+        console.log(`  Fish ASR shadow behavior failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 3a.1: Fish ASR true mode uploads only 16kHz mono');
+    try {
+        const uploadedHeaders = [];
+        const fishAudio = new FishAudioProvider({
+            apiKey: 'test_fish_audio_key_placeholder',
+            asrDownmix: true
+        });
+        fishAudio.fetchWithTimeout = async (url, options) => {
+            const uploadedWav = Buffer.from(await options.body.get('audio').arrayBuffer());
+            uploadedHeaders.push({
+                channels: uploadedWav.readUInt16LE(22),
+                sampleRate: uploadedWav.readUInt32LE(24),
+                bytes: uploadedWav.length
+            });
+            return {
+                ok: true,
+                json: async () => ({
+                    text: 'downmixed only',
+                    duration: 1,
+                    segments: [{ text: 'downmixed only', start: 0.1, end: 0.9 }]
+                })
+            };
+        };
+
+        const sourcePcm = createSpeechPcm(100);
+        const result = await fishAudio.transcribe(sourcePcm);
+        if (
+            result.text !== 'downmixed only' ||
+            uploadedHeaders.length !== 1 ||
+            uploadedHeaders[0].channels !== 1 ||
+            uploadedHeaders[0].sampleRate !== 16000 ||
+            uploadedHeaders[0].bytes !== sourcePcm.length / 6 + 44
+        ) {
+            throw new Error(`True mode did not upload only the downmixed WAV: ${JSON.stringify(uploadedHeaders)}`);
+        }
+
+        console.log('  True mode sends one 16kHz mono WAV and no 48kHz upload');
+        passed++;
+    } catch (error) {
+        console.log(`  Fish ASR true mode failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 3a.2: Fish ASR shadow errors do not fail the turn');
+    try {
+        const trackedTasks = [];
+        const shadowLogs = [];
+        const originalConsoleError = console.error;
+        const fishAudio = new FishAudioProvider({
+            apiKey: 'test_fish_audio_key_placeholder',
+            asrDownmix: 'shadow'
+        });
+        fishAudio.fetchWithTimeout = async (url, options) => {
+            const uploadedWav = Buffer.from(await options.body.get('audio').arrayBuffer());
+            if (uploadedWav.readUInt16LE(22) === 1) {
+                return {
+                    ok: false,
+                    status: 503,
+                    text: async () => 'shadow unavailable'
+                };
+            }
+            return {
+                ok: true,
+                json: async () => ({ text: 'authoritative survives', duration: 1 })
+            };
+        };
+
+        try {
+            console.error = (...args) => shadowLogs.push(args.join(' '));
+            const result = await fishAudio.transcribe(createSpeechPcm(100), {
+                trackBackgroundTask: (task) => trackedTasks.push(task)
+            });
+            await Promise.allSettled(trackedTasks);
+            if (
+                result.text !== 'authoritative survives' ||
+                !shadowLogs.some(line => line.includes('"status":"shadow_error"'))
+            ) {
+                throw new Error(`Shadow failure affected the turn or was not logged: ${JSON.stringify(shadowLogs)}`);
+            }
+        } finally {
+            console.error = originalConsoleError;
+        }
+
+        console.log('  A failed 16kHz shadow request is logged and the 48kHz turn still succeeds');
+        passed++;
+    } catch (error) {
+        console.log(`  Fish ASR shadow error isolation failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 3b: Fish Audio opens its live socket while waiting for text');
     try {
         let firstChunkResolved = false;
         let resolveFirstChunk;
@@ -636,7 +866,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 3b: Fish Audio closes a pre-opened socket for empty text');
+    console.log('\nTest 3c: Fish Audio closes a pre-opened socket for empty text');
     try {
         let mockSocket = null;
 
@@ -6348,11 +6578,12 @@ async function runTests() {
         const chunkStartMs = Date.parse('2026-05-03T20:49:00.000Z');
         const speechStartIso = '2026-05-03T20:49:07.000Z';
         const speechEndIso = '2026-05-03T20:49:10.000Z';
+        const rawCapture = Buffer.alloc(48000, 0x5a);
 
         await receiver.processUtteranceSnapshot({
             userId: 'user-late-speech',
             speakerInfo: { name: 'Jensen', role: 'guest' },
-            audioBuffer: Buffer.alloc(48000),
+            audioBuffer: rawCapture,
             startTime: chunkStartMs,
             duration: 10000,
             timestamp: speechStartIso,
@@ -6368,8 +6599,15 @@ async function runTests() {
         if (utterances[0].startTime !== expected) {
             throw new Error(`Expected recording startTime=${expected} (speech start), got ${utterances[0].startTime} (chunk start was ${chunkStartMs})`);
         }
+        if (
+            utterances[0].audioBuffer !== rawCapture ||
+            utterances[0].sampleRate !== 48000 ||
+            utterances[0].channels !== 2
+        ) {
+            throw new Error('Recording path did not retain the raw 48kHz stereo capture');
+        }
 
-        console.log('  Recording startTime equals detected speech start, not first-chunk time');
+        console.log('  Recording keeps the raw 48kHz stereo capture and aligns it to detected speech start');
         passed++;
     } catch (error) {
         console.log(`  Speaker mix alignment failed: ${error.message}`);

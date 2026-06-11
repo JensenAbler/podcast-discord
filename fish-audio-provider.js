@@ -19,6 +19,59 @@ function envFlagEnabled(value, defaultValue = true) {
     return !['false', '0', 'no', 'off'].includes(String(value).toLowerCase());
 }
 
+function normalizeAsrDownmixMode(value) {
+    if (value === undefined || value === null || value === '') {
+        return 'false';
+    }
+    if (value === true || ['true', '1'].includes(String(value).trim().toLowerCase())) {
+        return 'true';
+    }
+    if (value === false || ['false', '0'].includes(String(value).trim().toLowerCase())) {
+        return 'false';
+    }
+    if (String(value).trim().toLowerCase() === 'shadow') {
+        return 'shadow';
+    }
+
+    throw new Error(`Invalid FISH_ASR_DOWNMIX value "${value}". Expected false, shadow, or true.`);
+}
+
+function downmixStereo48kToMono16k(audioBuffer) {
+    if (!Buffer.isBuffer(audioBuffer)) {
+        throw new TypeError('Fish ASR downmix expects a PCM Buffer.');
+    }
+    if (audioBuffer.slice(0, 4).toString('ascii') === 'RIFF') {
+        throw new Error('Fish ASR downmix expects raw 48kHz stereo PCM, not a WAV file.');
+    }
+
+    const stereoFrameBytes = 4;
+    const decimationFactor = 3;
+    const inputFrames = Math.floor(audioBuffer.length / stereoFrameBytes);
+    const outputFrames = Math.floor(inputFrames / decimationFactor);
+    const output = Buffer.alloc(outputFrames * 2);
+
+    for (let outputFrame = 0; outputFrame < outputFrames; outputFrame++) {
+        let filteredMono = 0;
+        const firstInputFrame = outputFrame * decimationFactor;
+
+        // A three-sample moving average is the anti-alias low-pass before 3:1 decimation.
+        for (let offset = 0; offset < decimationFactor; offset++) {
+            const inputOffset = (firstInputFrame + offset) * stereoFrameBytes;
+            const left = audioBuffer.readInt16LE(inputOffset);
+            const right = audioBuffer.readInt16LE(inputOffset + 2);
+            filteredMono += (left + right) / 2;
+        }
+
+        const sample = Math.max(
+            -32768,
+            Math.min(32767, Math.round(filteredMono / decimationFactor))
+        );
+        output.writeInt16LE(sample, outputFrame * 2);
+    }
+
+    return output;
+}
+
 function toWebSocketBaseUrl(baseUrl) {
     if (!baseUrl) return 'wss://api.fish.audio';
     if (/^wss?:\/\//i.test(baseUrl)) return baseUrl.replace(/\/+$/, '');
@@ -74,11 +127,18 @@ class FishAudioProvider {
         this.streamingEnabled = options.streaming !== undefined
             ? envFlagEnabled(options.streaming)
             : envFlagEnabled(process.env.FISH_STREAMING, true);
+        this.asrDownmixMode = normalizeAsrDownmixMode(
+            options.asrDownmix ?? process.env.FISH_ASR_DOWNMIX
+        );
         this.webSocketFactory = options.webSocketFactory ||
             ((url, webSocketOptions) => new WebSocket(url, webSocketOptions));
 
         if (!this.apiKey) {
             throw new Error('Fish Audio API key not provided. Set FISH_AUDIO_API_KEY or FISH_API_KEY.');
+        }
+
+        if (this.asrDownmixMode !== 'false') {
+            console.log(`[Fish Audio ASR] Downmix mode: ${this.asrDownmixMode}`);
         }
     }
 
@@ -483,11 +543,72 @@ class FishAudioProvider {
     }
 
     async transcribe(audioBuffer, options = {}) {
-        const startTime = Date.now();
+        const mode = normalizeAsrDownmixMode(options.asrDownmix ?? this.asrDownmixMode);
 
-        console.log(`[Fish Audio ASR] Transcribing ${audioBuffer.length} bytes...`);
+        if (mode === 'false') {
+            const authoritative = await this.transcribeAudioVariant(audioBuffer, options, {
+                label: '48k-stereo',
+                sampleRate: options.sampleRate || 48000,
+                channels: options.channels || 2
+            });
+            return authoritative.result;
+        }
 
-        const audioData = await this.prepareAudioForSTT(audioBuffer, options);
+        if (mode === 'true') {
+            const downmixStartedAt = Date.now();
+            const downmixedAudio = downmixStereo48kToMono16k(audioBuffer);
+            const downmixed = await this.transcribeAudioVariant(downmixedAudio, options, {
+                label: '16k-mono',
+                sampleRate: 16000,
+                channels: 1,
+                startedAt: downmixStartedAt
+            });
+            return downmixed.result;
+        }
+
+        const authoritative = await this.transcribeAudioVariant(audioBuffer, options, {
+            label: '48k-stereo',
+            sampleRate: options.sampleRate || 48000,
+            channels: options.channels || 2
+        });
+        const comparisonTask = new Promise((resolve) => setImmediate(resolve))
+            .then(() => {
+                const downmixStartedAt = Date.now();
+                const downmixedAudio = downmixStereo48kToMono16k(audioBuffer);
+                return this.transcribeAudioVariant(downmixedAudio, options, {
+                    label: '16k-mono-shadow',
+                    sampleRate: 16000,
+                    channels: 1,
+                    startedAt: downmixStartedAt
+                });
+            })
+            .then((downmixed) => {
+                this.logAsrComparison(authoritative, downmixed);
+            })
+            .catch((error) => {
+                console.error(`[Fish Audio ASR comparison] ${JSON.stringify({
+                    status: 'shadow_error',
+                    authoritativeDurationMs: authoritative.durationMs,
+                    shadowError: error?.message || String(error)
+                })}`);
+            });
+        this.trackAsrComparison(comparisonTask, options.trackBackgroundTask);
+
+        return authoritative.result;
+    }
+
+    async transcribeAudioVariant(audioBuffer, options, variant) {
+        const startTime = variant.startedAt || Date.now();
+
+        const audioData = await this.prepareAudioForSTT(audioBuffer, {
+            ...options,
+            sampleRate: variant.sampleRate,
+            channels: variant.channels
+        });
+        console.log(
+            `[Fish Audio ASR] Transcribing ${variant.label}: ` +
+            `${audioBuffer.length} PCM bytes, ${audioData.length} WAV bytes...`
+        );
         const form = new FormData();
         const blob = new Blob([audioData], { type: 'audio/wav' });
 
@@ -510,16 +631,70 @@ class FishAudioProvider {
 
         const result = await response.json();
         const duration = Date.now() - startTime;
-        console.log(`[Fish Audio ASR] Transcription complete in ${duration}ms`);
+        console.log(`[Fish Audio ASR] ${variant.label} transcription complete in ${duration}ms`);
 
         return {
-            text: result.text || '',
-            language: options.language || this.language,
-            confidence: result.text ? 0.8 : 0,
-            words: this.extractSegments(result),
-            duration: result.duration || duration,
-            raw: result
+            durationMs: duration,
+            wavBytes: audioData.length,
+            result: {
+                text: result.text || '',
+                language: options.language || this.language,
+                confidence: result.text ? 0.8 : 0,
+                // Fish reports timing in seconds for either sample rate; preserve it verbatim.
+                words: this.extractSegments(result),
+                duration: result.duration || duration,
+                raw: result
+            }
         };
+    }
+
+    trackAsrComparison(task, externalTracker) {
+        const tracked = Promise.resolve(task)
+            .catch((error) => {
+                console.error(`[Fish Audio ASR comparison] ${JSON.stringify({
+                    status: 'comparison_error',
+                    error: error?.message || String(error)
+                })}`);
+            });
+
+        if (typeof externalTracker === 'function') {
+            try {
+                externalTracker(tracked);
+            } catch (error) {
+                console.error(`[Fish Audio ASR comparison] ${JSON.stringify({
+                    status: 'tracking_error',
+                    error: error?.message || String(error)
+                })}`);
+            }
+        }
+        return tracked;
+    }
+
+    logAsrComparison(authoritative, downmixed) {
+        const authoritativeText = String(authoritative.result.text || '').trim();
+        const downmixedText = String(downmixed.result.text || '').trim();
+        const common = {
+            authoritativeDurationMs: authoritative.durationMs,
+            downmixDurationMs: downmixed.durationMs,
+            latencyDeltaMs: downmixed.durationMs - authoritative.durationMs,
+            authoritativeWavBytes: authoritative.wavBytes,
+            downmixWavBytes: downmixed.wavBytes
+        };
+
+        if (authoritativeText === downmixedText) {
+            console.log(`[Fish Audio ASR comparison] ${JSON.stringify({
+                status: 'match',
+                ...common
+            })}`);
+            return;
+        }
+
+        console.log(`[Fish Audio ASR comparison] ${JSON.stringify({
+            status: 'different',
+            ...common,
+            authoritativeText,
+            downmixText: downmixedText
+        })}`);
     }
 
     extractSegments(result) {
@@ -640,4 +815,7 @@ class FishAudioProvider {
     }
 }
 
-module.exports = { FishAudioProvider };
+module.exports = {
+    FishAudioProvider,
+    downmixStereo48kToMono16k
+};

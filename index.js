@@ -15,7 +15,7 @@ const { AudioReceiver } = require('./audio-receiver');
 const { AudioTransmitter } = require('./audio-transmitter');
 const { SilenceDetector } = require('./silence-detector');
 const { SpeakerTracker } = require('./speaker-tracker');
-const { FishAudioProvider } = require('./fish-audio-provider');
+const { FishAudioProvider, downmixStereo48kToMono16k } = require('./fish-audio-provider');
 const { ElevenLabsIntegration } = require('./elevenlabs-integration');
 const { GatewayBridge } = require('./gateway-bridge');
 const { AlphaClawdVoiceBot } = require('./bot');
@@ -45,6 +45,7 @@ module.exports = {
     
     // Integrations
     FishAudioProvider,
+    downmixStereo48kToMono16k,
     ElevenLabsIntegration,
     GatewayBridge,
     PodcastGenerator,
