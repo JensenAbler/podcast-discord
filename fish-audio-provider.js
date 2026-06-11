@@ -74,6 +74,8 @@ class FishAudioProvider {
         this.streamingEnabled = options.streaming !== undefined
             ? envFlagEnabled(options.streaming)
             : envFlagEnabled(process.env.FISH_STREAMING, true);
+        this.webSocketFactory = options.webSocketFactory ||
+            ((url, webSocketOptions) => new WebSocket(url, webSocketOptions));
 
         if (!this.apiKey) {
             throw new Error('Fish Audio API key not provided. Set FISH_AUDIO_API_KEY or FISH_API_KEY.');
@@ -146,28 +148,44 @@ class FishAudioProvider {
         const startedAt = Date.now();
         const iterator = this.getTextIterator(textChunks);
         const model = options.model || this.model;
-        const firstChunk = await this.readFirstProcessedTextChunk(iterator, { model });
+        const connection = this.createWebSocketAudioConnection();
+        let firstChunk;
+
+        try {
+            firstChunk = await this.readFirstProcessedTextChunk(iterator, { model });
+        } catch (error) {
+            this.closeWebSocketAudioConnection(connection);
+            throw error;
+        }
 
         if (!firstChunk) {
+            this.closeWebSocketAudioConnection(connection);
             throw new Error('Fish Audio streaming TTS requires at least one non-empty text chunk.');
         }
 
         const voiceId = options.voiceId || options.referenceId || this.voiceId;
         const format = options.format || this.format;
-        const request = new TTSRequest('', {
-            format,
-            latency: options.latency || this.latency || 'balanced',
-            chunkLength: Number(options.chunkLength || this.chunkLength),
-            referenceId: voiceId,
-            modelId: model,
-            normalize: options.normalize ?? this.normalize ?? !this.hasFishInlineControls(firstChunk, model),
-            mp3Bitrate: Number(options.mp3Bitrate || this.mp3Bitrate),
-            prosody: {
-                speed: Number(options.speed || process.env.FISH_AUDIO_SPEED || 1),
-                volume: Number(options.volume || process.env.FISH_AUDIO_VOLUME || 0),
-                normalize_loudness: options.normalizeLoudness ?? process.env.FISH_AUDIO_NORMALIZE_LOUDNESS !== 'false'
-            }
-        });
+        let request;
+
+        try {
+            request = new TTSRequest('', {
+                format,
+                latency: options.latency || this.latency || 'balanced',
+                chunkLength: Number(options.chunkLength || this.chunkLength),
+                referenceId: voiceId,
+                modelId: model,
+                normalize: options.normalize ?? this.normalize ?? !this.hasFishInlineControls(firstChunk, model),
+                mp3Bitrate: Number(options.mp3Bitrate || this.mp3Bitrate),
+                prosody: {
+                    speed: Number(options.speed || process.env.FISH_AUDIO_SPEED || 1),
+                    volume: Number(options.volume || process.env.FISH_AUDIO_VOLUME || 0),
+                    normalize_loudness: options.normalizeLoudness ?? process.env.FISH_AUDIO_NORMALIZE_LOUDNESS !== 'false'
+                }
+            }).toJSON();
+        } catch (error) {
+            this.closeWebSocketAudioConnection(connection);
+            throw error;
+        }
 
         let totalBytes = 0;
         let chunkCount = 0;
@@ -177,7 +195,7 @@ class FishAudioProvider {
         try {
             const processedTextStream = this.createProcessedTextStream(firstChunk, iterator, { model });
 
-            for await (const audioChunk of this.streamWebSocketAudio(request.toJSON(), processedTextStream)) {
+            for await (const audioChunk of this.streamWebSocketAudio(request, processedTextStream, connection)) {
                 const buffer = Buffer.from(audioChunk);
                 totalBytes += buffer.length;
                 chunkCount++;
@@ -196,8 +214,8 @@ class FishAudioProvider {
         }
     }
 
-    async *streamWebSocketAudio(request, textStream) {
-        const ws = new WebSocket(`${this.wsBaseUrl}/v1/tts/live`, {
+    createWebSocketAudioConnection() {
+        const ws = this.webSocketFactory(`${this.wsBaseUrl}/v1/tts/live`, {
             headers: {
                 Authorization: `Bearer ${this.apiKey}`
             }
@@ -245,15 +263,28 @@ class FishAudioProvider {
             queue.finish();
         });
 
-        await this.waitForWebSocketOpen(ws);
-
-        let sendError = null;
-        const sendTask = this.sendStreamingText(ws, request, textStream).catch((error) => {
-            sendError = error;
+        const openPromise = this.waitForWebSocketOpen(ws);
+        // The first text chunk may still be pending when the connection fails.
+        // Mark the promise handled now; awaiting it later still propagates the error.
+        void openPromise.catch((error) => {
             queue.fail(error);
         });
 
+        return { ws, queue, openPromise };
+    }
+
+    async *streamWebSocketAudio(request, textStream, connection = this.createWebSocketAudioConnection()) {
+        const { ws, queue, openPromise } = connection;
+
         try {
+            await openPromise;
+
+            let sendError = null;
+            const sendTask = this.sendStreamingText(ws, request, textStream).catch((error) => {
+                sendError = error;
+                queue.fail(error);
+            });
+
             for await (const audioChunk of queue) {
                 yield audioChunk;
             }
@@ -263,7 +294,15 @@ class FishAudioProvider {
                 throw sendError;
             }
         } finally {
-            ws.close();
+            this.closeWebSocketAudioConnection(connection);
+        }
+    }
+
+    closeWebSocketAudioConnection(connection) {
+        try {
+            connection.ws.close();
+        } catch {
+            // Preserve the synthesis error that triggered cleanup.
         }
     }
 

@@ -43,6 +43,7 @@ const {
 } = require('./paths');
 const { PassThrough } = require('stream');
 const { EventEmitter } = require('events');
+const msgpack = require('msgpack-lite');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -556,6 +557,139 @@ async function runTests() {
         }
     } catch (error) {
         console.log(`  Fish Audio provider failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 3a: Fish Audio opens its live socket while waiting for text');
+    try {
+        let firstChunkResolved = false;
+        let resolveFirstChunk;
+        let webSocketCreatedBeforeFirstChunk = false;
+        const sentEvents = [];
+        const firstChunkGate = new Promise((resolve) => {
+            resolveFirstChunk = resolve;
+        });
+
+        class MockFishWebSocket extends EventEmitter {
+            constructor() {
+                super();
+                this.readyState = 0;
+                this.closeCalls = 0;
+                webSocketCreatedBeforeFirstChunk = !firstChunkResolved;
+                setImmediate(() => {
+                    this.readyState = 1;
+                    this.emit('open');
+                });
+            }
+
+            send(payload) {
+                const event = msgpack.decode(payload);
+                sentEvents.push(event);
+                if (event.event === 'stop') {
+                    setImmediate(() => {
+                        this.emit('message', msgpack.encode({ event: 'finish', reason: 'stop' }));
+                    });
+                }
+            }
+
+            close() {
+                this.closeCalls++;
+                this.readyState = 3;
+            }
+        }
+
+        let socketCreateCount = 0;
+        const fishAudio = new FishAudioProvider({
+            apiKey: 'test_fish_audio_key_placeholder',
+            webSocketFactory: () => {
+                socketCreateCount++;
+                return new MockFishWebSocket();
+            }
+        });
+        const slowText = (async function* () {
+            await firstChunkGate;
+            firstChunkResolved = true;
+            yield 'Hello from the slow stream.';
+        })();
+        const audioTask = (async () => {
+            for await (const chunk of fishAudio.createStreamingAudio(slowText)) {
+                void chunk;
+            }
+        })();
+
+        if (socketCreateCount !== 1 || !webSocketCreatedBeforeFirstChunk) {
+            throw new Error('Fish live WebSocket did not start connecting before the first text chunk resolved');
+        }
+        if (sentEvents.length !== 0) {
+            throw new Error(`Fish sent WebSocket events before the first text chunk: ${JSON.stringify(sentEvents)}`);
+        }
+
+        resolveFirstChunk();
+        await audioTask;
+        if (sentEvents[0]?.event !== 'start' || sentEvents[1]?.event !== 'text') {
+            throw new Error(`Fish streaming protocol started out of order: ${JSON.stringify(sentEvents)}`);
+        }
+        console.log('  Fish live WebSocket connects concurrently with the first text chunk');
+        passed++;
+    } catch (error) {
+        console.log(`  Fish streaming connection concurrency failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 3b: Fish Audio closes a pre-opened socket for empty text');
+    try {
+        let mockSocket = null;
+
+        class MockFishWebSocket extends EventEmitter {
+            constructor() {
+                super();
+                this.readyState = 0;
+                this.closeCalls = 0;
+                setImmediate(() => {
+                    if (this.readyState !== 0) return;
+                    this.readyState = 1;
+                    this.emit('open');
+                });
+            }
+
+            close() {
+                this.closeCalls++;
+                this.readyState = 3;
+            }
+        }
+
+        const fishAudio = new FishAudioProvider({
+            apiKey: 'test_fish_audio_key_placeholder',
+            webSocketFactory: () => {
+                mockSocket = new MockFishWebSocket();
+                return mockSocket;
+            }
+        });
+        const emptyText = (async function* () {
+            yield '';
+            yield '   ';
+        })();
+        let receivedError = null;
+
+        try {
+            for await (const chunk of fishAudio.createStreamingAudio(emptyText)) {
+                void chunk;
+            }
+        } catch (error) {
+            receivedError = error;
+        }
+
+        if (receivedError?.message !== 'Fish Audio streaming TTS requires at least one non-empty text chunk.') {
+            throw new Error(`Unexpected empty-stream error: ${receivedError?.message || 'none'}`);
+        }
+        if (!mockSocket || mockSocket.closeCalls !== 1) {
+            throw new Error(`Expected the pre-opened socket to close once, got ${mockSocket?.closeCalls || 0}`);
+        }
+
+        console.log('  Empty Fish text streams preserve the error and close the pending socket');
+        passed++;
+    } catch (error) {
+        console.log(`  Fish empty streaming cleanup failed: ${error.message}`);
         failed++;
     }
 
