@@ -6915,6 +6915,76 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 14b: StreamingSpeechSanitizer protects boundaries and reports rewrites');
+    try {
+        const { StreamingSpeechSanitizer } = require('./podcast-generator');
+
+        const splitSanitizer = new StreamingSpeechSanitizer();
+        if (splitSanitizer.lookbehindChars !== 8) {
+            throw new Error(`default lookbehind expected 8, got ${splitSanitizer.lookbehindChars}`);
+        }
+        let splitOutput = splitSanitizer.push('option A ');
+        splitOutput += splitSanitizer.push('/ option B');
+
+        const originalConsoleLog = console.log;
+        const sanitizerLogs = [];
+        try {
+            console.log = (...args) => {
+                const line = args.join(' ');
+                if (line.startsWith('[StreamingSpeechSanitizer]')) {
+                    sanitizerLogs.push(line);
+                }
+            };
+            splitOutput += splitSanitizer.flush();
+
+            const cleanSanitizer = new StreamingSpeechSanitizer();
+            let cleanOutput = cleanSanitizer.push('option A, option B');
+            cleanOutput += cleanSanitizer.flush();
+            if (cleanOutput !== 'option A, option B') {
+                throw new Error(`clean output mismatch: ${JSON.stringify(cleanOutput)}`);
+            }
+        } finally {
+            console.log = originalConsoleLog;
+        }
+
+        if (splitOutput !== 'option A, option B') {
+            throw new Error(`split boundary output mismatch: ${JSON.stringify(splitOutput)}`);
+        }
+        if (
+            sanitizerLogs.length !== 1 ||
+            sanitizerLogs[0] !== '[StreamingSpeechSanitizer] rewrote 1 slash separator(s) this turn'
+        ) {
+            throw new Error(`expected exactly one rewrite log, got ${JSON.stringify(sanitizerLogs)}`);
+        }
+
+        const oneCharSanitizer = new StreamingSpeechSanitizer();
+        let oneCharOutput = '';
+        for (const char of 'option A / option B') {
+            oneCharOutput += oneCharSanitizer.push(char);
+        }
+        const originalConsoleLogForOneChar = console.log;
+        try {
+            console.log = () => {};
+            oneCharOutput += oneCharSanitizer.flush();
+        } finally {
+            console.log = originalConsoleLogForOneChar;
+        }
+        if (oneCharOutput !== 'option A, option B') {
+            throw new Error(`one-character boundary output mismatch: ${JSON.stringify(oneCharOutput)}`);
+        }
+
+        const overrideSanitizer = new StreamingSpeechSanitizer({ lookbehindChars: 3 });
+        if (overrideSanitizer.lookbehindChars !== 3) {
+            throw new Error(`lookbehind override expected 3, got ${overrideSanitizer.lookbehindChars}`);
+        }
+
+        console.log('  Eight-character holdback preserves split separators and logs only rewritten turns');
+        passed++;
+    } catch (error) {
+        console.log(`  StreamingSpeechSanitizer failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\nTest 15: synthesizeLiveTTS accepts an async iterable for streaming text');
     try {
         const { AlphaClawdVoiceBot } = require('./index');
@@ -7147,7 +7217,8 @@ async function runTests() {
             }
             const responseIterator = responseTurn.speechStream[Symbol.asyncIterator]();
             const firstSpeech = await responseIterator.next();
-            if (firstSpeech.done || firstSpeech.value !== earlySpeech.slice(0, 4)) {
+            const expectedEarlySpeech = earlySpeech.slice(0, -8);
+            if (firstSpeech.done || firstSpeech.value !== expectedEarlySpeech) {
                 throw new Error(`speech-first response did not stream its early chunk: ${JSON.stringify(firstSpeech)}`);
             }
             responses[0].send('","shouldRespond":true,"bigBrain":{"requested":false,"reason":"","consumedRunId":""},"bigHeart":{"requested":false,"reason":"","consumedRunId":""}}');

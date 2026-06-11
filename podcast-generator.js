@@ -144,9 +144,12 @@ class IncrementalSpeechReader {
     }
 }
 
-function normalizeSpokenSeparators(text) {
+function normalizeSpokenSeparators(text, onRewrite = null) {
     return String(text || '').replace(/\s+\/+\s+/g, (match, offset, whole) => {
         const before = whole.slice(0, offset).match(/\S\s*$/)?.[0]?.trim() || '';
+        if (typeof onRewrite === 'function') {
+            onRewrite();
+        }
         return /[.!?,;:]/.test(before) ? ' ' : ', ';
     });
 }
@@ -154,11 +157,21 @@ function normalizeSpokenSeparators(text) {
 class StreamingSpeechSanitizer {
     constructor(options = {}) {
         this.pending = '';
-        this.lookbehindChars = Number(options.lookbehindChars || 32);
+        this.lookbehindChars = Number(options.lookbehindChars ?? 8);
+        this.rewriteCount = 0;
     }
 
     push(text) {
         this.pending += String(text || '');
+        let rewrites = 0;
+        const normalized = normalizeSpokenSeparators(this.pending, () => {
+            rewrites++;
+        });
+        if (normalized !== this.pending) {
+            this.rewriteCount += rewrites;
+        }
+        this.pending = normalized;
+
         if (this.pending.length <= this.lookbehindChars) {
             return '';
         }
@@ -166,13 +179,26 @@ class StreamingSpeechSanitizer {
         const readyLength = this.pending.length - this.lookbehindChars;
         const ready = this.pending.slice(0, readyLength);
         this.pending = this.pending.slice(readyLength);
-        return normalizeSpokenSeparators(ready);
+        return ready;
     }
 
     flush() {
-        const ready = this.pending;
+        let rewrites = 0;
+        const ready = normalizeSpokenSeparators(this.pending, () => {
+            rewrites++;
+        });
+        if (ready !== this.pending) {
+            this.rewriteCount += rewrites;
+        }
         this.pending = '';
-        return normalizeSpokenSeparators(ready);
+
+        const rewriteCount = this.rewriteCount;
+        this.rewriteCount = 0;
+        if (rewriteCount > 0) {
+            console.log(`[StreamingSpeechSanitizer] rewrote ${rewriteCount} slash separator(s) this turn`);
+        }
+
+        return ready;
     }
 }
 
