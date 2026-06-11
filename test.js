@@ -214,6 +214,14 @@ async function runTests() {
         if (connectParams.config.realtimeInputConfig.activityHandling !== 'NO_INTERRUPTION') {
             throw new Error('Gemini Live did not disable barge-in');
         }
+        const automaticActivityDetection =
+            connectParams.config.realtimeInputConfig.automaticActivityDetection;
+        if (automaticActivityDetection?.disabled !== true) {
+            throw new Error('Gemini Live did not disable server-side automatic activity detection');
+        }
+        if ('silenceDurationMs' in automaticActivityDetection) {
+            throw new Error('Gemini Live retained a server-side silence endpoint');
+        }
         if (!connectParams.config.proactivity.proactiveAudio) {
             throw new Error('Gemini Live proactive audio was not enabled');
         }
@@ -227,6 +235,15 @@ async function runTests() {
         host.sendAudioFrame(Buffer.alloc(640));
         if (realtimeInputs[0]?.audio?.mimeType !== 'audio/pcm;rate=16000') {
             throw new Error(`Unexpected realtime input: ${JSON.stringify(realtimeInputs[0])}`);
+        }
+        if (!host.startActivity() || host.startActivity()) {
+            throw new Error('Gemini Live activity start was not edge-triggered');
+        }
+        if (!host.endActivity() || host.endActivity()) {
+            throw new Error('Gemini Live activity end was not edge-triggered');
+        }
+        if (!realtimeInputs[1]?.activityStart || !realtimeInputs[2]?.activityEnd) {
+            throw new Error(`Gemini Live explicit activity signals were not sent: ${JSON.stringify(realtimeInputs)}`);
         }
 
         const responsePcm = Buffer.alloc(4);
@@ -267,6 +284,84 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Gemini Live lifecycle failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 1e: Gemini Live explicit activity follows confirmed participant floor');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-gemini-activity';
+        const userId = 'user-gemini-activity';
+        const activityEvents = [];
+        let floorActive = false;
+
+        bot.sessionHostModes = new Map([[guildId, 'gemini-live']]);
+        bot.geminiLiveActivityStates = new Map();
+        bot.geminiLiveActivityReleaseMs = 35;
+        bot.participantSignalStates = new Map();
+        bot.geminiLiveHosts = new Map([[
+            guildId,
+            {
+                activityActive: false,
+                startActivity() {
+                    activityEvents.push('start');
+                    this.activityActive = true;
+                    return true;
+                },
+                endActivity() {
+                    activityEvents.push('end');
+                    this.activityActive = false;
+                    return true;
+                }
+            }
+        ]]);
+        bot.hasCurrentParticipantFloor = () => floorActive;
+
+        const participantStates = bot.getParticipantSignalStateMap(guildId);
+        participantStates.set(userId, {
+            userId,
+            rawActive: false,
+            floorHasFreshSpeechEvidence: true
+        });
+        if (bot.beginGeminiLiveParticipantActivity(guildId, userId, 'test without raw VAD')) {
+            throw new Error('Gemini activity started without concurrent raw VAD');
+        }
+
+        participantStates.get(userId).rawActive = true;
+        floorActive = true;
+        if (!bot.beginGeminiLiveParticipantActivity(guildId, userId, 'test confirmed speech')) {
+            throw new Error('Confirmed participant speech did not start Gemini activity');
+        }
+        if (activityEvents.join(',') !== 'start') {
+            throw new Error(`Unexpected activity start events: ${activityEvents.join(',')}`);
+        }
+
+        floorActive = false;
+        if (!bot.scheduleGeminiLiveParticipantActivityEnd(guildId, 'test floor release')) {
+            throw new Error('Participant floor release did not schedule Gemini activity end');
+        }
+        await sleep(15);
+        if (!bot.holdGeminiLiveParticipantActivity(guildId, userId, 'test continuation')) {
+            throw new Error('Same-utterance continuation did not hold Gemini activity open');
+        }
+        await sleep(45);
+        if (activityEvents.includes('end')) {
+            throw new Error('Gemini activity ended despite a same-utterance continuation');
+        }
+
+        if (!bot.scheduleGeminiLiveParticipantActivityEnd(guildId, 'test final release')) {
+            throw new Error('Final participant floor release did not schedule Gemini activity end');
+        }
+        await sleep(45);
+        if (activityEvents.join(',') !== 'start,end') {
+            throw new Error(`Gemini activity did not end after the release hold: ${activityEvents.join(',')}`);
+        }
+
+        bot.clearGeminiLiveActivityState(guildId);
+        console.log('  Confirmed speech starts explicit activity and thoughtful pauses defer its end');
+        passed++;
+    } catch (error) {
+        console.log(`  Gemini Live explicit activity bridge failed: ${error.message}`);
         failed++;
     }
 

@@ -132,6 +132,10 @@ class AlphaClawdVoiceBot {
         this.geminiLiveHosts = new Map(); // guildId -> GeminiLiveHost
         this.geminiLiveTurnStates = new Map(); // guildId -> Map<turnId, playback state>
         this.geminiLiveInputTranscripts = new Map(); // guildId -> Gemini input transcript fragments
+        this.geminiLiveActivityStates = new Map(); // guildId -> explicit Gemini participant activity state
+        this.geminiLiveActivityReleaseMs = Number(
+            process.env.PODCAST_GEMINI_LIVE_ACTIVITY_RELEASE_MS || 1500
+        );
         this.geminiApiKey = options.geminiApiKey || process.env.GEMINI_API_KEY;
         this.geminiLiveHostFactory = options.geminiLiveHostFactory ||
             ((hostOptions) => new GeminiLiveHost(hostOptions));
@@ -461,7 +465,122 @@ class AlphaClawdVoiceBot {
     }
 
     isGeminiLiveSession(guildId) {
-        return this.sessionHostModes.get(guildId) === 'gemini-live';
+        return this.sessionHostModes?.get?.(guildId) === 'gemini-live';
+    }
+
+    getGeminiLiveActivityReleaseMs() {
+        return Number.isFinite(this.geminiLiveActivityReleaseMs)
+            ? Math.max(0, this.geminiLiveActivityReleaseMs)
+            : 1500;
+    }
+
+    getGeminiLiveActivityState(guildId, create = false) {
+        if (!this.geminiLiveActivityStates) {
+            this.geminiLiveActivityStates = new Map();
+        }
+
+        let state = this.geminiLiveActivityStates.get(guildId);
+        if (!state && create) {
+            state = {
+                active: false,
+                releaseTimer: null,
+                lastEvidenceAt: null,
+                lastUserId: null
+            };
+            this.geminiLiveActivityStates.set(guildId, state);
+        }
+        return state || null;
+    }
+
+    clearGeminiLiveActivityReleaseTimer(state) {
+        if (!state?.releaseTimer) return;
+        clearTimeout(state.releaseTimer);
+        state.releaseTimer = null;
+    }
+
+    beginGeminiLiveParticipantActivity(guildId, userId, reason = 'confirmed speech evidence') {
+        if (!this.isGeminiLiveSession(guildId)) return false;
+
+        const participantState = this.getParticipantSignalState(guildId, userId, false);
+        if (!participantState?.rawActive || !participantState.floorHasFreshSpeechEvidence) {
+            return false;
+        }
+
+        const host = this.geminiLiveHosts.get(guildId);
+        if (!host) return false;
+
+        const state = this.getGeminiLiveActivityState(guildId, true);
+        this.clearGeminiLiveActivityReleaseTimer(state);
+        state.lastEvidenceAt = Date.now();
+        state.lastUserId = userId;
+
+        if (state.active && host.activityActive !== false) {
+            return true;
+        }
+
+        if (host.startActivity?.() === false) {
+            return false;
+        }
+
+        state.active = true;
+        console.log(`[GeminiLive] Participant activity started for ${userId} (${reason})`);
+        return true;
+    }
+
+    holdGeminiLiveParticipantActivity(guildId, userId, reason = 'same-utterance continuation') {
+        const state = this.getGeminiLiveActivityState(guildId, false);
+        if (!this.isGeminiLiveSession(guildId) || !state?.active) {
+            return false;
+        }
+
+        this.clearGeminiLiveActivityReleaseTimer(state);
+        state.lastUserId = userId;
+        console.log(`[GeminiLive] Participant activity release deferred for ${userId} (${reason})`);
+        return true;
+    }
+
+    scheduleGeminiLiveParticipantActivityEnd(guildId, reason = 'participant floor released') {
+        const state = this.getGeminiLiveActivityState(guildId, false);
+        if (!this.isGeminiLiveSession(guildId) || !state?.active) {
+            return false;
+        }
+        if (this.hasCurrentParticipantFloor(guildId)) {
+            return false;
+        }
+
+        this.clearGeminiLiveActivityReleaseTimer(state);
+        const releaseMs = this.getGeminiLiveActivityReleaseMs();
+        state.releaseTimer = setTimeout(() => {
+            state.releaseTimer = null;
+            if (this.hasCurrentParticipantFloor(guildId)) {
+                return;
+            }
+
+            const host = this.geminiLiveHosts.get(guildId);
+            if (!host) {
+                this.geminiLiveActivityStates.delete(guildId);
+                return;
+            }
+
+            if (host.endActivity?.() === false) {
+                return;
+            }
+
+            state.active = false;
+            console.log(`[GeminiLive] Participant activity ended after ${releaseMs}ms (${reason})`);
+        }, releaseMs);
+        if (typeof state.releaseTimer.unref === 'function') {
+            state.releaseTimer.unref();
+        }
+
+        console.log(`[GeminiLive] Participant floor released; holding activity for ${releaseMs}ms`);
+        return true;
+    }
+
+    clearGeminiLiveActivityState(guildId) {
+        const state = this.getGeminiLiveActivityState(guildId, false);
+        this.clearGeminiLiveActivityReleaseTimer(state);
+        this.geminiLiveActivityStates?.delete?.(guildId);
     }
 
     buildGeminiLiveSystemPrompt() {
@@ -665,6 +784,7 @@ class AlphaClawdVoiceBot {
 
     async stopGeminiLiveSession(guildId) {
         const host = this.geminiLiveHosts.get(guildId);
+        this.clearGeminiLiveActivityState(guildId);
         if (host) {
             host.stop();
             this.geminiLiveHosts.delete(guildId);
@@ -1349,6 +1469,7 @@ class AlphaClawdVoiceBot {
             console.log(`[Bot] User ${userId} raw VAD continued within debounce window; restoring floor authority`);
             this.setInternalThoughtUserSpeaking(guildId, userId, true);
             this.conversationBuffer?.setUserSpeaking?.(userId, true);
+            this.holdGeminiLiveParticipantActivity(guildId, userId);
             return;
         }
 
@@ -1384,6 +1505,7 @@ class AlphaClawdVoiceBot {
                     ? state.floorReleasedAt + this.getParticipantFloorContinuationMs()
                     : null;
             }
+            this.scheduleGeminiLiveParticipantActivityEnd(guildId);
             return;
         }
 
@@ -1438,6 +1560,11 @@ class AlphaClawdVoiceBot {
         state.floorHasFreshSpeechEvidence = true;
         state.continuationUsed = false;
         state.continuationUntil = null;
+        this.beginGeminiLiveParticipantActivity(
+            guildId,
+            userId,
+            metadata.source || 'speech evidence'
+        );
 
         this.recordParticipantSignal(guildId, userId, 'speech_evidence', {
             ...metadata,

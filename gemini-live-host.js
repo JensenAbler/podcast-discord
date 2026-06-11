@@ -2,9 +2,7 @@ const { PassThrough } = require('stream');
 const {
     GoogleGenAI,
     ActivityHandling,
-    EndSensitivity,
-    Modality,
-    StartSensitivity
+    Modality
 } = require('@google/genai');
 const { RealtimePcmMixer } = require('./realtime-pcm-mixer');
 
@@ -57,6 +55,7 @@ class GeminiLiveHost {
         this.session = null;
         this.connected = false;
         this.closing = false;
+        this.activityActive = false;
         this.turnSequence = 0;
         this.activeTurn = null;
         this.resumptionHandle = null;
@@ -100,6 +99,7 @@ class GeminiLiveHost {
                 },
                 onclose: (event) => {
                     this.connected = false;
+                    this.activityActive = false;
                     this.session = null;
                     this.onClose(event);
                     if (!this.closing) {
@@ -124,10 +124,7 @@ class GeminiLiveHost {
                 },
                 realtimeInputConfig: {
                     automaticActivityDetection: {
-                        startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
-                        endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
-                        prefixPaddingMs: 120,
-                        silenceDurationMs: 700
+                        disabled: true
                     },
                     activityHandling: this.noInterruption
                         ? ActivityHandling.NO_INTERRUPTION
@@ -166,6 +163,36 @@ class GeminiLiveHost {
 
     pushAudio(sourceId, pcm48kStereo) {
         this.mixer.push(sourceId, pcm48kStereo);
+    }
+
+    startActivity() {
+        if (this.activityActive || !this.connected || !this.session) {
+            return false;
+        }
+
+        try {
+            this.session.sendRealtimeInput({ activityStart: {} });
+            this.activityActive = true;
+            return true;
+        } catch (error) {
+            this.onError(error);
+            return false;
+        }
+    }
+
+    endActivity() {
+        if (!this.activityActive || !this.connected || !this.session) {
+            return false;
+        }
+
+        try {
+            this.session.sendRealtimeInput({ activityEnd: {} });
+            this.activityActive = false;
+            return true;
+        } catch (error) {
+            this.onError(error);
+            return false;
+        }
     }
 
     sendAudioFrame(frame) {
@@ -283,15 +310,12 @@ class GeminiLiveHost {
             this.finishActiveTurn({ interrupted: true, reason: 'host_stopped' });
         }
         if (this.session) {
-            try {
-                this.session.sendRealtimeInput({ audioStreamEnd: true });
-            } catch (error) {
-                this.onError(error);
-            }
+            this.endActivity();
             this.session.close();
             this.session = null;
         }
         this.connected = false;
+        this.activityActive = false;
     }
 }
 
