@@ -83,6 +83,7 @@ const { BigHeartGenerator } = require('./bigheart-generator');
 const { buildTurnIdIntent } = require('./turn-intent');
 const { ParticipantSignalProfile } = require('./participant-signal-profile');
 const { GeminiLiveHost } = require('./gemini-live-host');
+const { OggOpusPrebufferTransform } = require('./audio-prebuffer');
 
 // Map a Fish TTS format string to the @discordjs/voice StreamType that lets
 // Discord play the bytes without an FFmpeg transcode. Returning undefined
@@ -124,6 +125,11 @@ class AlphaClawdVoiceBot {
         this.participantActivityTimers = new Map(); // guildId -> Map<userId, timeout>
         this.participantActivityConfirmDelayMs = Number(process.env.PODCAST_PARTICIPANT_ACTIVITY_CONFIRM_MS || 200);
         this.participantFloorContinuationMs = Number(process.env.PODCAST_PARTICIPANT_FLOOR_CONTINUATION_MS || 75);
+        this.fishPlaybackPrebufferSeconds = Number(
+            options.fishPlaybackPrebufferSeconds ??
+            process.env.FISH_AUDIO_PLAYBACK_PREBUFFER_SECONDS ??
+            3
+        );
         this.participantSignalProfiles = new Map(); // guildId -> Map<userId, ParticipantSignalProfile>
         this.participantSignalStates = new Map(); // guildId -> Map<userId, raw VAD/evidence state>
         this.consecutiveGeneratorSilences = new Map(); // guildId -> consecutive shouldRespond=false decisions
@@ -2064,21 +2070,55 @@ class AlphaClawdVoiceBot {
         return audio && typeof audio.pipe === 'function' && !Buffer.isBuffer(audio);
     }
 
+    getLiveTtsFormat() {
+        return this.voiceProvider?.format || this.voiceProvider?.tts?.format || null;
+    }
+
+    createPlaybackAudioStream(audio) {
+        const format = String(this.getLiveTtsFormat() || '').toLowerCase();
+        const prebufferSeconds = Number(this.fishPlaybackPrebufferSeconds);
+        if (format !== 'opus' || !Number.isFinite(prebufferSeconds) || prebufferSeconds <= 0) {
+            return new PassThrough();
+        }
+
+        return new OggOpusPrebufferTransform({
+            targetSeconds: prebufferSeconds,
+            onRelease: ({ reason, bytes, durationSeconds, targetSeconds }) => {
+                console.log(
+                    `[Bot] Fish playback prebuffer released: reason=${reason}, ` +
+                    `buffered=${durationSeconds.toFixed(2)}s/${targetSeconds}s, bytes=${bytes}`
+                );
+            }
+        });
+    }
+
     teeAudioForRecording(audio) {
         const capture = {
             playbackAudio: audio,
             isStream: false,
             chunks: [],
             byteLength: 0,
-            completedAt: null
+            completedAt: null,
+            completion: Promise.resolve()
         };
 
         if (!this.isReadableAudio(audio)) {
             return capture;
         }
 
-        const playbackAudio = new PassThrough();
+        const playbackAudio = this.createPlaybackAudioStream(audio);
         const recordingAudio = new PassThrough();
+        let resolveCompletion;
+        let completionSettled = false;
+        capture.completion = new Promise((resolve) => {
+            resolveCompletion = resolve;
+        });
+        const settleCompletion = () => {
+            if (completionSettled) return;
+            completionSettled = true;
+            capture.completedAt = capture.completedAt || new Date().toISOString();
+            resolveCompletion();
+        };
 
         capture.playbackAudio = playbackAudio;
         capture.isStream = true;
@@ -2095,12 +2135,14 @@ class AlphaClawdVoiceBot {
         });
 
         recordingAudio.once('end', () => {
-            capture.completedAt = new Date().toISOString();
+            settleCompletion();
         });
 
         recordingAudio.once('error', (error) => {
             console.error('[Bot] Error capturing streamed TTS for recording:', error);
+            settleCompletion();
         });
+        recordingAudio.once('close', settleCompletion);
 
         audio.pipe(playbackAudio);
         audio.pipe(recordingAudio);
@@ -2121,9 +2163,10 @@ class AlphaClawdVoiceBot {
         let botAudioRecorded = false;
         let playbackStartMs;
         let playbackStartAborted = false;
+        let playbackUnderrunDetected = false;
 
         const inputType = options.inputType
-            ?? (capture.isStream ? streamTypeForLiveFormat(this.voiceProvider?.format) : undefined);
+            ?? (capture.isStream ? streamTypeForLiveFormat(this.getLiveTtsFormat()) : undefined);
 
         this.duckBigBrainAmbientBed(guildId, 'foreground TTS starting');
         const playback = await this.voiceManager.speakWithTiming(guildId, capture.playbackAudio, {
@@ -2181,6 +2224,8 @@ class AlphaClawdVoiceBot {
         this.noteHostPlaybackEnd(guildId, playbackTiming);
 
         if (capture.isStream) {
+            const bytesAtPlaybackEnd = capture.byteLength;
+            await capture.completion;
             const recordedAudio = this.getCapturedAudioBuffer(capture);
             if (recordedAudio) {
                 this.voiceManager.addBotAudioToRecording(guildId, recordedAudio, {
@@ -2189,6 +2234,13 @@ class AlphaClawdVoiceBot {
                 botAudioRecorded = true;
             } else {
                 console.warn('[Bot] Streamed TTS produced no captured audio for recording');
+            }
+            if (capture.byteLength > bytesAtPlaybackEnd) {
+                playbackUnderrunDetected = true;
+                console.warn(
+                    `[Bot] Playback ended before streamed TTS completed: ` +
+                    `${capture.byteLength - bytesAtPlaybackEnd} byte(s) arrived after player idle`
+                );
             }
         } else if (!botAudioRecorded && Buffer.isBuffer(audio)) {
             this.voiceManager.addBotAudioToRecording(guildId, audio);
@@ -2199,7 +2251,8 @@ class AlphaClawdVoiceBot {
             playback,
             playbackTiming,
             botAudioRecorded,
-            ttsCompletedAt: capture.completedAt
+            ttsCompletedAt: capture.completedAt,
+            playbackUnderrunDetected
         };
     }
 
@@ -5276,10 +5329,13 @@ class AlphaClawdVoiceBot {
             // history use the authoritative text and bigBrain values.
             let finalResponse = await this.settleGeneratorResponse(response, 'playback');
 
+            const playbackUnderrunDetected = playbackResult.playbackUnderrunDetected === true;
             const transcriptEntry = {
                 speaker: 'Alpha-Clawd',
                 speakerRole: 'host',
-                transcription: finalResponse.speech,
+                transcription: playbackUnderrunDetected
+                    ? '[Playback underrun: generated host response was not fully audible.]'
+                    : finalResponse.speech,
                 timestamp: generatedAt,
                 generatedAt,
                 ttsStartedAt,
@@ -5289,6 +5345,11 @@ class AlphaClawdVoiceBot {
                 playbackEndedAt,
                 duration: playbackDuration
             };
+            if (playbackUnderrunDetected) {
+                transcriptEntry.generatedTranscription = finalResponse.speech;
+                transcriptEntry.playbackUnderrunDetected = true;
+                transcriptEntry.audioEvents = ['playback_underrun'];
+            }
             if (source) {
                 transcriptEntry.source = source;
             }
@@ -5313,7 +5374,9 @@ class AlphaClawdVoiceBot {
             this.observeShowRunnerTranscriptEntry(guildId, transcriptEntry);
             this.resetConsecutiveGeneratorSilences(guildId);
 
-            if (typeof options.rememberTranscript === 'string') {
+            if (playbackUnderrunDetected) {
+                console.warn('[Bot] Skipping generator history write for truncated host playback');
+            } else if (typeof options.rememberTranscript === 'string') {
                 this.podcastGenerator.rememberTurn?.(options.rememberTranscript, finalResponse);
             } else if (options.rememberAssistant) {
                 this.podcastGenerator.rememberAssistantResponse?.(finalResponse);

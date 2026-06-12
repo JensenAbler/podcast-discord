@@ -26,6 +26,8 @@ const {
     RealtimePcmMixer,
     GeminiLiveHost,
     upsampleMono24kToStereo48k,
+    OggOpusPrebufferTransform,
+    estimateOggOpusDurationSeconds,
     EpisodeTranscriptStore,
     createEpisodeTranscriptServer,
     buildTurnIdIntent,
@@ -63,6 +65,35 @@ function createSpeechPcm(durationMs = 200) {
     }
 
     return buffer;
+}
+
+function createOggPage(granulePosition, payload, sequence = 0) {
+    const body = Buffer.from(payload);
+    if (body.length > 255) {
+        throw new Error('Test Ogg page payload must fit in one lacing segment');
+    }
+    const page = Buffer.alloc(28 + body.length);
+    page.write('OggS', 0, 'ascii');
+    page[4] = 0;
+    page[5] = sequence === 0 ? 2 : 0;
+    page.writeBigUInt64LE(BigInt(granulePosition), 6);
+    page.writeUInt32LE(1, 14);
+    page.writeUInt32LE(sequence, 18);
+    page.writeUInt32LE(0, 22);
+    page[26] = 1;
+    page[27] = body.length;
+    body.copy(page, 28);
+    return page;
+}
+
+function createOggOpusHeader(preSkip = 312) {
+    const opusHead = Buffer.alloc(19);
+    opusHead.write('OpusHead', 0, 'ascii');
+    opusHead[8] = 1;
+    opusHead[9] = 1;
+    opusHead.writeUInt16LE(preSkip, 10);
+    opusHead.writeUInt32LE(48000, 12);
+    return createOggPage(0, opusHead, 0);
 }
 
 async function runTests() {
@@ -6760,6 +6791,119 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Audio Transmitter inline volume failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 13a: Ogg Opus playback waits for buffer ahead or synthesis completion');
+    try {
+        const preSkip = 312;
+        const header = createOggOpusHeader(preSkip);
+        const oneSecond = createOggPage(48000 + preSkip, Buffer.from('one-second'), 1);
+        const threeSeconds = createOggPage((48000 * 3) + preSkip, Buffer.from('three-seconds'), 2);
+        const combined = Buffer.concat([header, oneSecond, threeSeconds]);
+        const estimated = estimateOggOpusDurationSeconds(combined);
+        if (Math.abs(estimated - 3) > 0.001) {
+            throw new Error(`Expected 3s Ogg duration, got ${estimated}`);
+        }
+
+        const thresholdOutput = [];
+        let thresholdRelease = null;
+        const thresholdGate = new OggOpusPrebufferTransform({
+            targetSeconds: 3,
+            onRelease: (metadata) => { thresholdRelease = metadata; }
+        });
+        thresholdGate.on('data', chunk => thresholdOutput.push(Buffer.from(chunk)));
+        thresholdGate.write(Buffer.concat([header, oneSecond]));
+        if (thresholdOutput.length !== 0) {
+            throw new Error('One second of Ogg audio leaked before the 3s threshold');
+        }
+        thresholdGate.write(threeSeconds);
+        if (
+            Buffer.concat(thresholdOutput).length !== combined.length ||
+            thresholdRelease?.reason !== 'duration-threshold'
+        ) {
+            throw new Error(`Threshold prebuffer did not release correctly: ${JSON.stringify(thresholdRelease)}`);
+        }
+        thresholdGate.end();
+
+        const shortOutput = [];
+        let shortRelease = null;
+        const shortGate = new OggOpusPrebufferTransform({
+            targetSeconds: 3,
+            onRelease: (metadata) => { shortRelease = metadata; }
+        });
+        shortGate.on('data', chunk => shortOutput.push(Buffer.from(chunk)));
+        shortGate.end(Buffer.concat([header, oneSecond]));
+        await new Promise((resolve, reject) => {
+            shortGate.once('end', resolve);
+            shortGate.once('error', reject);
+            shortGate.resume();
+        });
+        if (
+            Buffer.concat(shortOutput).length !== header.length + oneSecond.length ||
+            shortRelease?.reason !== 'synthesis-complete'
+        ) {
+            throw new Error(`Short synthesis did not release on completion: ${JSON.stringify(shortRelease)}`);
+        }
+
+        console.log('  Ogg Opus prebuffer releases at 3s or source completion without leaking the first chunk');
+        passed++;
+    } catch (error) {
+        console.log(`  Ogg Opus prebuffer failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 13b: Streamed TTS capture waits for bytes arriving after player idle');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const source = new PassThrough();
+        let recordedAudio = null;
+        bot.voiceProvider = { tts: { format: 'opus' } };
+        bot.fishPlaybackPrebufferSeconds = 0;
+        bot.duckBigBrainAmbientBed = () => {};
+        bot.noteHostPlaybackStart = () => {};
+        bot.noteHostPlaybackEnd = () => {};
+        bot.voiceManager = {
+            speakWithTiming: async (_guildId, playbackAudio, options = {}) => {
+                playbackAudio.resume();
+                options.onStart?.({ playbackStartedAt: '2026-06-12T00:00:00.000Z' });
+                return {
+                    timing: {
+                        playbackRequestedAt: '2026-06-11T23:59:59.900Z',
+                        playbackStartedAt: '2026-06-12T00:00:00.000Z',
+                        playbackEndedAt: null
+                    },
+                    finished: new Promise(resolve => setTimeout(() => resolve({
+                        playbackRequestedAt: '2026-06-11T23:59:59.900Z',
+                        playbackStartedAt: '2026-06-12T00:00:00.000Z',
+                        playbackEndedAt: '2026-06-12T00:00:00.100Z'
+                    }), 5))
+                };
+            },
+            addBotAudioToRecording: (_guildId, audio) => {
+                recordedAudio = Buffer.from(audio);
+            }
+        };
+
+        const playbackPromise = bot.playTtsAndRecord('guild-stream-capture', source);
+        source.write(Buffer.from('first'));
+        setTimeout(() => source.end(Buffer.from('-later')), 20);
+        const result = await playbackPromise;
+        if (
+            recordedAudio?.toString() !== 'first-later' ||
+            !result.ttsCompletedAt ||
+            result.playbackUnderrunDetected !== true
+        ) {
+            throw new Error(`Stream capture finalized before synthesis ended: ${JSON.stringify({
+                recordedAudio: recordedAudio?.toString(),
+                result
+            })}`);
+        }
+
+        console.log('  Streamed recording capture includes audio that arrives after an early player idle');
+        passed++;
+    } catch (error) {
+        console.log(`  Streamed TTS capture completion failed: ${error.message}`);
         failed++;
     }
 

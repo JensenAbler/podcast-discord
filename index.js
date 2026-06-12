@@ -32,6 +32,7 @@ const { ParticipantSignalProfile } = require('./participant-signal-profile');
 const { AwarenessShelf } = require('./awareness-shelf');
 const { RealtimePcmMixer } = require('./realtime-pcm-mixer');
 const { GeminiLiveHost, upsampleMono24kToStereo48k } = require('./gemini-live-host');
+const { OggOpusPrebufferTransform, estimateOggOpusDurationSeconds } = require('./audio-prebuffer');
 const { EpisodeTranscriptStore, createEpisodeTranscriptServer } = require('./episode-transcript-viewer');
 const { buildTurnIdIntent, normalizeTurnIdIntent } = require('./turn-intent');
 
@@ -62,6 +63,8 @@ module.exports = {
     RealtimePcmMixer,
     GeminiLiveHost,
     upsampleMono24kToStereo48k,
+    OggOpusPrebufferTransform,
+    estimateOggOpusDurationSeconds,
     EpisodeTranscriptStore,
     createEpisodeTranscriptServer,
     buildTurnIdIntent,

@@ -48,12 +48,19 @@ class VoiceManager {
                 options.voiceJoinReadyTimeoutMs ?? process.env.PODCAST_VOICE_JOIN_READY_TIMEOUT_MS,
                 30000
             ),
+            audioPlayerMaxMissedFrames: this.parsePositiveInt(
+                options.audioPlayerMaxMissedFrames ?? process.env.DISCORD_AUDIO_MAX_MISSED_FRAMES,
+                50
+            ),
             ...options
         };
 
         // Initialize STT service for transcription.
         this.stt = options.stt;
         this.enableTranscription = this.options.enableTranscription;
+        console.log(
+            `[VoiceManager] Discord audio maxMissedFrames=${this.options.audioPlayerMaxMissedFrames}`
+        );
 
         // Initialize post-processor for episode finalization
         this.postProcessor = new EpisodePostProcessor({
@@ -107,7 +114,11 @@ class VoiceManager {
         this.connectionChannels.set(guildId, channel.id);
 
         // Create audio player for transmitting
-        const player = createAudioPlayer();
+        const player = createAudioPlayer({
+            behaviors: {
+                maxMissedFrames: this.options.audioPlayerMaxMissedFrames
+            }
+        });
         this.players.set(guildId, player);
         connection.subscribe(player);
 
