@@ -2256,7 +2256,7 @@ class AlphaClawdVoiceBot {
                         .setDescription('Host engine for this episode')
                         .setRequired(false)
                         .addChoices(
-                            { name: 'Current Sonnet + Fish', value: 'current' },
+                            { name: 'Claude + Fish', value: 'current' },
                             { name: 'Gemini Live (experimental)', value: 'gemini-live' }
                         )),
             new SlashCommandBuilder()
@@ -3058,7 +3058,7 @@ class AlphaClawdVoiceBot {
                 `🎙️ **Consent Request Sent**\n` +
                 `I've asked participants for recording consent in voice.\n` +
                 `Please type **YES** to proceed or **NO** to cancel.\n\n` +
-                `Host engine: **${engine === 'gemini-live' ? 'Gemini Live (experimental)' : 'Current Sonnet + Fish'}**\n\n` +
+                `Host engine: **${engine === 'gemini-live' ? 'Gemini Live (experimental)' : 'Claude + Fish'}**\n\n` +
                 `(Waiting 60 seconds for response...)`
             );
 
