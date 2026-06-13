@@ -26,8 +26,6 @@ const {
     RealtimePcmMixer,
     GeminiLiveHost,
     upsampleMono24kToStereo48k,
-    OggOpusPrebufferTransform,
-    estimateOggOpusDurationSeconds,
     EpisodeTranscriptStore,
     createEpisodeTranscriptServer,
     buildTurnIdIntent,
@@ -65,35 +63,6 @@ function createSpeechPcm(durationMs = 200) {
     }
 
     return buffer;
-}
-
-function createOggPage(granulePosition, payload, sequence = 0) {
-    const body = Buffer.from(payload);
-    if (body.length > 255) {
-        throw new Error('Test Ogg page payload must fit in one lacing segment');
-    }
-    const page = Buffer.alloc(28 + body.length);
-    page.write('OggS', 0, 'ascii');
-    page[4] = 0;
-    page[5] = sequence === 0 ? 2 : 0;
-    page.writeBigUInt64LE(BigInt(granulePosition), 6);
-    page.writeUInt32LE(1, 14);
-    page.writeUInt32LE(sequence, 18);
-    page.writeUInt32LE(0, 22);
-    page[26] = 1;
-    page[27] = body.length;
-    body.copy(page, 28);
-    return page;
-}
-
-function createOggOpusHeader(preSkip = 312) {
-    const opusHead = Buffer.alloc(19);
-    opusHead.write('OpusHead', 0, 'ascii');
-    opusHead[8] = 1;
-    opusHead[9] = 1;
-    opusHead.writeUInt16LE(preSkip, 10);
-    opusHead.writeUInt32LE(48000, 12);
-    return createOggPage(0, opusHead, 0);
 }
 
 async function runTests() {
@@ -6794,62 +6763,36 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 13a: Ogg Opus playback waits for buffer ahead or synthesis completion');
+    console.log('\nTest 13a: Streamed Opus starts immediately and tolerates synthesis gaps');
     try {
-        const preSkip = 312;
-        const header = createOggOpusHeader(preSkip);
-        const oneSecond = createOggPage(48000 + preSkip, Buffer.from('one-second'), 1);
-        const threeSeconds = createOggPage((48000 * 3) + preSkip, Buffer.from('three-seconds'), 2);
-        const combined = Buffer.concat([header, oneSecond, threeSeconds]);
-        const estimated = estimateOggOpusDurationSeconds(combined);
-        if (Math.abs(estimated - 3) > 0.001) {
-            throw new Error(`Expected 3s Ogg duration, got ${estimated}`);
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const source = new PassThrough();
+        const capture = bot.teeAudioForRecording(source);
+        const firstPlaybackChunk = new Promise((resolve, reject) => {
+            capture.playbackAudio.once('data', resolve);
+            capture.playbackAudio.once('error', reject);
+        });
+        source.write(Buffer.from('first-chunk'));
+        const firstChunk = await firstPlaybackChunk;
+        if (firstChunk.toString() !== 'first-chunk') {
+            throw new Error(`First streamed chunk was not forwarded immediately: ${firstChunk}`);
+        }
+        source.end();
+        await capture.completion;
+
+        const manager = Object.create(VoiceManager.prototype);
+        manager.options = { audioPlayerMaxMissedFrames: 1500 };
+        const player = manager.createPlaybackPlayer();
+        if (player.behaviors.maxMissedFrames !== 1500) {
+            throw new Error(
+                `Expected 1500 missed frames, got ${player.behaviors.maxMissedFrames}`
+            );
         }
 
-        const thresholdOutput = [];
-        let thresholdRelease = null;
-        const thresholdGate = new OggOpusPrebufferTransform({
-            targetSeconds: 3,
-            onRelease: (metadata) => { thresholdRelease = metadata; }
-        });
-        thresholdGate.on('data', chunk => thresholdOutput.push(Buffer.from(chunk)));
-        thresholdGate.write(Buffer.concat([header, oneSecond]));
-        if (thresholdOutput.length !== 0) {
-            throw new Error('One second of Ogg audio leaked before the 3s threshold');
-        }
-        thresholdGate.write(threeSeconds);
-        if (
-            Buffer.concat(thresholdOutput).length !== combined.length ||
-            thresholdRelease?.reason !== 'duration-threshold'
-        ) {
-            throw new Error(`Threshold prebuffer did not release correctly: ${JSON.stringify(thresholdRelease)}`);
-        }
-        thresholdGate.end();
-
-        const shortOutput = [];
-        let shortRelease = null;
-        const shortGate = new OggOpusPrebufferTransform({
-            targetSeconds: 3,
-            onRelease: (metadata) => { shortRelease = metadata; }
-        });
-        shortGate.on('data', chunk => shortOutput.push(Buffer.from(chunk)));
-        shortGate.end(Buffer.concat([header, oneSecond]));
-        await new Promise((resolve, reject) => {
-            shortGate.once('end', resolve);
-            shortGate.once('error', reject);
-            shortGate.resume();
-        });
-        if (
-            Buffer.concat(shortOutput).length !== header.length + oneSecond.length ||
-            shortRelease?.reason !== 'synthesis-complete'
-        ) {
-            throw new Error(`Short synthesis did not release on completion: ${JSON.stringify(shortRelease)}`);
-        }
-
-        console.log('  Ogg Opus prebuffer releases at 3s or source completion without leaking the first chunk');
+        console.log('  First audio is unbuffered and Discord silence can bridge up to 30s of open-stream gaps');
         passed++;
     } catch (error) {
-        console.log(`  Ogg Opus prebuffer failed: ${error.message}`);
+        console.log(`  Streamed Opus gap tolerance failed: ${error.message}`);
         failed++;
     }
 
@@ -6859,7 +6802,6 @@ async function runTests() {
         const source = new PassThrough();
         let recordedAudio = null;
         bot.voiceProvider = { tts: { format: 'opus' } };
-        bot.fishPlaybackPrebufferSeconds = 0;
         bot.duckBigBrainAmbientBed = () => {};
         bot.noteHostPlaybackStart = () => {};
         bot.noteHostPlaybackEnd = () => {};

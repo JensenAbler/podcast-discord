@@ -83,7 +83,6 @@ const { BigHeartGenerator } = require('./bigheart-generator');
 const { buildTurnIdIntent } = require('./turn-intent');
 const { ParticipantSignalProfile } = require('./participant-signal-profile');
 const { GeminiLiveHost } = require('./gemini-live-host');
-const { OggOpusPrebufferTransform } = require('./audio-prebuffer');
 
 // Map a Fish TTS format string to the @discordjs/voice StreamType that lets
 // Discord play the bytes without an FFmpeg transcode. Returning undefined
@@ -125,11 +124,6 @@ class AlphaClawdVoiceBot {
         this.participantActivityTimers = new Map(); // guildId -> Map<userId, timeout>
         this.participantActivityConfirmDelayMs = Number(process.env.PODCAST_PARTICIPANT_ACTIVITY_CONFIRM_MS || 200);
         this.participantFloorContinuationMs = Number(process.env.PODCAST_PARTICIPANT_FLOOR_CONTINUATION_MS || 75);
-        this.fishPlaybackPrebufferSeconds = Number(
-            options.fishPlaybackPrebufferSeconds ??
-            process.env.FISH_AUDIO_PLAYBACK_PREBUFFER_SECONDS ??
-            3
-        );
         this.participantSignalProfiles = new Map(); // guildId -> Map<userId, ParticipantSignalProfile>
         this.participantSignalStates = new Map(); // guildId -> Map<userId, raw VAD/evidence state>
         this.consecutiveGeneratorSilences = new Map(); // guildId -> consecutive shouldRespond=false decisions
@@ -2074,24 +2068,6 @@ class AlphaClawdVoiceBot {
         return this.voiceProvider?.format || this.voiceProvider?.tts?.format || null;
     }
 
-    createPlaybackAudioStream(audio) {
-        const format = String(this.getLiveTtsFormat() || '').toLowerCase();
-        const prebufferSeconds = Number(this.fishPlaybackPrebufferSeconds);
-        if (format !== 'opus' || !Number.isFinite(prebufferSeconds) || prebufferSeconds <= 0) {
-            return new PassThrough();
-        }
-
-        return new OggOpusPrebufferTransform({
-            targetSeconds: prebufferSeconds,
-            onRelease: ({ reason, bytes, durationSeconds, targetSeconds }) => {
-                console.log(
-                    `[Bot] Fish playback prebuffer released: reason=${reason}, ` +
-                    `buffered=${durationSeconds.toFixed(2)}s/${targetSeconds}s, bytes=${bytes}`
-                );
-            }
-        });
-    }
-
     teeAudioForRecording(audio) {
         const capture = {
             playbackAudio: audio,
@@ -2106,7 +2082,7 @@ class AlphaClawdVoiceBot {
             return capture;
         }
 
-        const playbackAudio = this.createPlaybackAudioStream(audio);
+        const playbackAudio = new PassThrough();
         const recordingAudio = new PassThrough();
         let resolveCompletion;
         let completionSettled = false;

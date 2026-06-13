@@ -50,7 +50,7 @@ class VoiceManager {
             ),
             audioPlayerMaxMissedFrames: this.parsePositiveInt(
                 options.audioPlayerMaxMissedFrames ?? process.env.DISCORD_AUDIO_MAX_MISSED_FRAMES,
-                50
+                1500
             ),
             ...options
         };
@@ -114,11 +114,7 @@ class VoiceManager {
         this.connectionChannels.set(guildId, channel.id);
 
         // Create audio player for transmitting
-        const player = createAudioPlayer({
-            behaviors: {
-                maxMissedFrames: this.options.audioPlayerMaxMissedFrames
-            }
-        });
+        const player = this.createPlaybackPlayer();
         this.players.set(guildId, player);
         connection.subscribe(player);
 
@@ -182,6 +178,17 @@ class VoiceManager {
             channelName: channel.name,
             status: 'connected'
         };
+    }
+
+    createPlaybackPlayer() {
+        // @discordjs/voice emits an Opus silence packet for each missed frame.
+        // Keep doing that while Fish is synthesizing, with a finite ceiling
+        // matching the provider timeout in case an upstream stream hangs.
+        return createAudioPlayer({
+            behaviors: {
+                maxMissedFrames: this.options.audioPlayerMaxMissedFrames
+            }
+        });
     }
 
     async connectToVoiceChannel(channel) {
