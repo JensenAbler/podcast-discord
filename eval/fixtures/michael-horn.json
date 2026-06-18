@@ -1,0 +1,1454 @@
+{
+  "id": "michael-horn-opening",
+  "topic": "Michael Horn on the Billy Meyer case",
+  "topicBrief": "Ground-truth opening from a human-to-human podcast interview. Alpha-Clawd is playing the role of the human host. The host introduces Michael Horn, frames the Billy Meyer case through audience controversy and the prior Bob Lazar discussion, then hands the floor to Michael.",
+  "questionBank": [
+    "Establish who the guest is and why listeners should care.",
+    "Frame the controversy without making the guest defensive.",
+    "Connect the opening to the prior Bob Lazar / Billy Meyer photo-book discussion.",
+    "Let the guest respond once the premise and stakes are clear."
+  ],
+  "turns": [
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Okay. Well, we're already rolling, so let's get into it."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Fantastic."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Uh, yeah. Ladies and gentlemen, today I'm joined by UFO researcher, I would say, but also uh advocate for the Billy Meyer case, I would say. maybe even goes so far as to saying um a representative [pause] of Billy Meyer. [pause] Now if there's anyone that is contentious in this space you know there are a few names that you can drop and instantly you know people will start feuding and two of those names are are Bob Lazar and Billy Meyer. And at the uh at the end of my interview, as you know and as the audience might know, with Bob Lazar, we were discussing the Billy Meyer photo uh the photo book. And in there, Bob Lazar pointed out obviously the sports model or the beam ship as u as it's aptly named that that was a one for one match that was pretty identical and Bob was kind of blown away. Now, Bob and myself both agree like the later stuff is a little questionable. Um, and a lot of people would agree with that as well, and we'll get into all that, [pause] but I wanted to, you reached out after that, and I thought, what a great opportunity to, you know, have someone who's basically a spokesperson for Billy, who's been around Billy Meyer a bunch of times, who's been at his sort of institute that he has over there, who's uh, studied all of the contact cases, and there are a lot of contact cases, over a thousand."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Oh, the reports."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "The reports, right? and you've made, you know, documentaries about it, researched this stuff through and through. So, I thought, you know, what a great opportunity to have an expert on this stuff and to help fill me and my audience in on who this character is and why he's so important and why we're talking about him today. So, welcome, Michael Horn."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Thank you very much, Chris. It is truly a um not only a pleasure and an honor, but it's a rarity to be honest with you that an outreach to people that have considerable platforms and interest and knowledge in the field will actually respond to a request to discuss the Meyer material on their platform. It's not that it doesn't or hasn't happened, but it is fairly a rarity. Yeah. [pause] So, I thank you for that."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Well, absolutely. It's my my pleasure and and I'm glad that you, you know, traveled all the way. I know you guys are on the West Coast. you traveled all the way from the west coast to come here and so I thank you for taking that journey and uh and trusting me to help tell your story. Uh you know I guess we can start a little bit for the audience at home who might not be familiar with Billy Meyer. The most famous Billy Meyer reference would definitely be that you know poster that appears in pretty much every XFiles episode. the I want to believe uh the cropped version of a Billy Meyer photo. So maybe let's start there and maybe if you could introduce us to who this Billy Meyer guy is and why and why we should care about him a little bit."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Sure. I'll just start with Billy Meyer is a now 89year-old man who claims that since the age of five he has been meeting with human beings from another star system that they have tutored him from that age that from the age of five he has gone on board with them and on his own to go designated places especially in and around and on the earth and off earth uh let's say within our solar system and beyond I like to say according to the information in the case and we can talk about what we think is you know uh proof beyond a reasonable doubt and all of that so to describe Billy at this point would be to say that after uh about 22 trips that I've gone to Switzerland taken to Switzerland and met with him each time. Spend some time. Sometimes it's a half hour, sometimes it's an hour and a half. And uh had an opportunity to get my own sense of the person to try to frankly and quite honestly try to trick him into revealing that he was hoaxing on four different occasions at least. I came away and I each time with a sense that I had just spent time with a very genuine human being. And people very often, this is, let's say, a little divergent to say that there are people that write and say, \"Oh, I really want to go and meet Billy. I want to go and talk to Billy and blah blah blah blah.\" Which used to be more possible in the years past. There have been any number of things that have contributed to Billy's not just meeting with people uh with that kind of an openness any longer. uh some of that reason is threats and attempts on his life that have a total 28 by now. So I say to them, listen, I understand it would be great. I know I sat, you know, sat with the man. We've spoken about things. We sat outside and had coffee. We've been in the office many number of times. But if you want to get to know Billy, the best way is to enter into the blog or another site that has what are called the contact notes or contact reports currently and study them. Read them. You will find that this man reveals himself as he's revealing massive amounts of information. Tens of thousands of pages he's published so far. and you will be able to determine for yourself more about the genuiness or lack thereof of the person as well as have the opportunity to spend as much or as little time as you want reading the content. So I don't know if that's exactly responsive to what you were asking. I could be more specific and say, you know, I feel Billy is this kind of a person or that kind of person or all. But so many people that do hear about him, that have heard about him, express this. Oh, I really want I can I call him? Well, can I I'm saying look um he's a busy person, you know, at this age even he has a he has a lot of responsibilities. You can realize that from the read, but you can learn more about who the man is from what he's expressed. And the content dates back to 1946 when he was something like 9 years old and was publishing information, disseminating it. And when you read things that this man as a boy was publishing, you're going to think, well, who wrote this for a 9-year-old boy? And that kind of thing. So I don't want to carry on too long."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Sure. Yeah. No, I think it's very interesting and you know you mentioned that when he was 9 years old that he had these uh that he was writing these documents and that you know some would perceive that to be you know someone of a much greater age maybe 30 or 35 years old. Um so the writing level was already extremely elevated for his age at that time. But the interesting thing is when you speak to Billy or when you hear him speak rather he doesn't come off as the way he writes uh he comes off a lot simpler."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Mhm."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Just a very sort of uh simp simple worded person. Doesn't look for the most descriptive words or is kind of just very fundamental in how he speaks. Very clear and and simply communicative. Um, and so, you know, it is already anomalous that you have these papers that are written with such a high level of vernacular, uh, versus listening to him speak. Yes. A couple things about that. One, um, he did by the time he was nine and 10, as you just alluded to, it is said that he had the thinking capacity of a 35year-old adult. And he all this time until he was about the age of 16 from 5 to 16 he claims to have been tutored by this man named Svath SF f a t who was at that time supposedly around 900 years of age. We have drawing illustrations of some of the people. You can see the representation. They look pretty much like we do in this. But it was also revealed in the documents in the conversations when Meyer is speaking with some of the modernday people that he's in contact with and people that he's been in contact with for 50 plus years. So much of what his interactions uh and his learning was about that trajectory as a young boy and it sounds in a sense like science fiction. So, I'd like to say according to the information of the case because there are things that otherwise uh just seem off the charts. [pause] Yeah. Don't comport."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yeah. It's like what are you talking about? And uh there's nothing to believe in this case. Literally nothing. And they never ask for belief when I say they. Neither Meyer nor the alleged extraterrestrials. They speak and they speak in terms that are, as you said, plain and simple and clear. uh clear enough to convey any concepts we need. There are times they will say in your terminology according to your science it's expressed this way and they said we don't tend to create a rarified language that elevates one group above another but it doesn't mean that there aren't words even Latin words can can and are used to describe things that are appropriate especially in your world but for the most part we try to communicate what is and I think I I've said this a while ago So I said this when I was reading something from I think his name is Douglas VO or Vakov seti and he was talking about when contact takes place it will be in the language of mathematics and you know kind of showbiz kind of talk I guess uh you know fancy things are supposed to be done that way and my response to that was and I sent it to him we are being contacted and communic communicated in the language of science but in clear terminology uh you will find that there is an enormous amount of scientific information in this case we've done our best to vet as you and I know uh when certain things were published we will look to see especially if they seem like they have been in the body of information discussed published going back to 1975 46 whatever ver we will look to see is this something that Billy had published because I have looked to what I considered to be a higher standard of proof. I know we'll get into the [pause] UFOs and all, but I I I found another way of looking at the material to like kind of vet its authenticity. And as I've also said, uh starting to do this back in the 80s, in the relatively early days, you'd say, of you know, online searching and what have you. I got uh to the best of my knowledge, and there are other people that come forward to also contribute to this. I wasn't the only person doing it to find out because Billy didn't write about everything before everybody else or before all the scientists discovered it in to the best of our knowledge he there's a sufficiently large and what's the best term for that? Uh [pause] compendium. Yeah, a compendium with an unlikely number of confirmed and corroborated items that would exceed chance, probability, hoaxing, etc. When taken when we take into account that which is known about the man, not just from his writing, but from the investigative team that spent time over years with him watching, observing, uh, you know, checking things that he he would hand over evidence. So, we've tried our best to see what can we show is authentic. And let of course we put this all out. like other people do who are interested so that people can determine the truth for themselves."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "And I like that I like that about you because you know we we discussed for hours yesterday and we're going to kind of rehash a lot of that discussion because you know part of me really couldn't wait to dive into this as you know now I'm a [pause] I'm a seasoned magician like I I have skeptical uh a skeptical nature about the way that I approach every subject but I'm not a skeptic. I'm open to, you know, a fluctuating level of conviction. I I want to I want to be taken in these directions and I want to be immersed in these stories and see what I can, you know, connect myself and and how I can make sense of this."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yes."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Rather than dismiss it outright or believe it outright. And um [pause] it it becomes it becomes difficult with Billy's case, particularly for a lot of people. I I speak I can speak for myself, but I I know I'm speaking for many people at the same time. Uh when you look at when you begin with the photos."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Mhm."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "And so for a lot of people, it's hard to get to the, you know, to the to the writing and to the contact reports if it means I have to acknowledge that the photos are authentic. They they there's a disconnect there. Like I'm why would I why would I spend all my time reading all this if I don't believe this, right? And that's fair. And so for me it was a little bit of the same at first. Uh but you know again one thing that raised my conviction incredibly was the fact that this initial craft the one in 1975 I believe uh that was taken in Switzerland the one that you know the beautiful [pause] composition of this photo is immaculate. It's a really beautiful photo. I don't care regardless of what you think about its authenticity. It's a beautiful photo and I'm a big fan of photography and film photography and it was a really a nice framing and I think that's what made it so iconic, you know, is that it was there was some beauty to it as well and seeing that seeing Bob's reaction to it and then knowing getting to know Bob I have no choice but to at this point with what I know from Bob's story and you know I've met the man and as you know when you meet someone it's it's a different it's a different level of conviction that you can now have and not everybody has that luxury to meet Billy. or to meet Bob. Uh but we've had those luxuries individually [pause] respectively and and we can then sort of formulate perhaps a deeper understanding of the story a little bit a little bit better uh from like a personal sort of level."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Connection."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah. Exactly. And so knowing Bob and knowing that this craft is pretty much identical, if not just in uh in look, but maybe not in size so much, but it is an identical match physically to the other one. [pause] And you know, my brain instantly goes, well, there are there are only a few options here, right? These are the options that we must consider. One option being, okay, Billy made it up. Bob made it up. That's that's the first option we got to get out of the way. And a lot of people that's what they think and it's fair. You can you can you know go with that. Um I choose to look deeper to see if there's maybe another option here. Next option would be okay. The craft was authentic and then the craft that Bob was shown was like a replica of that, right? Perhaps some Loheed Martin deep underground black military project. Uh they were, you know, soping Bob or whatever it is, whatever you want to go to. And then there's there I mean there's a few more options, but the other obvious option is well, it's authentic and so is this. [pause] And that's the one I like exploring because to me it's the one that's filled with the most wonder. And I I think it's an interesting path to take. Plus, with all the evidence that we have before us, it becomes really compelling. However, we get to a bit of a fork in the road when it comes to the later photos and namely the the uh what's known as the wedding cake UFO. you know aptly named it looks like a wedding cake and as someone you know as a photographer myself I have found uh personally just by looking at it and without having to do any deep spectronomy or anything like that just some uh imperfections or inconsistencies with reality when taking photos from objects and and mainly due to my background in illusion. Uh there's a forced perspective that simply doesn't work for me and that wasn't optimized when taking these photo. There's a certain I'll put it up here, but there's a certain um formula that you have to follow when you're doing this type of stuff. and online um online people like uh Zack King. I don't know if you're familiar, but there's like a he uses um this type of principle uh pretty much in every video and ends up fooling the audience at home. [pause] And so there are certain laws that you have to obey and it seems to me like they were not obeyed in the instances in some of the instances regarding the wedding cake UFO. So, that's where I stopped initially. And I'm giving you the long and I I I want to hear your thoughts on this, but I also want the audience to know how I feel about it because I think it's important that they know where I'm coming from. [pause] That's where I stopped initially because the skeptic in me is like, well, I'm going to throw the baby out with the bath water at this point. But then Bob showed up and Bob's like, \"No, that's it.\" And now I got to reconsider either that wedding cake UFO is also real or the one's real and the one's fake. [pause] Right? These are both really interesting options. And uh and that's kind of where I was at with everything. And then, you know, obviously looking a little bit more into the contact cases and the contact reports. Now I'm back in because this is very interesting because now we're talking about like legitimate facts that we can actually look"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Oh, yes."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "up. Oh yeah. And uh and I think that's where we're at currently. So I want to go through some of the photo stuff. I want to definitely go through the contact stuff and and some of the witness reports from other people around Billy, but then I'd like to end up maybe going a little deeper into, you know, some of the prophecies or some of the, you know, [pause] the tales if you will. Um so let's start here. The wedding cake UFO."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Okay. I want to say as an overriding response because I am not a photographic expert. Uh I have mainly focused on researching the information and we could say I'm matching is this can match this can? Oh, okay. Now I can report that there are these two cans that match. This one doesn't match. So, I am not knowledgeable about how the can was made and when it was. I just want to really be clear. There are a couple people uh Francisco Vilatte and Chris Lockach who have written extensively about well the wedding cake craft plus the so-called pendulum UFO. And [pause] that's the video. Yeah, that's one of the craft in the video. There's several films. There's eight films remaining. Billy had taken more. They got they disappeared. Stolen is what we understand. But I will say a couple things about the wedding cake craft. For instance, there is the nighttime series is this object. Skeptics have said it's a it now they've used a model and painted it gold and they photographed it against the black curtain. So, one of the things that happened when uh Chris and Francisco were doing their analyses and all, they took one of those photographs where that it's pitch black behind the craft and here's this gold thing glowing. Then it was I in otherwise seemingly identical to the silver craft and they dropped it into Photoshop. In other words, a technology that I am also not expert in. And the information is they adjusted they played with contrast and brightness. Lo and behold this object instead of appearing as a model [clears throat] maybe suspended by a string or what have you now appears to be a large object hovering over a graveled road. And on that road there is one of those I think they're meter high white posts. They appear in different countries in Europe where they're marking the roads. They have these white posts. They're about a meter high, best of my recollection. And then there's a grassy hillside that curves up behind it. Now, two photographs, one that they did, and somebody else did a similar enlargement. They took it right off, you know, the the internet and played with it. And both of them got the the same kind of uh, you know, background. And both of them also got uh kind of an energetic field that seemed to be present. I don't know how and why. As I say, I'm not a high-tech guy. I thought that that since that was never anything that Billy spoke about, he didn't say, \"Well, if you'll do this, you'll see it's real.\" Never does any of that type of thing. He says, \"This is what happened. Here are the photographs. Have a nice day.\" You know, and he'll answer questions about things or did certainly in the past. Photographs have been analyzed. There's we have analyses online, especially of the earlier craft. The other thing about the wedding craft wedding craft the wedding cake UFO is that in the black backgrounded gold object photographs I happen to notice this is going back about 10 years or so. I don't I've been going to Switzerland for over 20 or so. Somewhere in there at home I'm looking at I said wait a minute there's a difference in the configuration in the dimension here on this object where something was like this you know together in this there's a koopala kind of or I guess now this has got a different dimension there's a burnished band here and nobody's talked about this why is that so I asked Billy I said Billy it appears to me that this is elevated here. What is that? And he says, \"Oh, yes. It's like they have a a room, you would say, like with a shower. It's more space up there. They've raised that up.\" So, in one of the contact reports, Billy discusses that with one of the alleged extraterrestrials. Michael, you know, came up with this thing. I don't know how he knows this, but uh and the ET says, \"Yes, well, you know, of course, we have an extra space that is created that way.\" I thought now if a guy's a model maker and I should say that certainly in the earlier days when I I nosed around the property quite a bit to see what do they have here, what are their tools and all that. So I saw there was this shed and the door was open. I walked over to see what kind of nice fine Swiss watchmaking stuff Billy must have socked away to make these great models. Well, there's a tractor. There's a bunch of shovels. There's a bunch of different kinds of gardening stuff. And I had also been, of course, in different rooms in this center, which is a renovated farmhouse that Billy quite literally single-handed since he has one hand. Uh did a great deal of work on himself before people came to gather around to study this material and to help him on the property. I never found anything. I was never, you know, seeing any evidence of anything that was really fine machining kind of stuff. The people there are people of the land of the earth. They drive tractors and they do this stuff and and Billy uh just as a side note if I may in observing him and in speaking to people, he's about the most knowledgeable person pertaining to the in the environment, the the plants, the biology of things, where to plant things. Now he had assistance with some of that planning ostensibly. There are things describing one of the extraterrestrials using a device saying for this species of tree it will do better over here where these readings are kind you know there's thousands of pages of stuff. So I don't want to go too far a field because I get excited about running down these roads. I never and I met the people that were working with them. There's a very kind of kermogyny guy there named Yakobis. I when we made our first film over there, I started to refer to him as diesel because this is a guy all the tractor work and you go there and they are busy all the time. They're very clever that they have a meeting for the people around the world who want to come and participate late May as spring is coming and all you nice folks can meet each other and help us clear the land at the same time and learn about things. And I always wanted to get involved with getting stuff out of the forest and building the fires once I knew that that was an option. And I had to do other things the first trip or two. Go in the garden and pull weeds. Let's see what you can handle here. And there's many things that occurred in these interactions and they're they're sweet memories. So my experience was that the people were very grounded. They were genuine. There was none of this I'm a meeting with the space brothers kind of stuff that is ubiquitous in eupfology and Billy is just probably the most knowledgeable person that I know of that have read and I'm not the best read person but this is a human being who knows things and freely communicates them. If you ask the right question you get the right answer. Nothing mystical there."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "You know I've realized something doing UFO content. The second you need footage of a 9- foot alien standing in a child's bedroom at 3:00 a.m., stock footage starts becoming a problem. So, I started using Higsfield Cinema Studio. What's actually smart about it is the workflow. You start with one frame, one good shot, lighting, composition, mood. You can even select your cameras, your lenses, everything. Then, instead of regenerating chaos over and over like most AI tools, you extend that exact shot into motion. So, if I'm recreating an abduction scene or a guy claiming he saw a glowing craft hovering over a highway in 1987, I can generate multiple angles and movements that actually feel like they belong in the same sequence, which is important because I'd prefer that my fake alien footage at least look professionally fake. Honestly, it's the first AI video workflow I've used that feels less like gambling and more like directing. If you want to try it, links below. Thanks to Higsfield for sponsoring this video. [pause] So, going back to the wedding cake uh UFO and you know, there are a few things that I that I noticed because I know that a lot of your photographic [pause] um summaries or analysis happened for the ones that were at a distance, not so much the ones that were uh the nighttime close ones with the little car and the little shrub like those weren't analyzed um in in this body of work. Um I think but we can we can double check that. Um those are the ones that I that I take the most issue with and I I would say I wouldn't necessarily think they were point painted gold. I think I [pause] light source. [pause] Yeah cuz the light source was probably a really warm light and you know by the size of the light source being cast on that object it would have had to been a massive light source if that craft was 40t large or 20 feet or whatever it is uh 15 to 20 I think. But regardless, it would have had to been like a football-sized, you know, light shining on that because of the reflective nature. If you have a craft that large with a regular light source, like a flashlight or anything else, um, you would just have a small spot on it. Now, the idea here is that the craft was emanating that light, which I, you know, I don't see, and I do see a reflection, um, a lighter part. So now one thing does have to be mentioned is that you'd mentioned that Billy was a model maker. Now"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "no,"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "he's not a modelaker, [pause] but he built models."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "No. Uh I was looking to see if he did. He had once, as I recall, he had said that he had tried to make a model."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "I see."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "And there were uh some younger people who made some models for him and a you know that he put in his office. Little things, you know,"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "because he is onehanded. He's one arm. He has one arm."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "and he's very capable. So it's not like he's not cap I've you know he but I've never seen him do any what I would call fine"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "I see"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "work. And the other thing about the craft and the light, just to be clear, um, yes, I think you're correct that if that was illuminated from outside, but what was shown in the manipulated uh, Photoshop application to the photo was an emanation not of a light source illuminating the craft, but around it, uh, some form of energy thing. And when the early analyses of the originals were done,"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "yeah,"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "there are photographs they use some kind of thermography and detected uh different heat signatures represented by different colors. You'll understand this better than I will. And we, you know, we have all that that that stuff was done in the 70s with earlier computers and what have you. But this is where when people have come forward to make models"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "sure"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "and they won't subject him to computer analysis uh Billy's were subject he just turned everything over that he turned over the metal samples the sound recordings he made on out in a big field with you know 15 20 eyewitnesses and people would come on one of those occasions at least people came from four kilometers away because of the sounds that were emanating from above. And of course when you see the the photographs and all there's places they're standing in a big empty field. There's no big speakers. And as for you know a large light also that kind of a thing. Oh, he's taking all these photos at night. Is the guy running around with or accompllices setting up lights and all this stuff? Or could it could it be genuine? Everybody has to go through that themselves that are interested. I think it's it's pretty compelling the looked different."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "I mean, yeah, it can be debated because there are um you know, especially with the photos where it appears that the craft is really close to the camera, like a it looks like a smaller object close to the camera. There's always a frame that's out of frame. There's always a a part of the UFO that's not, you know, so if you were onehanded, as it were, you know, might be, you know, put on the automatic timer, hold it there, get your photo. Um, but there is a there seems to be especially with the car I I say this one because it's the most like striking visually uh photo that's available in terms of um detecting Yeah. detecting issues. Your brain will automatically instantly go that's not real. [pause] Um and that is because there is a ratio that isn't being respected. like um uh I know I explained this a little bit yesterday, but when you when you open up your aperture to like f15 or f16, which means uh there's less depth of field for your photo. So, normally like these cameras now that we're filming on, I think it's at 1.8, and 1.8 is very tight. Yeah. [pause] Now, it has facial recognition, so if I move back or forth, I'm still going to be in focus. [pause] But if that were manually focused, I'd be here and I'd be out of focus. So, by putting it to f14, you're now bringing in um you're bringing in actually uh less light and you're opening it up more. And now we get to see, you know, a wider range of depth of field. And that would be necessary if you're taking landscape photos of a UFO um and you can't necessarily focus in. The problem is that the only time an object will be that out of focus when you're shooting, you know, something with um with an f-stop of like 8 to 15 16 is when something is close to the camera lens. And I mean like inches away. And so in this one instance, we have this what you know what appears well a car, but it seems incredibly out of focus. And does the shrub [pause] but the craft is in focus. So already there's there's a difference in distance between these two things, but also it gives me the information that this object is very close to the camera. And the only way that that can be is if this object was very small, size of a toy car, say. And so that's where, you know, that's where I go, okay, to me, I'm, you know, I'm I'm pretty convinced that that was not a genuine like this was this was hoax, this photo particularly. Where does that leave me on the conviction of Billy Meer? Does my conviction go down? Yes. Does it go down all the way down to zero? No. And that's where I come back because now we have this photo, this other photo of the of the craft that can't be debunked, [pause] right?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yeah. [pause] Well, let me throw a little stuff in here. [pause] Sure. when uh you are familiar from our film that I was interrogated if you will uh for over a period of about I guess five six months whatever it was from January oh yes 3 months and then he the fellow returned in August 5 months later this guy was a skeptic he approached me in a very blunt way and it was fine uh are you sure you want to talk about this case yes why do you ask because I think it's a hoax oh okay well let's go and he wouldn't didn't tell me who he was. And finally, I learned that this was a retired United States Air Force Office of Special Investigation. Wow. [pause] Department of Defense case supervisor and investigator or case investigator and supervisor, however, that worked. And he came back and he said, \"I'm going to tell you about your Billy Meyer case and first you have to look on your email and what do you see?\" I had opened my email. And I said, \"Well, I see a tabletop with a bunch of looks like citations.\" He says, \"Can you read those?\" I said, \"Well, I can see some of those Air Force.\" And he says, \"Yes.\" You know, and it was significant. It was literally a tabletop covered and that which I could make out. So, I knew who I was, whoever I was speaking with, because I only knew his name was Joe at this point, uh, had good credentials. He he had access to this stuff. And then he said, \"Okay, now please delete it and let's go on and talk about your Billy Meyer case.\" So, as I say, I tell the story in the film. I don't want to recap everything. He came to the conclusion he and he explained why, and we can talk as much or as little about that as you wish. He said, \"Your Billy Meyer case is 100% ironclad, authentic, and I will take on any skeptics in your behalf.\" And then after he had taken on a couple skeptics in eupfology and he said sorry retracting the offer these people don't understand investigation they literally have things backwards. So I'm going to write you an article whereby anybody if they will just walk through these steps and the core of it will be means motive and opportunity and all that we can explain how you can go through that. But he also said something else. He said, \"Look, this man knew, maybe still knows when and where to go that he will have the opportunity to shoot at least a whole roll of 35 mm photographs. He will be able to shoot 8 mm films.\" So, we're elevating the complexity of things a bit in certain ways. There's situations where he'll shoot both and and you'll have a video such as in the wedding. The wedding cake. Yeah. [pause] And he said he explained that if you have this much evidence um it's going to make the authenticity of this part of the case he's the logic also being and I don't dismiss you've got to find out did he hoax us but let's ask ourselves if this man has indeed taken 1,200 or so UFO photos of eight films that remain of video and uh they've been authenticated by also visually by you know former the late astronaut Gordon Cooper the investigators came to my home with these I know them we looked at it's real this is this man is meeting with extra okay it's an opinion astronauts are fairly well trained also in certain aspects people again have to determine for themselves but the question is if a man goes through all that we know that Meyers or deals of going out because a lot of things you have to go over here it's 40 km from your house yes it's snowing but just show up at this time it's daytime it's night time whatever and people yes there are people trying to kill you and that we know that is authentic even trying to kill him in his home so he has to be careful where he goes why would he and let alone how why would he go to the trouble of falsifying making some kind of a crazy craft that would really be oh can't be real. Why would he blow his his story here? And that's just a question that I can leave. Now we can speculate and people can say well the reason he would do that is thus and so but the UFO material as you've already acknowledged that and I've stated it's the eye candy. gets you in or doesn't to looking at the Billy Meyer UFO case or as I from the beginning called it the Billy Meyer contacts and oftentimes I leave the UFO out of it. I started leaving the UFO out of it in a lot of things starting in 2004 because I had already seen certain information that told me, wait a minute, this is more important than UFOs. Well, how can anything be more important than UFOs and eupfology? They're not part of euphology. As Billy wrote and wrote it even again recently, we are uh the UFOs that are being seen around the world and they have given information on their version of where, how, who, this is not ours because ours are not UFOs. We know what the craft are and we know who's flying them. They're very, it's like that cute literal, you know, we are Germanic and we are going to explain this this way to you. Okay, maybe you do and maybe you don't, but that that's not us. We don't do that and you will not be taking any no more photographs or films of our craft will be presented because we stopped doing that at this point. And they told Billy in about 1981-82, no more photo ops. And he says, well, why? You know, we could bring Well, you are entering the computer age and as you will soon learn, if you haven't already, people are already going to call you a hoaxer and a liar and a deceiver and gosh knows what, your life will be at risk. There's no need for it. This is a body of evidence that will be analyzed. uh the photos, the films, the video, the sound recordings, the metal samples here, you will turn them over to the team who will find experts in these areas and they will determine their viewpoint on all this stuff. Uh Marcel Vogle, a scientist with IBM, was one of those genius types who never, to the best of my knowledge, got some kind of degrees. It's just he IBM recognized he does this. He can do all this. He's the guy that I believe it was creating the coding on floppy discs and all this. So that again out of my league. I don't know. He does a video and he says basically with any technology available to me I cannot make this. This is made in a cold cold fusion outer space something."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "You're talking about the material"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "the metal. Yes. because Billy uh received allegedly samples of metals at different stages of manufacturing."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Okay."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "And in some of the magnifications when Marshall Vogle was blowing these things up, hundreds of, you know, magnifications, he could detect laser cutings that were extremely I mean this is [pause] that was interesting to me."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "There are laser cutings here. There are things within things. These are discrete relationships of these elements. They're not just blended in as if they were heated in an oven. This has a characteristics that should be of interest to metallurgists. This is a different composition. We don't have this sound recordings at the time. They couldn't duplicate them. They said, \"Well, maybe we could if we ran if we had a bank of synthesizers.\" And uh I'm I'll make that sound recording available to you. It's downloadable. It's great. I I when we when people get it from us and they say, \"I want that.\" I I usually say, \"Please don't play this at night with your car windows down in neighborhoods where people are touchy because it's it's this weaving sound that travels through lots of different frequencies.\" And people found some interesting things in that too. Uh this Swiss one-armed farmer has come up with this thing. It's really just if you take a string and string it across and vibrate it, you get the same thing. That's what some people say. Of course, the readings that they get, don't"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "I don't know about any of that. And you know, and um I'd love to have a look and I'd love to have a listen, of course, and I'll feature it here. [pause] Um, you know, but this is again just like uh there's there's there's so many [pause] facets and components and variables here. [pause] I like to I like to hone in on the one [pause] that I find dubious. Uh because for me, you know, if there's anything that I can gather from that, I can't I don't do any audio analysis and I can't tell you where that's from. I can't do any metal analysis or tell you where that's from, but when it comes to photos, I'm pretty good. And when it comes to depth perception and forced perspective, I'm really good at that. Um and so that's the one that for me stands out. Now, let's put that aside in a separate category to um so that we can move forward into another part of the Billy Meyer stuff because for me, I'm at a point where okay, let's say on the one hand that this is 100% this these series of photos are 100% a hoax. [pause] 100% proven. He even admits it. Yeah, it was a hoax. Sorry. All right, let's say we live in this universe. um the fact that the earlier ones [pause] um seem to be real, you know, it it makes this irrelevant because now now we have something that's fundamentally real. Now the skeptic out there will naturally say, \"Well, if this is a hoax, that's a hoax.\" That's how most people operate. They take one thing, ah, it unravels the whole thing. Let's throw the baby out. I'm a little different. I'm I'm willing to forgive transgressions and say, \"Okay, maybe there was a mistake. you're you're human, you know, and and maybe there's some error that happened here or some slight slip of judgment or, you know, some dark point in your life. I don't know. But maybe there's a reason for that that I don't have all the answers for. But that doesn't take away from these photos here lining up with Mr. Lazar's, you know, um, depiction of the craft."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "So, once we get beyond this, we go beyond the photos because Oh, go ahead."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "I was going to say there is one thing that should be said so that you and the audience understands see and this you're what you're speaking about and speaking of in this kind of acknowledgement comes close to what Joe Tisk the USAF guy said [pause] and he said people don't understand something and I and he used an analogy I think I may have spoken about this with you but he said uh as an investigator let me use this analogy. There's a man who's been murdered. He's lying on the ground. There's a gun. There's a wallet, ID, fingerprints on the gun, the whole thing. We've got our man except that somebody comes forward with a video taken during the period of time when we can determine that man was dead. Matter of fact, this video, this guy's 2,000 miles away at a wedding. And we can prove what we can prove that supersedes this nice evidence here which otherwise it's a slam dunk from my perspective that man his ID there his fingerprints on the guy he's not there he wasn't there for that whether or not we can figure out who's you placed something that we don't care we have that man somewhere else and what people in eupthology don't understand is they have it backwards. And this is what he said. One piece of verifiable evidence. You throw out those inconsistencies if that's you can prove that. Now, that's an uncomfortable thing for most people. In this case, just so people might be a tad more comfortable what you're alluding to when you say this other material that Bob Lazar has looked at and all there are basically about 580 remaining photographs the other ones let's say the WC UFO there's 63 photos in the video so I would say I as it did say I defer to Francisco and Chris and I hope that you guys are going to have a killer conversation about this And somebody's going to come out and say, \"Well, okay, you're right. Whoever that's going to be, or I understand that, or I accept that, or I don't.\" And it could be him. It could be you. I don't know. I'll be very interested in that. But Joe Tisk made it very clear. And he said, \"We have not only one authentic photo, we have roles of them.\" And I said, as he said to me, your case is 100% authentic. And then he also referred back to auxiliary factors in the case that he researched that further supported the authenticity."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "You know how does this vagabond in India in 1964 which Billy was walk wandering around with a knapsack. He says because Billy was interviewed in a prominent newspaper in India and the the journalist who interviewed him is looking through an album with 80 UFO photos in 1964. Jotis asks where did this vagabond get 80 UFO photos in 1964 in India? There's no UFOs or us. And you still have at least a dozen of those, which we do. And one of them is phenomenally interesting because it appears there's a hologram in the photo. And Billy had explained it. And there it's just these are primitive taken with an old Kodak. Uh what do you call It's It's a one of those boxy cameras where the thing would"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "the brownie or the like um a Polaroid"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "it looked like but it wasn't a you know how they slide out and I used to know what it called because my father had one and those things uh you had to you know when you took photographs with that you it's a crapshoot because this was relatively primitive stuff. This is 40s technology and Billy was taking his photographs at that time in 1964 with this co early version of a codec."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "I'll agree. Compelling."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yeah. So there's and then there's the auxiliary things. Well, the woman who was a young girl at the ashram in India in 1964 whose uncle was the head monk, she became the uh UN, I think was it the ambassador to the UN or the representative? I always screw that one up. From Cambodia for a dozen years at the UN. Then she retired. She was an eyewitness at the time. Then she comes forward at a certain point in the '9s when people are saying, \"Hey, wait a minute, Miss Chang. You were, we've heard about this Billy Meyer UFO case. You were there.\" \"Yes, will I?\" No, no, please come forward. And there was another woman who was a tutor of hers. They came forward. They gave a press conference and she explained where these photographs were taken that there were a hundred eyewitnesses to them. [pause] And one of the photographs, you see a woman in the photograph with eight the lights in the sky quality UFOs. The rest of the photographs, they were all clear discs hovering over things. And she just as fluid as possible. Yes. I remember I used to uh uh see Billy meeting with this woman, Ascet. This was his second alleged contact person. And at times, I was a young girl at the time, and Ascet would sometimes come into my room at night before I'm falling asleep. And she would hum, sing to me, stroke my hair, brush my hair, whatever. And in the morning, I would wake up. I always felt like I knew more when I woke up than when I went to sleep. These are just human beings coming forward with their perspectives. The guy who interviewed Billy and and said, \"Well, here's this man and he's got this stuff and he tells this tale and he doesn't really want publicity, but okay, this is real life stuff that precedes by many years, you know, many years the internet mentality that we have. I want to be a celebrity. I want to be famous, but he's a recluse and he's got good reason to stay when people are shooting it. You Yes. And all of that has been documented and I've talked to 14 eyewitnesses and seen bullet holes and lead investigator. Okay. So, in terms of this thing of well, if this is a hoax, I just throw in there's a lot to consider."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yes. Um, now be that as it may, you know, he might have his own reasons for hoaxing this particular side of the story. We don't know, right? There might be a personal thing that we're just not aware of. We don't know that. Um but based on, you know, my initial analysis, I'm more comfortable living in that scenario."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Okay."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Um just because my brain cannot comprehend that being, [pause] you know, authentic. [pause] Yes. Um, but that being said, I'm willing to suspend that and move on into the story and, you know, potentially if this were the case, forgive that transgression to move forward and be like, \"Okay, let's look at the other stuff.\" much like the stuff you were talking about now. And before we get into some of the more factual um evidence that's easier easier to follow up like the the the theories and stuff like this that were given to him imparted with him um by these beings, the alleged contacts. Um I want to talk about some of the eyewitnesses because I think that's really interesting as well. Now a lot of people out there will be like well why only Billy, right? That's that's like one of the main things. Why only him? Why not show yourself? Where is the other evidence? [pause] Has anyone else seen these beings?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yes, of course."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Well, I'd like I'd like you to elaborate on that a little bit."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Okay. From what I know, uh mo the sightings of the people are generally accidental. They're not intended. And uh there I've talked to people who've seen either the alleged pllearin people called this word plleadian that Billy and they invented. There's no such thing as pleadians. You can flush that and they gave that up after a while because they predicted certain things and it came true about all these people that would come forward claiming to be contactees. Okay. So"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "you're referring to the space brother movement. Yes. the space brother movement meetings where [pause] Ashtar command and all this stuff."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "And there was an ah the Ashtar thing is extremely interesting but I'll wait till you if you want to get to that."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Okay, we'll get to that later. Now I'm intrigued. Okay, [pause] I'm back into Ashtar. Let's go. [laughter] [pause]"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Should we get to that later? [pause]"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "We'll get to it later. [pause] Okay. So, um with all of this, you know, what can you say? Um [pause] well the the the witnesses. let's talk about some of those witnesses who they are how they came about seeing these other beings and these craft."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Sure. Well let's the uh let's go to the ones that would be most obvious. His exwife who uh [clears throat] they had very acrimonious relationship 30 years of marriage and then they got divorced. She had uh was one of 17 people that they did at using the technology of the time, voice stress or whatever, they did lie detector tests with the people who were around him who claimed to be eyewitnesses and they all passed as being authentic. She was one of them and also his children. He has uh three adult children uh Atlantis, Atlant, and Gilgamesha. And I don't know anything about Gilgamesha if she's made any comments but oh wait pardon me Atlantis's stepson Methuselum is his these are rich names. Okay. So, uh, Atlantis is featured in one of our films, and it was one of the more compelling and moving interviews we did when we did this film, The Silent Revolution of Truth. He's one of Billy's two uh, natural sons. and he spoke about the difficulty in his life because his father uh you know he was referred to as a the son of a spinner I guess you'd say in German or something you know he's a liar and a fabricator no so they're growing up with that and as children they have seen this these craft and they know from his father his father's activities before anybody ever came to investigate there his father's disappearing in the middle of the night and coming back and writing voluminous stuff and publishing information starting in 1975. It's getting out in Europe before it's translated into English and people are already interested or attacking him. the whole dream or nightmare has begun and he and his siblings were subjected to a lot of ridicule and uh when he speaks about this whole thing I would just say when cuz we were there my partner and I Jack a German guy and we're filming him and it's just like you're feeling what this man is telling you coming from that emotional place and just the sense of Oh my god, what have you gone through in in you know and how because he was trying to how do I balance all this in real life and sometimes it is just too painful and blah. So this wasn't like well they came to me and they talked to me and you know all this stuff that we hear you know freely floating around in eupfology and million people have these nice conversations and all he's an he never sees to the best of my knowledge he doesn't see them he sees the ships he's painted or drawn them as a child but it's the byproduct of this being a real thing to this family that he and his siblings grew up with and that was just very touching. It was emotional. And there are other there's over a hundred eyewitnesses. Some of them are also multiple eyewitnesses."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "There's eyewitnesses to the beings as well?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Uh there are there were I think three or four. I"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "can we talk about those because I'm very interested in the beings more than the craft."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yes. And the the woman I knew, her name was Brunie and she was I she was either a Swiss or a German. Maybe decoya, maybe she was a German and she described a very unusual thing. We have it in the film. She said, if I can recall well, we did the film over 20 years ago and she says, \"I was walking along and I turned the corner and where the wall is Billy built this wall. There was this huge man reclining on the wall.\" Turns out, she says it was this guy Daneel. And she talks about learning ultimately I think that he was like 15 ft tall. He wasn't one of the people in this playarin group and there's also smaller people. There's a interesting evidence from smaller people. We may you get to that if you want but she said at first I was very startled but he was there and then he disappeared. He wasn't there and I'm going I'm you know relating talking to herself about it now. you don't get any significant content about the people in the sense uh Meyer's wife had walked in while they were still together into the room where the alleged leader of their race pronounced PT ah like sounds like the uh ancient god of Egypt PT ah he's sitting on the couch and unexpectedly she walks in he's startled little hits his stomach or something. She says he disappears because usually all the times when Billy is meeting with these people, no one is around to interrupt them. There was one experience that was a near fatal tragedy that occurred with one of the player being there and somebody making themselves known unexpectedly, but she saw him. Then later on, she changes her story. Oh no, Billy's making models. He's lying about everything. Some investigation was done by people and at the time just you know you're you're talking here a detective story. This isn't just everything you start throwing in. Well, what happened at that time? Some people found out when she was divorced from Billy and on her own suddenly her bank account was increased by five figures in Swiss money. And there were some people that now she was affiliated with who were known skeptics and defamers of Billy. A person, you know, the saying is a woman scorned. It could be a man's scorn, too. But this is real life. It's unpleasant. Billy didn't have the most harmonious thing. She had thrown things at him like frying bands. And this is just like a man reveals his life. Billy has held nothing back about his life. this the things he felt he was, you know, failed at or succeeded at. He he ran away from Switzerland as a as a teenage boy because they wanted to put him into a juvenile detention center. Well, why? Well, there was a woman who really hated him. There have been people who followed him from childhood and this woman had grabbed a towel, if I've got this connection right, and started, I don't know if it was wet or what, she started to beat him with it. And he'd had enough. This had gone on since she he took the talons slapped her around with it. Well, this didn't sit well with the legal system. Billy decides that he thinks he'll take a trip to the French Foreign Legion and avoid some consequences, which he did. And he was in the French Foreign Legion for a while. And he recognized that while he was learning how to do certain things that would be useful in the world, he did not want to become a trained killer. And he would return to Switzerland and face the music, which he did. And the story also was that he trudged across the desert. One of the few people to ever walk out from wherever he was centered there. I don't know if it was Elers's what to walk across the desert and survive it. There were two men who were trying to also escape. When they saw him, they followed him. and he had a canteen and he would sip from it and pretend that it was still full of water when it had already been and shake it in their faces so that they would want to catch up with him and get themselves across the desert at the same time. I don't know how it all turned out. There are stories here that go on and on and on. Some things there are witnesses to, some things there aren't. But the eyewitnesses to the craft, there are over a hundred. And as I've told you, I I'm in I I've had three sightings of craft. Very interesting. But I"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "I want to get into those. Um prior to that, um there are photos in the in the picture book that depict whole slew of people just kind of standing on a hill [pause] and behind them in almost like a double exposure fashion. It was like sometimes one craft, sometimes two where it was said that some Yaz was the the you know the inhabitant of this craft was like teleporting the craft or something and but did the people in the photo see those UFOs as they were there in the sky or did they was this only revealed after the photos were taken?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "to the best of my knowledge they didn't. However, the circumstances of that were also described and you know I I don't know if the whole story is in the photo book and you know the photo books in German but fortunately as I tell people the photographs are in English."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah, I can also read German [pause]"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "right and all of us can read photographs. So we had in that there was a man I don't know his name was something like Linger Lineer whatever when this was uh set up when Billy said I'd like everybody you know you folks to come to tomorrow to this place open field and there's trees in the background and then this man said I want to you know you're going to take photographs he says yes he says I want to purchase and load the film into the camera before you take the photos and I want to take that out and be the one who brings it for development at Bare Photo. Billy said, \"That's fine.\" And that's what happened. That uh the way it's written, he gave the camera to the guy, loaded it, Billy took whatever 30 or more footage. There's a lot of photos of that. And like you were describing it, seemingly the craft may be almost in two places at one time, blah blah. Interesting photos. people are standing in the foreground. This craft is in different locations behind them and Billy story is had no possession of the film. Now that's not unusual. Uh when the investigators Wendell Stevens and others were trying to also figure out if Billy was hoaxing these photos, they Wendell had a model made at the MGM studios in Hollywood of one of the craft. Now, in today's technology, even if you're going to make a model, you'd get a better model, but it was good enough. It they took photos. And what they did is they would go to locations where Billy said, \"This is where I took this. I was at this fire pit here, and then uh the ship is over here.\" And they said, \"Okay, let's go there.\" Or wherever it was, and Billy, you take photos with your camera, and we're going to take photos, and we're going to dangle the model. [pause] So, they did a bunch of that. And then this is I think this is also in the freely available uh report on the photographs that we have online and they said every photograph the computer would look at it and you know you're getting [pause] uh this is a model there's no question there's no energy fields around it and blah blah and it's clear you talk about you know depth and all of this and I remember looking reading a little bit about the photo analysis when I first got them from from Bill not from Billy but from Wendell. And I I remember something about haze effects at things in a distance. I was kind of interested and I never plunged into why the edge of a thing will appear in a certain way if there's a certain haze at distances. You if you know what I'm talking about. I don't. But I remember there was this kind of a thing when they go into the descriptions of what their analysis was revealing and the thermography uh thermographic uh you know effects around the ship or or the ship itself having at the base of it. It was a hotter kind of an energy whatever. And that's again that's freely available stuff and people who are photographers like you have a go at it if you want and and then you'll understand it better. I never got that focused in it."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah, they're probably like when it comes like thermal thermography, they're they're just measuring how hot the light source is, not how not actual heat because you would need thermal cameras for that. You would need to actually be able to detect heat source where they're probably just looking at where the brightest light source is and how that is dissipating across the craft and to determine if that's the sun and if so, uh how big is the object compared to the sun and and what? Sure. as I say [pause] but even to address like the um the sort of glowing of the craft at night like and not to go back there but you know there is hellation as well that we have to keep in in mind where uh this sort of effect happens if if there's a very bright object it'll give off a light and if you bring it into Photoshop and you know bring it down to see you'll see an aura quote unquote but that might just be uh a natural effect of of um of the c of the film itself. Um or the lens in in this case."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yeah, I don't know."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Um Okay. So, now that we [pause] So, there's there's been some witnesses. [pause] Um"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "five other photographers."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Mhm. That's something."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "And I u I'd have to dig into where because I remember they posted photographs taken by somebody that went by the name Pilgar or something there. Pilgar, the village, I don't know. Um, and he was a skeptic who had also sent Billy some very nasty stuff. And he one day contacts Billy and says, \"Listen, may I come and meet with you? Uh, I have some photographs here.\" And Billy said, \"Of course, this is back in the day.\" And neighbors, you know, and he said, \"Listen, I will apologize. is, you know, I've been a little harsh, but uh I was out in the field the other day or evening, whatever it was, and I had my camera and I and I took these photographs and I saw this thing. He's not the only one. There were people who were workers from Turkey who were working on the road. One man was quite skeptical and quite nasty towards and he couldn't handle what he saw and he apparently actually committed suicide. This is in the documentation. There's a lot of but anyhow in terms of witnesses and things that have happened from that other photographers and the people what they did who they were uh how old they were the time when the photographs were taken or when the sightings were made they're very thorough with that, so you can check."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "okay um all right let's move on to some of the more sort of prophetic if you will messages that Billy was apparently given by these alleged extraterrestrials. Now, just to be clear, these beings that Billy speaks of are from the Pleaides?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "No."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "no?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "not the what we see in the night sky because there's no life in the Pletes. The there's no conditions for habitation. [pause] Okay. And it is about 500 light years beyond in what would they call the playars and it's an altered time space configuration. Good luck. I explain it. You'll understand it better. I've just never been able to totally lock in. I've got to understand this time space shifted thing. No."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Would be much easier for Billy just to say they're plleadium."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "It would be. But he well but you know the fact is he knows there's no life in the way it is."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "That's very interesting."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "He he knows what all the channels don't know"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "right [pause] and is there anyone out there who you considered to possibly be legitimate? I know we'd mentioned briefly Ashtar [pause] and the Ashtar command and uh you know the whole Adampsky Dan Fry you know that whole era in the 50s in the early 50s. I mean, that was a that was a hot topic. A lot of people jumped on that bandwagon. Everyone from um you know, the sort of strangers account with the stranger at the Pentagon. Yeah. [pause] Valiant Thor. [pause] Valiant Thor. That's right. We have so many of these uh encounters. There was even a a couple sisters that that had published something. They were taken aboard as well. And you know, it all seems so, I don't know, idealistic and not unlike the messages that Billy was receiving. By the way, it is idealistic. It is sort of like this logical sort of, you know, a little more on the love and light side that we, you know, we see in this uh the brothers, the space brothers. Um, but it seems like the 50s, especially the 50s, but also the 60s and 70s was kind of rampant with this, you know, I'm from Venus, I'm here to, you know, shut down the nukes and and that type of deal. Is any of that legitimate?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "You spoke about the Ashtar command. This was one of the more interesting things to me uh early on finding information there and what was explained is that there are at that time there was a race there were beings humans based underneath the great pyramid at Giza. And uh what was said, some of what was said, this is a splinter group that actually diverged from the source group that the Playarian people came from, which was originally in the constellation of LRA or Lyra, however they want to pronounce it, Lyens, Lyans, what have you. And these original Lyans were very large people, highly technologically developed kind of uh also at the same time Star Wars on steroids warrior types you running around because they could doing enslaving blowing things up."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "They weren't feline by the way?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "No human fully human."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "You get that also if you're out there looking at Lyrenn and stuff. A lot of people like these the cat people from"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "no, no."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "or from the constellation of Leo. People from Leo and Orion were uh well that's a separate thing about pyramids."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "So it is said that these people referred to as the Giza intelligences or the Bfath which was a name that was apparently of their peoples had an agenda. They had very high technology and they uh would like to participate in enslaving everybody in the planet. They weren't large enough in numbers. They had numbers but nothing that could, you know, overwhelm us. So what they were going to do is create a false second coming. They had uh a technology whereby in a form of telepathy it's called telenotic. they could beam uh through existing radio, TV, wires, you know, any telegraphs, telephone, they could beam frequencies and direct them towards certain persons. So it said and they had 745 or so uh important political and religious leaders under various uh influ let's say influence could influence them and they were also people who could influence and did influence a group called the the thule society to t h society. So what happened is these people uh recognized at a certain po point in part that Billy Meyer was someone on the planet that uh would be an obstacle to their agenda. They knew that he was meeting with let's say the lighter side of"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "the playaran"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "the playaran. and uh they engineered some attacks on his life. There's some photographs of evidence for people can look and decide for themselves. There was one particular event where during a holiday season, I think it's in August in Switzerland, where there are cannons that are shot off in the, you know, Billy's living up in the I guess it's called the Zurich Highlands or something and it's very rural area and hills and valleys and all churches and what have you. So, um, the plan they had at this time was to eliminate him. I'm going to leave that for a moment to explain the interaction that he had that was very connected to the Giza intelligences and this was with his"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "these are all in his contact reports by the way you're saying now."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Okay. [pause] Yeah."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Okay. I got some follow-up questions here because that's, you know, obviously as soon as we talk about pyramids, uh, and under the pyramids now, we're we're touching on something that a lot of people talked about recently, but would was obviously talked about years ago by Billy 1953. And it's it is interesting as you say it because there's a lot of"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "he published that it was one of the earlier things that I had access to that had me riveted. He's underneath. So what the story goes that his second contact person after 11 years of being tutored by Svath Svath is know he's going to pass out of life and he says you will meet your next teacher she and blah blah you know oh okay female uh and she's more advanced in knowledge than I am in certain things he says and she will guide you for the next 11 years. So sure enough he passes away and shortly thereafter very quickly he hears a woman's voice speaking to him in his head and the arrangement for them to have their first meeting is made and all and um she is indeed she's telling him she's also giving him prophecies about things and predictions as early as 1953. Uh she tells him about the assassination in America of two brothers who will be running for president. the date that it will happen. John Fitzgerald Kennedy will be killed in Dallas, Texas on this day and uh there's information about that assassination a bit and then the assassination of his brother Robert Kennedy and then a whole laundry list of kings and people who she unloads a lot of stuff on him and that's published. You can look at it [pause]"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "published before the assassination?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "[pause] Yeah. I mean, yes, he gets all that and he's he's taken it down. And I've got to double check the actual dates of publication on it. And people can say, \"Well, if you can't prove it was po, [pause]"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "but I mean, if you can, [pause]"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "yes, if you can.\" Well, we can"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "I mean, that's that's interesting."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "I'll pop it here in that I'm jumping for a reason to address this point. In 1987, Billy is given something called the Henoch prophecies. Hanoch being, I guess, the German version of Enoch, or at least the way the playarin pronounced it. And in there there's a lot of predictions about things that have subsequently happened. Well, how do we know he didn't back date this? After all, it's in German supposedly in ' 87, but the first English is in 2002, I think, and it talks about the destruction of the World Trade Center, but that happened in 2001. He could have backdated it. I go, \"Sure, he could have, but we have to look a little deeper, don't we? We have this document, this entire document with all these things. There's like 300 I think specific things. Now, one of the things that jumped out for me and I'm I'm deliberately jumping here and how the the way these are if these people exist, they're not stupid. They understand and they deliberately even according to them do certain things that will not be you can't just darn I can prove that for sure. certain photographs. Why? But that's got to be Well, you'll have to figure it out how that was done. And that's maybe the WC UFO might be there. So, the destruction of the WTC by terrorists in 2001 is is in there. We also have a couple other earlier things than 2001. 1989, he's also told again terrorists will fly airplanes into these buildings. There's a conversation with Quitzel, one of the other ETs. Man, that's a terrible thing. And he says, \"Yes, there will be 3,000 people or so that will be killed.\" Okay, but the 1987 document, they earlier mentioned how. Well, I noticed that there was something in there about the Russians moving their troops to Arcongels in northern Russia, Siberia in preparation for their attacks against Scandinavia. Oh, that's rather interesting. So, first of all, why would Russia be attacking Sweden, Norway, Finland, going back in here's from the 80s? Of course, we're told that this document actually was created thousands of years ago by the prophet Enoch, Henarch. Okay. Well, but what and at that time I'm quitzel says I'm giving you the the names of things that are what is referred to in this document because there was no Russia by name. Okay. He says wait a minute I'm looking at this. Why these attacks? Well, that became clearer within the last let's say two years. Why Norway, Sweden, Finland all joined NATO, inviting NATO to these borders and coming in. And when you start reading regular news about Russia and NATO and Scandinavia and all this stuff, you start to see that there's a a lot of things that we that's kind of interesting. Well, it became more interesting when in 2011, Russia moved and created bases in our Congals, military bases in our Congalsk. 2011 was also a year in which I went and visited Billy and we were making a film where we have like 50 of these prophecies in the film. I may have given you that clip. And he also spends some time after the main filming of questions and answers and all he talks about, oh yes, um, the Arctic. I don't know if this is official yet, he says, but there's going to be the vying for power and control at the Arctic and eventually he says at the Antarctic, but at the Arctic, Russia, Canada, the US, China, Great Britain or whatever. All these countries are going to be pushing for control of mineral. He goes on and on the film clip, you see him. I He keeps saying, I'm not sure. We have to check if it's official yet. No, it hadn't happened yet. But in 2011, the Russians had moved their troops there. And that is when within a year's time, I had sent the information to a man I had known for 50 years, physicist, physician, retired, who did not believe this case that I was involved in was even remotely real. Although he allowed himself to be interviewed for a film I put out in 2012, just generally speaking about extraterrestrial life in the universe. Yes, speaking as a physicist with these things, if these are present, there's no reason why they wouldn't be present to some degree. You know, he carries on about the certain elements in the human being would be uh required to have. But then he after I send him this information, he says, \"Bring your camera.\" I I have to change something here because he had thought that Billy must be like crazy person. And he said he goes and says Billy Meyer is not a schizophrenic. He's not a crazy lunatic. He says I was in the American military and I was stationed overseas and we flew flights over this area reconnaissance. It's under cloud cover for a great part of the year. And he says what Billy is saying here is a strategy. He says, \"Most people don't understand the Russians, but this would make sense in terms of a staging area, not only for Scandinavia, but to come through Alaska, [clears throat] bisect, come through Canada, come into the US if they were going to come across the frozen straits or whatever there.\" And he said, \"Look, I've watched what this man is saying. This man is about peace and he he's saying things that our military, our government should listen to and he's not a dangerous person. Uh, you know, he just he did a 180."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Mhm."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "And this is a guy who really, you know, gave me the it's nice to see you after 30 years, but uh what are you doing with this stuff? So that was his take that was based on his experiences in the area where he thought strategically. Oh gosh. Strategic. Why didn't I wonder who? Okay. So Billy then does this thing about the min mineral rights and within a well recently in the past couple years within the past two years for sure there has been this stuff in the news as a matter of fact that attracted the attention of a man named Clayton Morris in the US who has a show redacted who had interviewed me a couple times on Billy Meyer's evidence and all this and he started to look into this material and he puts out a clip saying uh you know about the this by the way Billy Meyer Billy Meyer wrote about this it's it's copyrighted his texts are you know I'm [laughter] okay Clayton keep going you know and as he had when the thing with the pyramid came up and he's talking to a guy who was talking about the research they found you know this great spaces underneath the pyramid and Clayton says well Billy Meyer wrote about that in 1953"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "let's talk about that again because we we that's where we started yeah we jumped around a little bit But let's get back to that. There was this secret faction in the 70s that was un that was under the pyramids that was kind of a de factor from the uh plearin in in sort of this like [pause] darker version of them [pause] uh that wanted to enslave mankind. They're living under the pyramids currently controlling world leaders or manipulating them influencing them. [pause] Um so what happens there?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Ah yes, this is where the juice of the matter. Thank you for bringing me back to that. So, Ascet and Billy, I think his name"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Ascet being the new teacher."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "New teacher."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Okay."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Uh are she picks him up and uh they go to Egypt. They leave the ship and they go to the pyramids and somehow she knows where this entrance is that goes you can walk way deep down. But they also had devices that would render them not visible out of phase with our you know visual spectrum and I maybe their they were not communicating past the point they entered from what I understood they were communicating strictly telepathic you know conversations telepathically and this is something that Billy supposedly was capable of doing since he was taught by Svath as a child. Okay. So, they're walking down these steep corridors, uh, stairs, corridor, staircases and all. And he says, \"We had to silently pass by these beings that were standing there, armed kinds of things, and ask us, explaining that they're not people. These are robotic uh, guards, and they would kill anything that could come down there. That's how they were programmed.\" And they finally get down into the the belly of the beast, so to speak. And I think it it was 1 to two kilometers below the the pyramid. And he says, \"We enter this huge room, a space, very high and big room that has been somehow created under the ground here. And in this space, there is a large craft. There's a large what we would call UFO or spaceship or what have you. Huge and smaller craft.\" And then Ascet directs his attention to a kind of a like a stage or a platform that extends for little ways because on it it's has enough space for what Billy is saying. Oh my gosh, that's the cross of the crucifixion and there's the spirit of destiny, the crown of thorns, the bloody nails. This is these are the artifacts from the crucifixion. And she says, \"No, they are not. They were made by these people.\" But if your scientists on earth would test them, they would carbon date to that period of time. She says, you know, certainly the crown of thorns, the the crucifixion, the cross of the crucifixion, which was not this, it's a Y-shaped cross. This is explained in the material, how that crucifixions actually worked at the time, but that would be already turned to dust. Uh not, you know, more than likely. Now there's there's wooden artifacts that have survived, but they're saying no to that one would be gone because of the whatever time the way people would treat these things at the time. And that is evidence that would be called up by a man named Reinhold Schmidt. I think it was actually O Reinhold Schmidt Reinhold Schmidt who was quote unquote a corn merchant from California who has been under the telenotic control of this Buffath. He believes he's been on the board of craft which he has never been because they create what are called real visions. And Billy was explained and demonstrated what real visions are. He's described this. It's like oh well how did we get here? Suddenly she says we're not really where you think we are. This is a real vision and to all appearance through the perceptions and senses of the human being. They would be in a given room or out somewhere in a space and uh everything would be very real to them but they would be sitting somewhere under a complete we could call a hypnotic telenotic control until they're brought out of it. They could be given information. This is what's being done"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "like a manurion candidate type"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "high-tech man real high-tech where they and at a given point in time the intention was that this man would come forward he would been implanted with information I people will love that word I'm sure because in effect what other word could we say he would fully believe this he would be able to say things and and present evidence and produce the artifacts from the second coming because the agenda here was to bring people human beings of earth together under one religion, world religion control. So these people the Buffath had that agenda. That was the thing and they wanted to get rid of Billy Meyer. Fast forward to a holiday in August sometime in maybe 25 years later because this Billy's learning all this stuff in 53. Now we're about 78 or 75, whatever it is, when they're having this event in Switzerland. The cannons are going off and the Buffath had put a ship in motion towards the center, the farmhouse that Billy renovated where everybody lives and works from. And above it though, because the playar knew this was coming, they have screened from visible or any form of detection one of their crafts right above the center. The Buffath craft comes over and they're synchronizing to when a cannon goes off in the valley, they're going to send a sonic attack beam down to hopefully detonate, blow up a water heater, whatever something the place would be like exploded and everybody in there, including and especially Billy would be killed. Except what happens is that the blast from that goes down that umbrella that bell that the ship is you know letting it flow down and hits the ground. Now technically at this point the playaron have been attacked and they are non-aggressive but they defend themselves appropriately depending on the nature of any kind of an attack. And in this case, they send their ship to they get a hold of that ship. They eliminate it was robotically controlled. And they go prepared for this. They remove this whole host of people from underneath and they close in and basically leave no trace of their well headquarters. [pause] Now, this is not all that unusual. the Polarin uh another group did this on Mars when they ah that's another story for another time."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Okay. Well, um wouldn't it be easier to just like if you were going to assassinate this man to just like appear in his room and just like snuff him out?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "They may not have had that ability personally as some like the playarin maybe. I do not know. [pause] But [clears throat] also I cannot presume. I mean, look, enough people have tried to kill Billy that certainly they appear where he's they know where he's going to be walking. And Billy in our first film, Silent Revolution, he shows a metal uh plate that he had put in a in an agenda book and, you know, secured inside behind his jacket because he had dreamt [clears throat] the night before [pause] he would get shot. He would be shot when he goes to hits a certain point in the road and this is where the bullet would hit and the person did appear and shot and disappeared and later contacted him to a Billy strange things to say I am the person that did that. I would like to apologize and Billy said, \"Well, you can come over and we're not going to call the policeing or anything in New York.\" and they met. Um, some of this you just you can read it and you can go nah or yeah, who knows or whatever. But Billy has um I mean he's defended himself against uh as I I think I may have mentioned there was someone in the bushes with a long gun who shot at him and missed and Billy was carrying packing one of his weapons and we show this weapon cabinet is pretty impressive. Jack says to him when Billy's pulling out these weapons, he says, \"Bill in Germany asks him, isn't that a bit aggressive?\" And Billy says, \"No, and this is my bulldog revolver, and [laughter] this is my Kalishnikov.\" You know, and you know, when you see his image from being the the Phantom in the Middle East, and he's got the Arab headdress, he's got the Swiss jacket, and he's packing a 30 a 357 Magnum and a knife, and all and this is a guy who was bringing in serial killers and mass murderers without harming them. I mean, maybe he wounded them if they shot. He never he said to me one day, it was this it was actually cute. I never killed anybody. I if they shot at me, I wound them so the authorities could come and take them. And indeed, somebody had managed to put a slug through what was his left arm at that early on. Um there there are things that uh are a little strange. There are people who have witnessed and attested to things like, \"Well, Billy was uh bringing the tractor. We were going to move the cast iron stove that had been delivered and then Billy stopped the tractor near it or something and he sat in it and then the stove came up in the air and came over and it settled down.\" I there's a lot of stuff that Billy did in the past occasionally showing off a little bit and he was told at a certain point or he knew."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "What do you mean that he had telekinetic ability?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yes,"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Billy did."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "He had a lot of abilities"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "really"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "according I mean this is for you know this is the the stuff that"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "this was this was yeah this was sort of well I mean obviously it bedazzles people because I think it [pause]"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "it's has to be out there."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "it I mean it's it's completely magical like why how how would that occur was he bestowed ability or"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "he earned his ability for instance there was a woman who said um something about Billy was over here in the house sitting down was something she determined here he is and she said she went out and walked out back and he was sitting there and he had not passed her and he did some of this some of the little tricks for people occasionally early on because he could, but that was he had to not uh do that past a certain point. And let's I I mean, Billy's got some kind of abilities. one of the more recent assassinations. He steps out and he sees somebody and he stands there and a bullet comes and he had put a water bottle in a shirt pocket and he stood there apparently and the bullet hits the it doesn't he's it's like Billy is an unusual human being who has had the most painful you have your arm ripped off your body and all of your teeth smashed at the same time and you're delirious. is for 30 days because they amputate what's remains of your arm without anesthetic. And and you're walking around shooting into the air at imaginary things. And yet you've been able to as a child be taken and shown things and allowed to be in a craft on your own to go places and stories. Oh, it can't be. [pause] Okay. But is it about proving that or do we like you said if this stuff this could stop many people over here from going any farther into the material? This could some people would just go well wow I want to know more you know and bypass it. This is what it it is what it is and it's up to each person to decide with at the current counting 928 public [pause]"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "contact reports."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yeah. for the public. Many others that just private information between him and them. And when you go through what they did was so clever in these reports and I saw this early on. They not only number each of these contact reports, meaning we this is our official meeting 928 contract report. They number every sentence that the extraterrestrials speak. Why?"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "So that you can go and verify it."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yes. because they knew they're going to start giving him information about things and people are going to say, \"Oh, you've obviously backdated it.\" But you see, [pause] they published starting in German, then it gets to English and Italian and other languages. Every contact 215, sentence one. Yeah."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Sentence one. [pause] You can also reference like if you have a question be like, \"Wow, see 115 of whatever.\""
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yes, that's all there too. And [pause] you know, it's like people said, \"Well, he's backdated this or that.\" I said, \"That's why when I come back to the Hanoch prophecies and the WTC.\" Oh, it'd be easy to say, \"Well, he backdated it because that happened in a year earlier than the first English publication was.\" Yeah, but what about the information about Russia moving its troops to Arangels? And what about one of the final items in that whole prophetic argument about in the future Switzerland, the land of peace and neutrality, is going to make a big mistake. They will abandon their true neutrality and align themselves and work with the UN and or NATO which will open them to being ultimately attacked and invaded by the powers from the east. meaning"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "China [pause] and Russia"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "and Russia. when those things happened while Switzerland will be very safe for a long period of time but no this is and they published that book I think in 2004 it's in there and all these things that you can go through and go wait a minute and there's other things that weren't necessarily so glamorous here and there but they were foretelling events and those events have occurred"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "do you think there is a sense of like confirmation bias here where there is so much literature that you can and I'm asking because I know this will be asked and this will be [pause] mentioned as well but because there is so much literature in these thousand or so contact cases or contact reports that that you can kind of cherrypick [pause] you know because it would seem like you know if um I'll give you a a practical example example of this. Um, you have these fake mediums on on television. [pause] Yeah, exactly. And and what they do is that they'll they'll hit you with with a bunch of facts. So, hit you with a bunch of like keywords, buzzwords, uh, and they'll throw things out there. And when something clicks, then they go down that road and they go down that road. And in retrospect, you look at this and you go, \"Oh my god, they were right about this, this, this, this, and this.\" [pause] But what about [pause] But then you forget all the misses, right? you forget all the the things they they were wrong about. Um, and that's part of like human psychology of of our brains and its ability to pattern match, right? And to recognize connection. And so, do you think that there's any any of that? Like, have you ever found stuff in his reports that you you thought, \"Oh, this is completely utterly wrong, like 100% like false.\" Is there anything in there or"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "No. And but it doesn't mean it's not there. Let's be honest. Yeah, but you've not come across that. [pause] No. What the See here the process for me after I I immersed myself into really reading and then rereading everything I could get my hands on because of a couple instances that jumped out of me after I had the, you know, UFO book where uh the 1800 pages that had been given to me by a guy actually who created a false career pretending he was an Andromedan contactee."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Wonderful."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yeah. Oh, great. I mean, muddy the waters. You know, I'm I'm now Alex Collier. Wait a minute. I thought your name was Ralph Amagrad. No, I'm an Andromedan contact. Is that why all of your predictions every single one of them are wrong? Okay, we'll leave that for the [laughter] moment for an hour or two. Whatever you want. But here's what happened."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "And we're not we're not offending all the Andromedans out there. Just the one. Yeah,"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "just the one who Yeah. He's probably more from Orion. Yeah. So, what happens here with this material? And it's fortunate that everything is numbered what they say because you can get these reference points. Oh, I kind of remember it's in this kind of thing before somewhere. All right. So, what happens for me and it's it still happens. Something appears in the news. Some a couple things appeared in the news recently. One that appeared in the news. I I'll just use it as an example because I had read it and I'd never noticed this news prior. it was maybe it was never of interest to me or it didn't appear back in the day. I guess it's uh I'm not even sure of the exact date that the first and and you know I'll know after this I'll I'll say I should have said that but there was a confilration in the Faulland Islands right Argentina and the UK had a dispute about it and all this stuff went down the Faullands well it came and went in my me you know knowledge banks if I ever knew it at the time but the interesting part about it was that subsequent to I think subsequent to the conflration or it's going to have been before it in 1982 Billy gives a radio interview with an English-speaking man on a Swiss uh radio station network or something. The guy sounds like an American perhaps. It could have been some other. But at the very end of this thing, and we have all this online too, people can hear it. He asks Billy about the potential for a third world war. And Billy at this time is speaking pretty good English be this is before he had also an accident where his he had a brain injury that he I'll stick to the story. So here in 1982 and he's pretty good although he gets a few words mixed up he does and this he is asked well about a third were Billy says yes that is going to happen it cannot be avoided it's certainty it's a prediction and this is pretty early on uh and the guy says well Billy can you can you tell us more about who who's involved he says well I don't know if I should he says let us decide about that just tell us what you know about this. And he and I'm trying to remember the sequence. He says, \"Well, it's going to be the big attacks conflict between the UK and Russia. And other countries involved will be Iran, Israel, Iraq, and the Faulklands.\" The Faulklands 1982. So within about the last week to 10 days there was an article that passed something in the American news about Trump there's some issue he's got an issue with NATO and there's something about the Faulklins has come up again I'm going oh my gosh it never stops I point being here things that those of us who've been researching this material you can't remember everything but there are things that when something comes in the news that seems hope isn't there. Now [pause] I have also gone to look I think this must be in the it wasn't. but i"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "and the interview"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "yeah nothing uh well no I it's more like there may be a discovery or an incident somewhere and it seems to me oh I'll bet you Billy had foretold that. No, he it's not. He didn't. But then I start to see the things that we've gathered and I think we're over 250 to 300 specific error-free examples. In other words, when something can be evaluated for accuracy.Let's just say that something comes up and Billy's talked about it, but what comes up is completely contrary to whatever he predicted."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Sure."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "They have to go, \"Well, that's a miss, you know, or how did he get that so wrong?\" Well, he's a human being."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah. It seems to be that the things he's foretelling, at least the things that you've noticed, have been accurate."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yeah. Here's one. In 2006, I'm in Switzerland standing and talking with Billy, and I said to him, it's the question is almost exactly this, Billy, fundamentally, was the Iraq war about oil? I'm leading. Of course he's going to say it was. What does he say to me? He lifts his finger. Fundamentally, no. It's about your dollar. And if things go a certain way, you may as well roll cigarettes with your paper money. He's just riveting me with it. Well, I don't know at the time what the hell he's talking about, but I put the video up. It's up there from 2007. and I posted it and uh I've been watching the trend economically the petro dollar everything that's going on now in the world now is helping to uh let's say negatively influence the value of the petro dollar on top of that as early as 46 48 his teacher and he's written this all down and there's numbers is talking about how a megalomaniacal Hitler-like dict dictator will arise in the US who will be just full of himself, an incompetent leader who will cause great trouble in the world and in his delusions of grandeur about himself he will start to make trouble and they he mentions Persia, China, Russia and other countries he will threaten them he will create uh problems in the seas and barricades and tariffs, foolish, illogical tariffs to punish people. There's a lot of this."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "When was this written?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "46"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "in 1946. Yeah."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "46."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah, it's 46. 46 and 48. [pause] And he was talking about things like this. That's absolutely [pause] I mean it does it does seem to pattern match obviously but I would also you know [pause] I would also say that like if you're if you're speaking to these beings and these beings are telling you these things which [pause] do sound prophetic like in in the sentence structure I mean yeah they they have a sort of um a generalized tone to them like oh there will be this person and you know but why don't you just name names like if if you're that certain why don't you just say Oh, oh, well, Donald Trump is the guy or like there's a reason for that. [pause] What's the reason what's the reason there?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Look, let's say they publish that the guy's going to be a year old whatever it is in they're going to then start influencing people in a direct way where they are going to interfere. [pause] Now, they also know that this is going to be obscure and not that it's esoteric, but it's going to be [pause]"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "disregarded for the most part."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "for the most part it's going to be dis disregarded, ridiculed and everything else. They did in the earlier days in the 70s for instance they would tell him the names of uh they they gave him the names of kings uh this king uh is going to be assassinated. Uh this man will be assassinated and they will think it's from this but it will be and"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "they gave names."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yes. But it will be the Israeli Mossad. They said it. They said their secret service which like many times has been and will be behind troubles in your world. They will cause trouble here. And they say in retaliation for the terrorism of the Israelis, there will be terrorism from the Hamas and the Hezbollah. So that is not to say that those don't produce terrorists. It's just we could say because in this material and this is something that got me early on when I read it early on when they were speaking about things I literally thought wait a minute are these Nazis from outer space"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "they're they're pretty anti-Israel"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "no they're I don't I guess you could say but what because they tend to speak in a factual way [pause] for the most part in including about things Billy can get very"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "they're not against the people they're just against an uh a situation."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yes. And about against those who are part of the population who will do these things and they sometimes go go to pains to say this is not about all of the Palestinians or all of the Israelis, but it is that faction that has this agenda and that will bring no peace to the world."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "If you were some type the thing is like I mean obviously people are going to jump to this as well because this is where my mind's going I feel like but like if you were being given prophetic messages and you believe these messages to come from extraterrestrials do you think that there is some type of world where he is being sort of fed information from terrestrial means that that is are like psyoping him because all of these things seem like you know someone's agenda. They're like, \"No, these guys are the bad guys. These guys are the good guys. You got to side with these guys. You got to watch out for this.\""
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "[pause] It isn't put that way because, and this is where I was saying on the are these Nazis from not from that so much as the earlier material where they talk about the histories of different peoples and these people did this and those people were doing back long ago."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "This is Switzerland right after Nazi Germany and he's getting messages saying like, \"We got to watch out for Israel.\" Is that like"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Well, but he also"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "It seems a little close to home."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "It could be. and and some you know people can feel sensitive about that but they they are equal opportunity offenders. I mean really this is what I did come to learn [pause] because also when they start talking about things like America is behind most of the problems of the world and the terrorism that has emanated from their seeking hedgeimonyy worldwide control as it's been since the inception of that country. Whoa. That'll set you back on your heels. And but they've also described the origin of the Israelis and they've gone to uh you know Israelites to say they never were a people. They were peoples who came together under the influence of an extraterrestrial whose name was known then as Jehovah. And they had influ Aros uh one and Aros 2 and Jehovah and other names. And many of these were connected with the Giza intelligences. This is a thread that when you pull it the sweater starts unraveling. So people I understand the tendency people will jump on a thing. I jumped on things and then I read more and I read more and I read more and I started to see see the balance here. This I'm getting the intention here is that we dig into learning about our world. Not just what the people are what we're getting through the news. I mean nowadays more people are asking questions but even in our country we we don't get certain news that you may get in Switzerland or you may get in Morocco or you may not. We all know there's manipulation and what they have foretold about what's coming. The manipulation when Billy in 1958 speaks about first America and then the EU which didn't exist yet in 58 will biochip every man, woman and child on the face of the planet to control them so well that their every movement to the meter to the inch can be determined and controlled. 1958 and when he in 1958 also says that the people that things will develop so that the people will lose their ability to determine the truth. Their eyes will no longer be able to know if what they're looking at is real. It will be so effective the deceptions."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "I mean we had we had George Orwell as well you know speak of similar things and and Isaac Azimoff and like we had like a lot of literary sort of giants talk about"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "people who had foresight and forvision about things um and it's just that the volume specificity and so far errorfree unfortunately uh I don't see that record now there's a woman what was Her name Baba Van"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Bllovatzki"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "no Baba Vana"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "oh the yeah yeah the prophet wasn't yeah"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Edgar Casey who had certain abilities and Billy had said Edgar Casey was a genuine seer it was an interesting form of a kind of a schizophrenia whereby only in this state when he'd go to sleep or what he could see and his specialty um I think was mainly medical things mainly and some things he got very right about a num you know many things he had this ability so Meyer it's not like I'm the only one who can do these things he even said that with um Nostradamus he says people don't interpret correctly some of the things that they think either have happened or are happening are still futural with Nostradamus' prophecies and when you see when you get into reading when Billy starts opening up and starts teaching about things you go, okay, I think after maybe the eighth or 10th read, I'll get all this together because this is there's obviously this is logic. I don't recognize what this information there is another level there. Now, there are people that are, you know, we have people that contribute to our blog. I think they're smarter than I am easily and that they're so so ariodite and so able to reference so many things that when we post a blog when we post contact report or something they've got that encyclopedia [pause] and it's terrific because some of the things I I say yeah I know that I don't remember that I never even read that contact and all thank goodness so many people can source on this and that's What makes it so interesting because they also see these aspects and the reasoning why something well this makes sense now why they would have told him that at this time look at this in light of that and"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "I'm I'm I'm yeah [pause] I'm following and I think uh I think it's definitely interesting and worth you know looking into more specifically to you know try and at least find some inconsistencies like and and therein if you can't then hey that's even even better. Um, you know what I what I would also say is that like there are similar prophetic sort of uh very indepth intellectual and stimulating ontological philosophical messages that have been given through you know other channels specifically and and I use that term very specifically but uh you know ra contact or the ra material these things they speak similarly about things um and recently there was a documentary mentary about Puharic that came out and and sort of uh you know the nine and the teachings of the nine. These were the the the nine people that he had which were channeling these"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Oh yeah."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "uh these beings or whatnot. But the the messages seem to all coincide. They're not con they're not conflicting on very many things. They're pretty logical and and for the most part coherent and friendly and and understandable. Um, but yesterday we spoke about, you know, we had I had asked you like why Billy? Like what's going on here? Why why not why won't why won't Patah or some Yaz or any of these beings just come to the podcast? Come sit down, have a chat, let the world know. No one's going to believe him anyway. So, what's the harm in it? Right. And and then you you said, \"Well, Billy was special.\""
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Well, I mean, as soon as we say special, we think there's an exalted status there."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Well, there kind of is with him because you had said that, you know, he follows like this sort of long lineage of prophets and and that they've delivered these messages to, you know, all of the he is like the seventh one,"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "seventh and final person to"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "seventh and final person, right? So there is this lineage of almost royalty like there is there is the chosen one aspect to this."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "We're leaving something out. Let's say somebody's quote unquote. There were uh in this material if I correct there were a few other people potentially who could have done this gig possibly. Um I think there was one or two who were made a aware of it somehow who declined it. some who may have died, whatever. So, here's this guy is, you know,"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "who were the ones before?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "I don't know the name now. Possibly it because they didn't name who the woman was, but I think it could have been Madame Blvotsky. Possibly."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "But who who are the ones prior?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Oh, the prior. Yes. [pause] Well, you've got Enoch or Henoch, Elijah, Isaiah, Jeremiah, Emmanuel. Get back there. Muhammad and Billy. Now that this will drive some people crazy this way and the other way. So, we know about we've heard about Enoch, Elijah, Isaiah, and Jeremiah. But let's also just for a moment stop before I answer the rest of it and say, you know, choosing back um we are in a world that since the early prophets and probably before uh anybody that stood out a little bit in a certain way, it's not like they are going to uh treat them especially kindly because they are going to come with material and information that isn't going to be welcome or there's no reason for them to come. Emmanuel was crucified. That's the name of the man according to the Meyer material. The real man who was falsely named Jesus Christ. Now, okay, wait a minute. So, we go 7:14 Isaiah. And his name shall be called Emmanuel, not Jesus. Well, what about the New Testament? Matthew 1:23. and his name shall be called Emmanuel. How's that? Well, Billy Meyer along with a Greek Orthodox priest, I think it's about 63, 64, right in there, telepathically are lid, story goes, the outskirts of Jerusalem, there's a hillside, a burn or a hillside, and at the base of it, there's a hole in there. Now, Billy knows that this is something he's long been informed he will be involved with. The man that he is with is named or called Issa Rashid. He speaks uh some Middle Eastern languages. He also can read and write Aramaic and German. H interesting. Billy kind of knows where this little hole is going to be. And they had brought flashlights and the tools to dig. And they dig their way in. Turns out to be an ancient tomb from all appearances. They're familiar. Yep. This is a tomb. And there's stone stones on the floor. And Billy says, \"We unearth until we find certain things.\" They start. Doesn't take them all that long. They find resin encrusted animal wrapped animal skin wrapped scrolls written in Aramaic. These are sheets of I guess pap I don't know what they but they're they're considered scrolls. They're written in Aramaic. Billy does not read and write Aramaic. He knows what Issa is here for. And he says okay you will take this and translate please and send me the translation. Issa Rishi says I'm on it boss or whatever. And off he goes. Billy goes back to Switzerland and within about five or six years something like that he gets the first third or so of this doc you know this overall document and Issa Rasheed said look I've translated this much of it but there are some powerful people in Jerusalem who know that I've got something of interest I'm taking my family we'll take the scrolls we've got to get out of here story goes that he that you know it includes in there I will get in touch with you as soon as we are safe. They travel and they get into Lebanon into a village in Lebanon and there is a kind of it's a refugee village or something. They have been invited to a home somehow. They sequester the scrolls in a wall there for safety. Within one week, the Israelis pick of all the refugee villages that one to raise to the ground, burn, destroy every week. Rasheed and his family get out with their lives and themselves. The scrolls are gone. Oh, this has got the makings of a conflict, doesn't it? Billy doesn't hear from him further until something happens. And a few years later, I think it's around 74, he learns that Issa Rasheed has and his family have been machine gunned to death in Baghdad ostensibly by the Mossad. But Billy has received all of this stuff in German. Now he gets about as an editor trying to make sure everything is lining up editorially and he discovers later more that Issa Rasheed had changed certain things based on his own religiosity. There were certain things in here that didn't fit with his beliefs. This is you know [laughter] this is not easy space brother stuff. Sure. Human beings wherever they're involved, things can and will get screwed up."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah. As it probably already has with the Bible."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Oh, for sure. Well, but all that stuff is written post events and changed, manipulated. So, we said this is really about the real man who name was changed to Emmanuel uh from Emmanuel to Jesus Christ. We've got the Old Testament, one mentioned, Billy didn't put it in there, another mentioned in the New Testament. So this attracts the attention of a man named James Gerdorf, professor of comparative religions, Oregon State University and also I think it's uh meteorology and he said oh I just heard about oh Bible hoax let me add that one and he goes and he digs into it a year or year and whatever it is comes out with a publication his own book called celestial teachings and according to what he was saying early on in the book. This Talmud Emanuel is what it gets called resolves over 350 inconsistencies in the book of Matthew 150 of which were not even under discussion at the time this was published and he says I've gone through this and he has shows you line by line by line it says this in Matthew says this in the TJ or tell you know it gets called the TJ sometimes extremely ly similar almost other times not there's differences and they tend to be as far as a biblical scholar is concerned important differences and also to people who"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "what differences stand out? do you know?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "[pause] well uh this guy isn't floating up to the sky and apparently and I think it's within here he knows that he will walk a very uh dangerous and dangerous bloody path here and this is where in the prophecy section chapter 25 as I recall this is a huge book and I don't have it all in my head he is excoriating the scribes and Pharisees this stuff made it into the I think into the New Testament didn't it you you know generation of vipers and all this and he's but he goes farther what isn't apparently mentioned in the Old Testament uh in the Torah or the New Testament where he's saying to them. You have deceived and murdered your friends so that you could acquire their belong. He's laying it out for them and he shaking his finger in their face saying"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Emanuel"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "is Yeah. So he's, you know, the guy that could turn over the table in the temple. I think that may be in there. Um and he says in 500 years comes another true prophet who like me will carry the same teaching at this time. And unless your distant descendants and the distant descendants of this prophet whose name will be Muhammad can come to a just and consiliatory peace with each other, it will be a bloody time and few will survive. And there will be also a false and evil cult who will gather around this prophet and falsify his true teaching. And this is stuff. I mean, Billy, Mr. Bullseye, walking around. Uh, but he he has a he's published information what the real teaching of a Muhammad was. It's also contained in a book called uh the goblet of the truth along with the true teaching of the previous prophets. And it's essentially it shows you how the teaching is the same. And Muhammad didn't marry 9-year-old girls. He was a champion for the rights of women and a protector of women. He did not believe in a jihad where you go and start slaughtering your enemies according to this information in the Meyer case. And that his mission actually was to stem the rise and power of the Catholic Church which otherwise would have fully enslaved the world. I think we've heard of things like crusades and inquisitions and all of this stuff. And there's quite a bit of information in the Talmud then and in other writings of Billy uh especially if people read what he's what Muhammad has supposedly spoken about you're seeing consistency about the the love and the peace and they speak about something. This is where the core of the case comes in. This is where Billy is the man, if you will. It is what was formerly called the spiritual teaching. And then Billy finally after decades says this is an incorrect word spiritgeist. This is or even in German his origins speak about ghosts [pause] and all. No this now is the time you understand this is the creation energy. What are you talking about? There's no deities. None of the the religions are founded on a true deity that created everything. And I even knew a guy who thought he was in touch with the so-called Elohim uh creators of all things. Uh okay. So there's no shortage of religions is the 4,000 and there's certain very primary ones and the ones that have you know the biggest recognition and following. They all basically stand on this premise if you want to you know when we talk about things we believe or not. what's in this book is true because this book says it's true. Sorry folks, that's the evidence. You can say, but artifacts have been f you'll be able to find artifacts throughout history and tales about them, some of which are right, some of which are not right. We're talking about something where this great cosmic reality in this teaching and this teaching is true because the book says it's true. In the creation energy teaching, Billy is speaking about something that addresses the greatest existential questions in humankind. They've bothered me since I was 10 years old. They've probably bothered many people. But that we have to push it on the back burner because as Billy said, the human brain is not greatly equipped to deal with. But here's how you can start to get educated. Because I said, look, Billy, what's outside of space? How far does it go? You know how can there be nothing? How can there be nothing? And then how can something arise out of nothing? And that something kaboom. We have reality as we know it or think we know it or whatever. We have things in this reality that have different durations, different vibrational frequencies. This lasts longer maybe than this does. glass and metal and but things have a perfection. They have a duration. Science relies on certain things and they can find out where these things change. And this goes on and on for everything seen and unseen and almost everything that we see with the exception of that which is natural is idea made manifest by man. And the rest is idea made manifest by what? Well, you want to start attributing it to your God of love and mercy who goes out and slays the uh, you know, the Canaanites and tells the Israelites to slay 20,000 people or in this other religion to do the where is the love and mercy? Well, when Billy starts talking about the teaching which he didn't create and which is a teaching the playarin have access to and levels of it that we don't. If we can deal with the information at the level that it's intended, if you will, for our development, for our evolution, and Billy has said, the meaning of life is the evolution of consciousness. Struggle with that one for a while. So instead of us lording it over others as the people connected to the Giza intelligences and the other gods did often times because they could and they played with the primitive humans. This creation is the source of all that exists. And if we want to begin to contemplate that and start to learn that there are immutable universal laws and our scientists know some of them. There's some other laws too and there's many laws that if we start to understand the laws and the recommendations things that are simply recommended for humankind that are this is no punishment. This isn't about you're going to be dipped in hot lid for eternity once you pass out of this life unless you believe in me. [pause] There's none of that."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Is there um is there any merit in Billy's um reports that reference the hermetic principles at all?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "What would those principles be specifically?"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "I think there's seven of them where everything is mental. Um like everything's, you know, in the mind type deal. Um I I'll try to name them all but I'll surely miss some. So everything is mental. Uh there's a masculine and feminine to everything. Uh everything is in constant motion. Um everything is uh so fluctuates like in waves. [pause] Um there is no opposite only varying degrees of the same thing. Um and then there's two others I'm that are eluding me. So yeah, around those lines which seem to be what we're discovering in physics anyways. But is there is there anything similar?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yeah, I'd say but in saying that I have to tell you that while I understand and I can I'm going to give you some comparables or whatever. I'm at a very early level of life of understanding the teaching. We're all no matter the the bandwidth here between the lowest and highest on earth isn't that that great. So Bill, for instance, Billy has written a phenomenal book called The Might of the Thoughts and how the mind works, how thinking works [pause] and things that we take for granted that are maybe backwards for some. In other words, we think that if we feel a certain way, we're going to think a certain way or whatever. Thoughts precede feelings. Most thinking is done below the conscious level. And if we take the time in trouble to become aware of this ongoing thinking process 24/7, we then learn to control the thoughts. We are aware that we're thinking and we're aware of what we're thinking. And in there in that responsibility is do we continue that train of thought, those thoughts, do we modify it? So which way do we take, you know, a different direction? Do we put a halt to that whole and and and and but you're talking"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "like emotional alchemy or"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "well it's it's it's more you could say even mental alchemy because this is done through the thinking process and that is what leads us to feel certain things about things."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Sure. think about it and start having feelings and then there is another thought and a decision about action or inaction."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "That's this book. I mean, that's the junior kindergarten takeaway."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "I realize there's a lot."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "[pause] Oh my gosh. He's written over 60 books and only maybe a dozen are translated into English. [pause] He's written about reincarnation, rebirth, death, and dying. Fluidal for forces, swinging waves. Again, you can see certain things here that can be reflected as I'm seeing it without understanding fully that the hermetic teaching because there are people uh in the distant past great philosophers"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Rosacrianism you know feels aligned with this a little bit as well and"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "yeah but there's things I'm sure that are really not because remember uh even in the world of disinformation you get 20% of the truth and you wrap it in a lie that was taught to me by a guy who passed away recently, a guy named Ed Dames who used to be"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "I knew I knew I met Ed. I interviewed him."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "I helped create his first technical remote viewing home study course."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Really?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "I worked with him over a period of a bit more than a year."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Did you ever did you ever um"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "I learned how to do that."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Did you ever do any of the spooky targets that he was looking into?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Well, he taught me and two other people involved in the production team how to do it. Yeah. And we could do it. [pause] And here's the funny story on it. It's a short story. I mean, he showed us and we were able to get the target. That was good. Uh, we were to go to Hawaii to do this production and basically I had created the introduction between him and and the guy who owned the production company and I had because I'd listened to all of his appearances in Artbell and I thought, \"Wow, this guy's got what I'd call an oral charisma. He's very engaging and he's saying a lot of things. Wow, this is really cool.\" So, I arranged I got in touch with him. I got put it together and I said, \"Hey, I think a cool way to do this is how you could teach this course on videotape and basically I really kind of helped design that and we worked on it and what we were to do is to go to this guy's studio in Hawaii and start the production and I thought I wonder what that guy is like.\" Took the piece of paper because remote viewing you have a target and you start by using pen to paper or pencil paper whatever you're going to do. And I drew this oblong face and curly hair down the sides and square glasses and stuff and these features. I swear if you will, we get there, the door opens up and this guy comes out. This guy comes out and I'm going, Okay, that's pretty interesting.\" Did I ever go back to do that? No. Because I I don't want to fiddle around with that. I c you can make mistakes with these things. You can get it right there. People that are good, people that weren't um I learned it from Ed and I learned certain things because there was a lawsuit then people sealed each other and I was the expert witness for having studied all of his"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "there was some controversy in the remote viewing field. Now, um, sadly Ed has passed away uh, recently and may he rest in peace, but he was definitely charismatic. Uh, and you know, I remember going out to dinner with him and my friend Nelson when we were down this journey looking into remote viewing and he was just the most entertaining, charismatic person. Like always got a joke, always trying to make you laugh, always had a story. Uh, he was talking smack. He was like he was very confident in what he could do. But one thing that seemed to be, you know, uh, very true about Ed was that un undeniably he was a good at teaching remote viewing. [pause] And and and a lot of people wanted to, um, you know, they wanted to slight him for so many reasons and because, you know, he had he was a bit of a loudmouth. He was like he he was, [pause] you know, he had gumption and he didn't care about what he said. He's like, \"This is the way it is.\" you know, he was in the army and that's kind of [pause] and um and that ticked a lot of people off, I think. And so I think people got, you know, on his back for that. But one thing that you couldn't deny is that like the students that came from Ed were some of the best remote viewers, you know, they had like some of the best teachings and stuff according to Ed."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yeah. [pause] Um there Okay. I was I got called in this lawsuit by I guess I was he the did he do the suing, my friend? I forget who was the plaintiff and who was the defendant, but I was called by the producer as expert witness because I then while this was in process, I went through every transcript of every prediction that Ed made,"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "right?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yeah. Okay. They weren't so accurate."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "No, I I [laughter] this isn't speaking ill of somebody. He simply couldn't do it. [pause] I don't think Ed again I don't think Ed was a great remote viewer."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "No, he was. [pause]"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "But I think he was really good at teaching it."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yes. And that's exactly what we came away with. And um [pause] I there were a couple particular things. I was hanging out with them for about a year. [pause] There had been an incident where one or two US Air Force jets had been lost. I forget the number because I might have mixed up. But he came in one day. He was absolutely positive where it crashed and all this stuff. They found it in a different state. it had nothing to do with came up here and he just let that go and it was like I didn't see anything accurate from him but I found him to be an interesting and entertaining guy."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Um I wish I'd read the contact reports a little earlier before I got involved with the whole thing [pause] because they were in there prior to that about his company."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Really? [pause]"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yes."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "What did they mention about Ed?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "They said that this company Scitec they named it was basically more about making a lot of money. There was a there was authentic remote viewing and I think they mentioned that the Russians had p and all but that this was I mean they they dissed him after [clears throat] I'd gone but I had it was great. I found out for myself I had the experience that he could teach it. [pause] Sure. Yeah, he could. So great, thank you very much. And then these guys are suing each other everywhere. And then there's another story that I'll tell you off camerara about one of the people who was his assistant that I had a little prank pranked after the trial. You know, we all have different sides to our nation, but this guy pranked and he loved it. It turned out"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "that's very funny."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "It it was funny."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "He's uh Yeah. Um, I remember the last communication I had with him when I met with him, he was convinced that I was going to be the one to film first contact with him, that he was being led to first contact [pause] and he had all these he regailed me with all these stories of when he was out there with the uh was the prince of Liken Likenstein and like all sorts and and you know the Hal put off and and they went out to see UFOs and you know they would make they would remote view where the UFO would be and he said, \"You know, they're going to meet me.\" And he would write me emails and say, \"You're going to come film me. You're going to come film me. Go out there.\" And then I'd follow up with him. I was like, \"So did you.\" And he's like, \"Yeah, timing wasn't right.\" Or something [laughter] something went arai. But um"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "yeah."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Uh I'm going to I'm going to pause for a second. Sure. [pause] Um we got some questions from the audience if you don't mind."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "I don't mind."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Would you like to take a little break before we get into this or are you good to keep going?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "I'm fine."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Okay. [pause] Now, now I know that one of the questions we already kind of answered and that usually happens cuz [pause] Yeah. You know, I have good questions, but arguably the questions from the audience are always better because they're they're so intelligent. There's smart people in there and there there's a whole bunch of them. You know, I think you got like 20 20 or 30 questions here, but uh we're going to grab a few of them. And if uh if you at home wonder how, you know, how can you possibly ask one of our guests a question, uh you can become a member and that is one of the perks that you get for being a member. So, here we go. Great question. So, this here uh by Alan P. Barker asks, \"Billy's visitations are ongoing. Was there ever talk of installing live video feed all around the area?\" It's a great question."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Well, the context began in terms of the modern day the stuff for public consumption and all in the 70s75 um during that early time into 80s uh they're still in a I'm just looking at this talking out loud because they're still putting together environment. No. Now there were of course people who wanted to come to the contacts and uh Billy speaks about this and people who believe that they had a mission with the playaran and all that but no because again this is it was going to be frustrating for people in certain ways because they knew their agenda again is to start a controversy or contribute to something that started earlier if you want to look at it that way but to help get it worldwide. And the best way it's this eye candy approach. There'll be other people who snap photos, people in other countries who had taken photographs of these craft. So, okay, you're going to have the photos out there. Be patient. We're going to get this controversy going. We're going to talk about these things, but no, we're not here to keep this going in a way that well, okay, that's that was okay, but how about we we've got people that got some questions. Can you do a thing over, etc., etc. It would just lead to more focus on the eye candy, which was not their purpose. That's my interpretation of it. [pause]"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Okay. Interesting. Um, a lot of people out there love the eye candy, though."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Of course. Who didn't? [laughter] If you're into UFOs,"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "uh, I'm a big fan of the eye candy. Um, this is a great question. [pause] Gina asks, \"What is one thing about the Meyer case you don't know that you would like a definitive answer to?\""
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Well, that is a great question."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah. Something that you could just go like definitively you there you have it. There's your answer. What would that be?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "I I've never had I I can't recall. I mean, that's a great question. It's one I should I will think about a lot more and maybe have to send it into you. It's like there's so many answers for things that I've wanted to know since childhood. Things that I was having dreams on and lights in the sky being underneath a disc that I get it now. It doesn't matter to not because somebody says it doesn't matter. It's like that's the phenomenon of that and in the context and we'll dip into this just a little bit in the context of this the UFO and the trai this discshaped thing that Bob Lazar that Billy M all this this is not an accident and this may help some people and maybe it helps with this answer I don't know what's been said in this case is that on earth there are people human beings who have been part of you know the original earth humans evolving over long periods of time. People alive today their creation energy form their essence may have already had two million incarnations as different people because we're never in this reincarnational thing which we didn't can't really go too far into but yes there's such a thing as reincarnation but it's not what we think. We're never the same person. We don't remember past lives. There is there are parts of that that have more information how we can draw on information that is contained from every life. Okay. But then there are also people who are here who are here because they came with one or another group of extraterrestrials. Not always a great romantic thing. They died here. they were abandoned here or they were attacked and killed by circumstances other people in the one of the laws is that a spirit form that dies on a given planet reincarnates reanimates a new personality on the planet on which they die. Now that to answer a possible next question on that is that if you're a space traveler then and your society reach space travel and you die somewhere else on a planet and there it kind of works that you're not going to suddenly have no future personalities because there's no life on that P that we go to the spirit forms will be attracted through creational law to an inhabited planet none of which are in our solar system where there is evolving human life at a level that is commensurate overall so that the spirit form comes in there's a new personality it can be it's already has access so that it can fit into that society and evolve consciousness the the meaning of life the evolution of consciousness so the universe isn't this univer it's not like oh the universe is punishing me or rewarding me absolutely doesn't happen there are laws and it's if a circumstance comes about that creates this problem it's solved in this way universally and then you have have to go on with your evolution if there's a crash in space itself or something and you you die on a ship same thing of this creation energy form is attracted to the next habitable planet or evolution at this level."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Does it have something to do with the EM field like the electromagnetic fields of the the planet?"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Not as such as I understand it because it's more the evolutionary level of the human life forms on that planet. So that because we don't I mean conceivably"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "but life to for life to even exist there would have to be like an EM field to protect it from certain radioactive"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "all that stuff is you know part and parcel there are those kinds of questions em fields when you get into things about fluidal energies what are those and swinging waves and how does uh telepathy work and what are ghosts and what are apparitions and what are these supposed paranormal things there's nothing paranormal There are things that happen according to known laws or we don't yet know the law or it's a hoax. It's pretty simple."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "So, we have some of all of that going on. So, this question to come back to it. I I don't know what question I still have. I'm being honest and I may well have some. That's a great question. Was there a question in the past I'll reframe the question here."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah. [pause] That you that was burning and that you had answered."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yeah. Now, yes, to a degree. As I said, I wanted to know what came before the beginning. How did anything come into being? Billy's got an entire book on that. And there's a new book that comes out people will be able to get off the site that is also addressing this because he goes through that. And uh we've read some of the explanation about this cuz he explains things in different places and he is a big believer in repetition. So you will find he'll say it he'll say it this way he'll say it that so that we get the access to the information through the modalities that we're working with right intellect wherever we are in understanding there are people at higher levels of understanding can go through things let's say a little more quickly because they're l they already understand that most of us won't understand this some will okay so on that level do we have an answer for that yes and no Because that answer alone poses a question that the brain cannot get around. And even Billy has said even the playarin I I asked him said Bill do the playar know the answer. No the human brain can only go so far. It's only if answers are to that come about they will only be in the higher levels that and they've spoken about well what is the evolution of a human being? We will go through countless millions of lifetimes and years and move towards a more refined more atheric not total semifysical semi you could use the word creation energy here hyphenated work form until we are at a level of development where the next if you will incarnation or the reincarnation sphere isn't into a physical form. into the lower levels of the creational energy. This goes on. There's the Araat. Billy's got a whole book on that. That book rivets me. It's just such a powerful direct."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "So that was your answer to like"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "how far"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "how far does it go? Where does it end? And it just kind of like there's levels to this."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "There's levels to it. And uh don't don't torture yourself. work with that in the teaching. Start or continue so that you can start to answer more questions that also are very much about here and now life. Billy is an earth man now and he said that to the player and because they've offered, you know, they offered to give him a fake arm. No, thank you. I'm an earth person. That's part of it. And he says, \"Just practically speaking, if suddenly I appear with a left arm, how long is it going to take for some military to kidnap my butt and start taking me apart? I don't want that.\""
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Um, well, these are all great answers. This is uh fun. Definitely fun to talk about. Um, you know, definitely leaves me wondering and curious more than anything. I'm I'm gonna, you know, have to do some reading myself, but I have a feeling there's a lifetime of that awaiting me. So, I'll probably not get to the bottom of it, unfortunately. [pause]"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Can I give you one? Because sure, I mentioned earlier off off camera. Uh, last night I was thinking about something and I asked Andrea to make a note for me and the 7- foot giants. Some people are will remember a couple years ago, I think it was in August perhaps of 2023 where it was reported in Peru that 7-ft tall giants were abducting and maybe even harming people, women from the village or whatever. And it was this whole thing. And as soon as I read that originally, bang, it was [clears throat] one of those aha moments. I know I've got this. 1976, it's in books and everything else. And it's from one one of the higher, you know, creation energy levels that feeds that Billy cannot talk to or he can receive and he gets the teaching and he has to work to make sure it's the way it supposed to be, but he can't really dialogue with them. This is my understanding. There is a level that he can go back and forth. Not that level. Okay. So this is the patitali level and they spoke about the time that will come in Peru when the 7 foot tall giants will emerge from their centuries long hiding places underground to molest the people there. And there's something tied into a quake in Udin which I think is or Odin in Italy. And indeed I was able to find and I I didn't look into that part again today but I found that so I could send it to you. And that verifiably 47 years or whatever it is after that was published that event occurred right down to where and the size of the people. I think they also said they were redheaded or red tinged or something and that this was, you know, an unwelcome thing and okay, what's the chance [laughter] of that 47 years? Because you brought up the point of, you know, like a dart board thing. Are they just throwing darts? We haven't found the the holes in the wall."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Sure. Yeah."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "So, and all of that and at some point I would like to offer our film to your audience and let me know if I can do that."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah, definitely."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Okay. [pause]"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah, I'll uh I'll leave a link in the description if you send me a link or all the information will be down there if you like."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Good."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Okay. Yeah, great. We'll leave that below. Um thank you so much for for coming here, for sharing this with me. Um and for being so rigorous in in in understanding about my skepticism to, you know, to this case. Um it's it's fun to be able to have that dialogue. Um, you know, as someone who is researching this and doesn't really know where to put a lot of things yet, um, it's fun to just be offered at least at the very least a new piece of the puzzle. [pause] Um, you know, I'm I'm still a ways from from being there, right? My conviction level fluctuates constantly. [pause] Um, but nonetheless, I find this fascinating and interesting and I think worthy of a deeper look at the very least. And I'm the two guys that who've done the research that you both at least speak the same language. Sure. And I am"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "on the photography side."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah, that's one I want to watch. [pause] Yeah, I I'll definitely I'll definitely be in touch and if anything I I'll just look up their work and and have a look at that as well. But um I encourage the audience to you know not stop at the one thing. maybe have a deeper look and if you know if you feel inclined to you know look at some of the contact reports or some of the documentaries I would you know highly encourage you to do that by looking at things no one's going to say you believe it you know and that's the that's the one thing about this whole space and a lot of things when it comes to personal beliefs which is like a binary thing if you research something that doesn't mean that you believe what you're researching and and I think it's a really important thing for people to practice is just intake information on a very unbiased uh level and without you know just pass it through your filters and see how it resonates and that's it. You don't have to commit either way. Yes or no. Um but I encourage you to do so and and if nothing else if nothing else you'll be potentially thoroughly entertained and it isn't a complete waste of time."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Can I throw a thought in? [pause]"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Sure."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "I've been asked if I believe in Billy Meyer, believe in UFOs, and I've said, \"No, when you know something, you don't have to believe in it. You could be wrong, of course, but rather than belief, I have the evidence in my experience, and so I'm comfortable as well with with people who don't have uh have informed their own determination.\" I try to answer, oh, this is really asking for trouble. I try to answer all my email, but you've got a [pause] an audience off the ch I can get around to it, but that's it. People, please do your own research. If it's really pressing, I will try to respond if I can help. I may be very tur and say look over here that this I know, I don't know, whatever. But you have opened your forum, your audience, your world to this where most people with big platforms won't do it. They just prefer the what I consider the easy way."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Sure."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "So I am thanking you and so I welcome. we're in the same boat really."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Well, there's uh rest assured that those who are opposed to any of this won't be watching at this point."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "[laughter]"
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "You're right."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "So, they they have long since written their emails."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Yeah. And their comments, right? [laughter] This guy smoking. Yeah."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "That's right. But but but for the for the strong, brave, and true that have that have fought this one out and are still here listening, you know. Um thank you for for listening. Thank you for watching. And uh feel free to check out some of the work that uh Michael has left you and some of the links below. And at the very least, just have a gander at some of the stuff that's out there on the internet about this case. It's very interesting and it continues to uh mystify, baffle, and intrigue me. Um, and uh, yeah, I look forward to uh, seeing more. So, thank you, Michael."
+    },
+    {
+      "speaker": "Michael Horn",
+      "role": "guest",
+      "text": "Pleasure."
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": "cold-open",
+      "turnIndex": 0,
+      "phase": "opening",
+      "currentLane": "cold open",
+      "nextHostMove": "open",
+      "wrapNow": false,
+      "notes": "Begin quickly and naturally; the host is already recording."
+    },
+    {
+      "id": "guest-context-setup",
+      "turnIndex": 2,
+      "phase": "opening",
+      "currentLane": "guest and controversy setup",
+      "nextHostMove": "frame context",
+      "wrapNow": false,
+      "notes": "Introduce the guest, the Billy Meyer controversy, and the Bob Lazar/photo-book context before handing off."
+    },
+    {
+      "id": "welcome-handoff",
+      "turnIndex": 4,
+      "phase": "opening",
+      "currentLane": "credentialed handoff",
+      "nextHostMove": "welcome guest",
+      "wrapNow": false,
+      "notes": "Accept the guest's correction from contact cases to reports, then complete the welcome and hand the floor to Michael."
+    },
+    {
+      "id": "billy-meyer-introduction",
+      "turnIndex": 6,
+      "phase": "opening",
+      "currentLane": "audience orientation",
+      "nextHostMove": "ask introductory question",
+      "wrapNow": false,
+      "notes": "Thank Michael for traveling, anchor Billy Meyer for listeners through the X-Files poster reference, and invite a basic introduction."
+    },
+    {
+      "id": "intention-setting-photo-agenda",
+      "turnIndex": 20,
+      "phase": "intention-setting",
+      "currentLane": "agenda sketch into photo evidence",
+      "nextHostMove": "set agenda and initiate next topic",
+      "wrapNow": false,
+      "notes": "The host sketches the intended episode path: photos, contact reports, witnesses, prophecies/tales, then initiates the next concrete topic with the wedding cake UFO."
+    },
+    {
+      "id": "skeptical-bridge-to-eyewitnesses",
+      "turnIndex": 54,
+      "phase": "evidence-bridge",
+      "currentLane": "eyewitness corroboration",
+      "nextHostMove": "suspend disbelief and ask for corroborating witnesses",
+      "wrapNow": false,
+      "notes": "The host names his skepticism about the wedding cake UFO, explicitly suspends that objection to keep the story moving, then bridges from disputed photos into the more checkable eyewitness lane with a concrete question."
+    }
+  ]
+}

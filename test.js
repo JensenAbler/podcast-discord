@@ -42,6 +42,12 @@ const {
     getRecordingDir,
     isLegacyEpisodesRecordingDir
 } = require('./paths');
+const {
+    PromptEvalRunner,
+    parseArgs,
+    scoreDeterministic,
+    validateFixture
+} = require('./prompt-eval');
 const { PassThrough } = require('stream');
 const { EventEmitter } = require('events');
 const msgpack = require('msgpack-lite');
@@ -3011,6 +3017,301 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Show runner failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 5c.0a: Prompt eval pipeline exports and replays checkpoints');
+    try {
+        const fixture = {
+            id: 'prompt-eval-test',
+            topic: 'Prompt evaluation',
+            topicBrief: 'A harness for comparing Alpha-Clawd with a human host.',
+            questionBank: ['How should the episode open?', 'What lane should the host bridge into next?'],
+            turns: [
+                {
+                    speaker: 'Guest',
+                    role: 'guest',
+                    text: 'I started by trying to make the host feel present.',
+                    timestamp: '2026-05-15T00:00:01.000Z'
+                },
+                {
+                    speaker: 'Human Host',
+                    role: 'host',
+                    text: 'So the opening lane is presence. What changed once this became a live system?',
+                    timestamp: '2026-05-15T00:00:08.000Z'
+                },
+                {
+                    speaker: 'Guest',
+                    role: 'guest',
+                    text: 'The timing started mattering more than any individual feature.',
+                    timestamp: '2026-05-15T00:00:19.000Z'
+                },
+                {
+                    speaker: 'Human Host',
+                    role: 'host',
+                    text: 'That makes the engineering feel editorial: timing is part of the host character.',
+                    timestamp: '2026-05-15T00:00:27.000Z'
+                }
+            ],
+            checkpoints: [
+                {
+                    id: 'presence-bridge',
+                    turnIndex: 1,
+                    phase: 'opening',
+                    currentLane: 'presence',
+                    nextHostMove: 'bridge',
+                    wrapNow: false
+                },
+                {
+                    id: 'timing-synthesis',
+                    turnIndex: 3,
+                    expected: {
+                        showrunner: {
+                            phase: 'background',
+                            currentLane: 'timing',
+                            nextHostMove: 'synthesize',
+                            wrapNow: false
+                        }
+                    }
+                }
+            ]
+        };
+
+        const args = parseArgs([
+            '--fixture', 'eval/fixtures/foo.json',
+            '--checkpoints', 'presence-bridge,3',
+            '--state', 'predicted'
+        ]);
+        if (
+            args.fixture !== 'eval/fixtures/foo.json' ||
+            args.checkpoints[0] !== 'presence-bridge' ||
+            args.checkpoints[1] !== 3 ||
+            args.state !== 'predicted'
+        ) {
+            throw new Error(`Prompt eval args did not parse correctly: ${JSON.stringify(args)}`);
+        }
+
+        const normalized = validateFixture(fixture, 'prompt-eval-test.json');
+        if (
+            normalized.checkpoints.length !== 2 ||
+            normalized.checkpoints[0].expectedSpeech !== fixture.turns[1].text ||
+            normalized.checkpoints[1].expected.showrunner.phase !== 'background'
+        ) {
+            throw new Error(`Prompt eval fixture did not normalize checkpoints: ${JSON.stringify(normalized.checkpoints)}`);
+        }
+
+        let rejectedInvalidFixture = false;
+        try {
+            validateFixture({
+                topic: 'bad fixture',
+                turns: [{ speaker: 'Guest', role: 'narrator', text: 'invalid role' }]
+            }, 'bad-fixture.json');
+        } catch {
+            rejectedInvalidFixture = true;
+        }
+        if (!rejectedInvalidFixture) {
+            throw new Error('Prompt eval fixture parser accepted an invalid role');
+        }
+        let rejectedMissingTurns = false;
+        try {
+            validateFixture({ topic: 'missing turns' }, 'missing-turns.json');
+        } catch {
+            rejectedMissingTurns = true;
+        }
+        if (!rejectedMissingTurns) {
+            throw new Error('Prompt eval fixture parser accepted missing turns');
+        }
+
+        const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-eval-fixture-'));
+        const fixturePath = path.join(fixtureDir, 'fixture.json');
+        fs.writeFileSync(fixturePath, JSON.stringify(fixture, null, 2));
+
+        const fakeGuidanceForInput = (input) => {
+            const secondCheckpoint = input.transcript.includes('The timing started mattering');
+            return secondCheckpoint
+                ? {
+                    phase: 'background',
+                    currentLane: 'timing',
+                    coveredAngles: ['presence'],
+                    untouchedAngles: ['implementation'],
+                    nextHostMove: 'synthesize',
+                    avoid: ['generic question'],
+                    suggestedQuestion: '',
+                    wrapNow: false,
+                    wrapReason: 'More evaluation lanes remain.',
+                    generatorInstruction: 'Synthesize timing as part of host character.'
+                }
+                : {
+                    phase: 'opening',
+                    currentLane: 'presence',
+                    coveredAngles: [],
+                    untouchedAngles: ['timing'],
+                    nextHostMove: 'bridge',
+                    avoid: ['premature wrap'],
+                    suggestedQuestion: 'What changed once this became live?',
+                    wrapNow: false,
+                    wrapReason: 'The episode is still opening.',
+                    generatorInstruction: 'Bridge from presence into live-system constraints.'
+                };
+        };
+
+        const promptOnlyCalls = { showrunner: 0, podcast: 0 };
+        const fakeShowRunner = {
+            buildMessages: (input) => [
+                { role: 'system', content: 'fake showrunner system' },
+                { role: 'user', content: input.transcript },
+                { role: 'system', content: 'fake showrunner schema' }
+            ],
+            buildRequestBody: (messages) => ({ model: 'fake-showrunner', messages }),
+            generate: async () => {
+                promptOnlyCalls.showrunner += 1;
+                throw new Error('export-only run should not call showrunner generate');
+            }
+        };
+        const fakePodcast = {
+            buildMessages: (input) => [
+                { role: 'system', content: 'fake podcast system' },
+                { role: 'user', content: `${input.transcript}\n${JSON.stringify(input.showRunnerGuidance || null)}` }
+            ],
+            buildRequestBody: (messages) => ({ model: 'fake-podcast', messages }),
+            generate: async () => {
+                promptOnlyCalls.podcast += 1;
+                throw new Error('export-only run should not call podcast generate');
+            }
+        };
+
+        const exportRunner = new PromptEvalRunner({
+            showRunnerGenerator: fakeShowRunner,
+            podcastGenerator: fakePodcast,
+            outputRoot: path.join(fixtureDir, 'runs'),
+            now: () => '2026-06-17T01:02:03.000Z'
+        });
+        const exportResult = await exportRunner.run({
+            fixture: fixturePath,
+            execute: false,
+            state: 'oracle',
+            out: path.join(fixtureDir, 'export-run')
+        });
+        if (
+            promptOnlyCalls.showrunner !== 0 ||
+            promptOnlyCalls.podcast !== 0 ||
+            exportResult.promptRecords.length !== 2 ||
+            exportResult.outputRecords[0].outputs.showrunner !== null ||
+            exportResult.outputRecords[0].scores.deterministic.jsonValidity.showrunner.reason !== 'not_run'
+        ) {
+            throw new Error(`Prompt export should be deterministic and call no generators: ${JSON.stringify({ promptOnlyCalls, exportResult })}`);
+        }
+        if (
+            exportResult.promptRecords[0].podcast.input.showRunnerGuidance.phase !== 'opening' ||
+            exportResult.promptRecords[1].showrunner.input.previousGuidance.phase !== 'opening' ||
+            !exportResult.promptRecords[1].showrunner.input.transcript.includes('Alpha-Clawd: So the opening lane is presence')
+        ) {
+            throw new Error(`Prompt export did not carry oracle guidance or relabel host turns: ${JSON.stringify(exportResult.promptRecords)}`);
+        }
+        if (
+            !fs.existsSync(path.join(exportResult.runDir, 'prompts.jsonl')) ||
+            !fs.existsSync(path.join(exportResult.runDir, 'outputs.jsonl')) ||
+            !fs.existsSync(path.join(exportResult.runDir, 'scores.json')) ||
+            !fs.existsSync(path.join(exportResult.runDir, 'report.md'))
+        ) {
+            throw new Error(`Prompt eval did not write all run artifacts: ${exportResult.runDir}`);
+        }
+
+        const executeCalls = { showrunner: [], podcast: [] };
+        const executingShowRunner = {
+            buildMessages: fakeShowRunner.buildMessages,
+            buildRequestBody: fakeShowRunner.buildRequestBody,
+            generate: async (input) => {
+                executeCalls.showrunner.push(input);
+                return fakeGuidanceForInput(input);
+            }
+        };
+        const executingPodcast = {
+            buildMessages: fakePodcast.buildMessages,
+            buildRequestBody: fakePodcast.buildRequestBody,
+            generate: async (input) => {
+                executeCalls.podcast.push(input);
+                return {
+                    shouldRespond: true,
+                    speech: input.transcript.includes('The timing started mattering')
+                        ? fixture.turns[3].text
+                        : fixture.turns[1].text,
+                    bigBrain: { requested: false, reason: '', consumedRunId: '' },
+                    bigHeart: { requested: false, reason: '', consumedRunId: '' }
+                };
+            }
+        };
+
+        const executeRunner = new PromptEvalRunner({
+            showRunnerGenerator: executingShowRunner,
+            podcastGenerator: executingPodcast,
+            outputRoot: path.join(fixtureDir, 'runs'),
+            now: () => '2026-06-17T01:02:04.000Z'
+        });
+        const executeResult = await executeRunner.run({
+            fixture: fixturePath,
+            execute: true,
+            state: 'predicted',
+            out: path.join(fixtureDir, 'execute-run')
+        });
+
+        if (
+            executeCalls.showrunner.length !== 2 ||
+            executeCalls.podcast.length !== 2 ||
+            executeCalls.showrunner[1].previousGuidance.phase !== 'opening' ||
+            executeCalls.podcast[1].showRunnerGuidance.phase !== 'background' ||
+            executeResult.outputRecords[0].scores.deterministic.podcast.textOverlap !== 1 ||
+            executeResult.outputRecords[1].scores.deterministic.showrunner.fields.currentLane.pass !== true
+        ) {
+            throw new Error(`Prompt eval execute path did not produce stable mocked outputs: ${JSON.stringify({ executeCalls, outputRecords: executeResult.outputRecords })}`);
+        }
+
+        const directScore = scoreDeterministic({
+            checkpoint: normalized.checkpoints[0],
+            showrunnerOutput: fakeGuidanceForInput({ transcript: '' }),
+            podcastOutput: {
+                shouldRespond: true,
+                speech: fixture.turns[1].text,
+                bigBrain: { requested: false, reason: '', consumedRunId: '' },
+                bigHeart: { requested: false, reason: '', consumedRunId: '' }
+            },
+            executed: true
+        });
+        if (
+            directScore.jsonValidity.podcast.valid !== true ||
+            directScore.showrunner.fields.phase.pass !== true ||
+            directScore.podcast.speechContract.pass !== true
+        ) {
+            throw new Error(`Prompt eval scoring did not handle annotated checkpoint: ${JSON.stringify(directScore)}`);
+        }
+        const unannotatedFixture = validateFixture({
+            ...fixture,
+            checkpoints: [{ turnIndex: 1 }]
+        }, 'unannotated-prompt-eval-test.json');
+        const unannotatedScore = scoreDeterministic({
+            checkpoint: unannotatedFixture.checkpoints[0],
+            showrunnerOutput: fakeGuidanceForInput({ transcript: '' }),
+            podcastOutput: {
+                shouldRespond: true,
+                speech: fixture.turns[1].text,
+                bigBrain: { requested: false, reason: '', consumedRunId: '' },
+                bigHeart: { requested: false, reason: '', consumedRunId: '' }
+            },
+            executed: true
+        });
+        if (
+            unannotatedScore.showrunner.annotatedFields !== 0 ||
+            unannotatedScore.showrunner.exactMatchRate !== null ||
+            unannotatedScore.podcast.textOverlap !== 1
+        ) {
+            throw new Error(`Prompt eval scoring did not handle unannotated checkpoint: ${JSON.stringify(unannotatedScore)}`);
+        }
+
+        fs.rmSync(fixtureDir, { recursive: true, force: true });
+        console.log('  Prompt eval exports prompts safely, replays with fake generators, and scores checkpoints');
+        passed++;
+    } catch (error) {
+        console.log(`  Prompt eval pipeline failed: ${error.message}`);
         failed++;
     }
 

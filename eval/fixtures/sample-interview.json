@@ -1,0 +1,56 @@
+{
+  "id": "sample-interview",
+  "topic": "Building a live AI podcast host",
+  "topicBrief": "A short sample fixture that demonstrates host-turn replay for prompt evaluation.",
+  "questionBank": [
+    "What led you to build this?",
+    "What changed once it became live?",
+    "What should listeners understand before the technical details?"
+  ],
+  "turns": [
+    {
+      "speaker": "Guest",
+      "role": "guest",
+      "text": "The first thing was just wanting the host to feel alive in the room.",
+      "timestamp": "00:00:01.000"
+    },
+    {
+      "speaker": "Human Host",
+      "role": "host",
+      "text": "So the starting point was presence, not feature count. What made that hard once it was actually live?",
+      "timestamp": "00:00:08.000"
+    },
+    {
+      "speaker": "Guest",
+      "role": "guest",
+      "text": "Latency, mostly. Every little wait changes whether the host feels attentive or intrusive.",
+      "timestamp": "00:00:19.000"
+    },
+    {
+      "speaker": "Human Host",
+      "role": "host",
+      "text": "That makes the engineering feel almost editorial. The timing is part of the character.",
+      "timestamp": "00:00:27.000"
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": "opening-bridge",
+      "turnIndex": 1,
+      "phase": "opening",
+      "currentLane": "motivation",
+      "nextHostMove": "bridge",
+      "wrapNow": false,
+      "notes": "The host should bridge from motivation into practical constraints."
+    },
+    {
+      "id": "timing-synthesis",
+      "turnIndex": 3,
+      "phase": "background",
+      "currentLane": "latency",
+      "nextHostMove": "synthesize",
+      "wrapNow": false,
+      "notes": "The host should synthesize latency as a show-flow concern."
+    }
+  ]
+}
