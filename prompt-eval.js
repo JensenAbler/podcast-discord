@@ -853,8 +853,8 @@ function generateReport({ fixture, checkpoints, runDir, stateMode, execute, judg
         lines.push([
             record.checkpointId,
             record.targetTurnIndex,
-            truncateForTable(expected),
-            truncateForTable(actual || '(not run)'),
+            fullTextForTable(expected),
+            fullTextForTable(actual || '(not run)'),
             formatScore(record.scores.deterministic.podcast.textOverlap),
             formatPass(fields.phase?.pass),
             formatPass(fields.currentLane?.pass),
@@ -862,8 +862,39 @@ function generateReport({ fixture, checkpoints, runDir, stateMode, execute, judg
         ].join(' | ').replace(/^/, '| ').replace(/$/, ' |'));
     }
 
-    lines.push('');
-    return lines.join('\n');
+    lines.push(
+        '',
+        '## Full Responses',
+        ''
+    );
+
+    for (const record of outputRecords) {
+        const expected = record.expected.podcastSpeech || '';
+        const showrunnerOutput = record.outputs.showrunner || null;
+        const podcastOutput = record.outputs.podcast || null;
+
+        lines.push(
+            `### ${record.checkpointId} (turn ${record.targetTurnIndex})`,
+            '',
+            `- Overlap: ${formatScore(record.scores.deterministic.podcast.textOverlap)}`,
+            `- Speech contract: ${formatPass(record.scores.deterministic.podcast.speechContract.pass)}`,
+            '',
+            '**Expected host turn**',
+            '',
+            markdownFence(expected || '(empty)', 'text'),
+            '',
+            '**Generated podcast output**',
+            '',
+            markdownFence(JSON.stringify(podcastOutput, null, 2), 'json'),
+            '',
+            '**Generated showrunner output**',
+            '',
+            markdownFence(JSON.stringify(showrunnerOutput, null, 2), 'json'),
+            ''
+        );
+    }
+
+    return `${lines.join('\n')}\n`;
 }
 
 function formatScore(value) {
@@ -876,9 +907,14 @@ function formatPass(value) {
     return 'n/a';
 }
 
-function truncateForTable(value, max = 90) {
-    const text = cleanText(value).replace(/\|/g, '/');
-    return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+function fullTextForTable(value) {
+    return cleanText(value).replace(/\|/g, '/');
+}
+
+function markdownFence(value, language = '') {
+    const text = String(value ?? '');
+    const fence = text.includes('```') ? '````' : '```';
+    return `${fence}${language}\n${text}\n${fence}`;
 }
 
 function toJsonl(records) {

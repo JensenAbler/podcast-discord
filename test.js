@@ -1456,6 +1456,19 @@ async function runTests() {
         if (explicitAfterStandbyPrompt.includes('Standing-by mode is active')) {
             throw new Error(`Explicit request should override standby prompt: ${explicitAfterStandbyPrompt}`);
         }
+        const currentStandbyPrompt = new PodcastGenerator({ apiKey: 'sk-test-placeholder' })
+            .buildUserPrompt('Jensen: Please just stand by while I look at this.', null, {});
+        const staleStandbyPrompt = new PodcastGenerator({ apiKey: 'sk-test-placeholder' })
+            .buildUserPrompt([
+                'Jensen: Please just stand by while I look at this.',
+                'Jensen: Okay, here is the complete thought I wanted to share.'
+            ].join('\n'), null, {});
+        if (
+            !currentStandbyPrompt.includes('Current live pacing instruction') ||
+            staleStandbyPrompt.includes('Current live pacing instruction')
+        ) {
+            throw new Error(`Standby detection should use the current turn only: ${JSON.stringify({ currentStandbyPrompt, staleStandbyPrompt })}`);
+        }
         standbyGenerator.rememberTurn('Jensen: Now you carry the conversation for at least five turns, please.', {
             shouldRespond: true,
             speech: 'Here is a concrete thought without a question.',
@@ -1525,6 +1538,7 @@ async function runTests() {
             !showRunnerPrompt.includes('wrapNow: true') ||
             !showRunnerPrompt.includes('Wrap the episode now') ||
             !showRunnerPrompt.includes('private editorial steering') ||
+            !showRunnerPrompt.includes('usually speak') ||
             showRunnerPrompt.includes('contextText')
         ) {
             throw new Error(`Show runner guidance was not injected into generator prompt: ${showRunnerPrompt}`);

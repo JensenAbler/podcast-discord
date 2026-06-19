@@ -811,8 +811,9 @@ class PodcastGenerator {
             'Do not autocomplete with generic questions. In particular, avoid shallow "what does that feel like" style questions unless the guest has clearly opened a felt-sense thread and that exact move would help. If awareness notes or live correction point out repeated questioning, let that change behavior immediately: choose silence, reflection, or a concise acknowledgment instead of another question.',
             '',
             'When in doubt, choose silence or the smaller move. You will get another turn.',
+            'But do not confuse completed interview beats with interruptions. If the guest has finished a substantive answer and private show-runner direction names a next bridge or question, that is a strong reason to speak. Silence is for active floor-holding, unfinished thoughts, direct guest instructions, or moments where reception matters more than forward motion.',
             '',
-            'Do not ask a question every turn. After a guest shares a substantial story, correction, boundary, or emotion, prefer reflection over question unless they explicitly ask you for a question or next step.',
+            'Do not ask a question every turn. After a guest shares a substantial story, correction, boundary, or emotion, prefer reflection over question unless they explicitly ask you for a question or next step, or the show-runner direction identifies a specific next interview move that fits the completed beat.',
             '',
             'Guest floor holding:',
             'When the guest is looking at a tool, document, file, or screen and narrating discoveries, do not dump instructions unless they explicitly ask for technical assistance. If they say "stand by", "hold on", "let me explore", or "I am looking", acknowledge briefly once if needed, then wait.',
@@ -872,10 +873,7 @@ class PodcastGenerator {
 
     buildUserPrompt(transcript, wordData, options = {}) {
         const lines = [];
-        const directiveText = [
-            transcript,
-            this.formatUtterances(options.utterances || [])
-        ].filter(Boolean).join('\n');
+        const directiveText = this.getCurrentDirectiveText(transcript, options.utterances || []);
         const turnDirectives = this.detectConversationDirectives(directiveText);
 
         if (options.idleCheck && Number.isFinite(Number(options.idleSeconds))) {
@@ -923,7 +921,11 @@ class PodcastGenerator {
             );
         }
 
-        const episodeStructure = this.formatEpisodeStructureNotes(this.extractEpisodeStructureNotes(directiveText));
+        const episodeStructureText = [
+            transcript,
+            this.formatUtterances(options.utterances || [])
+        ].filter(Boolean).join('\n');
+        const episodeStructure = this.formatEpisodeStructureNotes(this.extractEpisodeStructureNotes(episodeStructureText));
         if (episodeStructure) {
             lines.push(
                 '',
@@ -941,7 +943,7 @@ class PodcastGenerator {
                 'Show runner direction:',
                 showRunnerGuidance,
                 '',
-                'This is private editorial steering for episode structure, not speech to quote. Let it guide topic coverage, bridges, and wrap-up timing, but do not let it override hard live floor cues, direct guest requests, Big Brain rules, or the need to stay with what the guest is actually doing.'
+                'This is private editorial steering for episode structure, not speech to quote. Let it guide topic coverage, bridges, and wrap-up timing. If it asks for a bridge or a narrow question and the latest transcript line is a completed beat, usually speak. Do not let it override hard live floor cues, direct guest requests, Big Brain rules, or a genuinely unfinished thought.'
             );
         }
 
@@ -2304,6 +2306,19 @@ class PodcastGenerator {
 
     getRecentHistory() {
         return this.history.slice(-this.maxHistoryTurns * 2);
+    }
+
+    getCurrentDirectiveText(transcript = '', utterances = []) {
+        const formattedUtterances = this.formatUtterances(utterances || []);
+        if (formattedUtterances.trim()) {
+            return formattedUtterances;
+        }
+
+        const lines = String(transcript || '')
+            .split(/\n+/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        return lines.length > 0 ? lines[lines.length - 1] : '';
     }
 
     detectConversationDirectives(transcript = '') {

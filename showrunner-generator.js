@@ -25,7 +25,7 @@ class ShowRunnerGenerator extends PodcastGenerator {
             baseUrl: options.baseUrl || process.env.PODCAST_SHOW_RUNNER_BASE_URL || (frontier.enabled ? frontier.baseUrl : undefined),
             model: options.model || process.env.PODCAST_SHOW_RUNNER_MODEL || (frontier.enabled ? frontier.model : undefined) || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini',
             timeout: options.timeout || process.env.PODCAST_SHOW_RUNNER_TIMEOUT_MS || process.env.PODCAST_GENERATOR_TIMEOUT_MS || 20000,
-            maxCompletionTokens: options.maxCompletionTokens || process.env.PODCAST_SHOW_RUNNER_MAX_TOKENS || 1000,
+            maxCompletionTokens: options.maxCompletionTokens || process.env.PODCAST_SHOW_RUNNER_MAX_TOKENS || 2000,
             responseFormat: options.responseFormat || process.env.PODCAST_SHOW_RUNNER_RESPONSE_FORMAT || process.env.PODCAST_GENERATOR_RESPONSE_FORMAT || 'json_schema',
             reasoningFormat: options.reasoningFormat || process.env.PODCAST_SHOW_RUNNER_REASONING_FORMAT || process.env.PODCAST_GENERATOR_REASONING_FORMAT
         });
@@ -92,6 +92,9 @@ class ShowRunnerGenerator extends PodcastGenerator {
             '- Keep a list of useful untouched angles and question lanes.',
             '- Notice when the guest has already answered enough and the host should synthesize or bridge instead of asking a generic follow-up.',
             '- Prefer structure over question-autocomplete. The host should not make the guest design every transition.',
+            '- Do not over-protect the pacing by repeatedly backing up for provenance. Once the transcript contains enough setup for the listener, let the host follow the specific claim, object, facility, procedure, or experience the guest just introduced.',
+            '- Good interview flow alternates grounding with decisive movement. A direct, plain question about the named thing in the latest answer is often better than another context-setting question.',
+            '- When the host opening needs trust, let warmth and intention-setting count as structure; do not always rush to an origin question.',
             '- When all major angles are covered, the guest is closing, or the configured time limit is reached, explicitly direct the host to wrap up.',
             '',
             'Do not invent facts. If the brief or transcript does not support a topic angle, label it as a possible lane rather than established truth.'
@@ -120,13 +123,15 @@ class ShowRunnerGenerator extends PodcastGenerator {
             'Potential question bank and lanes:',
             questionBank || DEFAULT_SHOW_RUNNER_QUESTIONS.join('\n'),
             '',
+            'Use the question bank as a menu, not a script. The transcript is the authority. If the latest guest answer opens a concrete door, move through that door before stepping back to a generic lane.',
+
             'Previous show runner guidance:',
             previousGuidance,
             '',
             'Transcript so far, most recent tail:',
             transcript,
             '',
-            'Update the editorial state now. If the time limit has been reached or the covered angles are sufficient for a coherent episode, set wrapNow true and make generatorInstruction a clear wrap-up directive.'
+            'Update the editorial state now. If the time limit has been reached or the covered angles are sufficient for a coherent episode, set wrapNow true and make generatorInstruction a clear wrap-up directive. Otherwise make generatorInstruction name the next concrete host move in one compact sentence. If the latest beat is complete and the host should speak, say so plainly; if the host should stay silent, explain the active floor cue.'
         ].filter((line) => line !== null);
 
         return lines.join('\n');
