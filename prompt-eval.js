@@ -33,7 +33,7 @@ function usage() {
         '  --execute              Call the configured showrunner and podcast generators.',
         '  --judge                Call the evaluator model too. Requires --execute.',
         '  --checkpoints a,b,c    Override selected checkpoint turn indices or checkpoint ids.',
-        '  --state <mode>         oracle, predicted, or none. Default: oracle.',
+        '  --state <mode>         predicted, none, or oracle. Default: predicted.',
         '  --out <dir>            Override output run directory.',
         '  --help                 Show this help.'
     ].join('\n');
@@ -45,7 +45,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         execute: false,
         judge: false,
         checkpoints: null,
-        state: 'oracle',
+        state: 'predicted',
         out: null,
         help: false
     };
@@ -400,7 +400,7 @@ class PromptEvalRunner {
         const checkpoints = selectCheckpoints(fixture, options.checkpoints || null);
         const execute = Boolean(options.execute);
         const judge = Boolean(options.judge);
-        const stateMode = options.state || 'oracle';
+        const stateMode = options.state || 'predicted';
         if (!STATE_MODES.has(stateMode)) {
             throw new Error(`Invalid state mode "${stateMode}".`);
         }
@@ -435,7 +435,6 @@ class PromptEvalRunner {
             const podcastGuidance = choosePodcastGuidance({
                 execute,
                 showrunnerOutput,
-                expectedShowrunner: checkpoint.expected.showrunner,
                 previousGuidance,
                 stateMode
             });
@@ -484,11 +483,6 @@ class PromptEvalRunner {
                 targetTurnIndex: checkpoint.targetTurnIndex,
                 hostTurnOrdinal: checkpoint.hostTurnOrdinal,
                 stateMode,
-                expected: {
-                    podcastSpeech: checkpoint.expectedSpeech,
-                    showrunner: checkpoint.expected.showrunner,
-                    notes: checkpoint.notes
-                },
                 showrunner: {
                     input: context.showrunnerInput,
                     messages: showrunnerMessages,
@@ -532,7 +526,6 @@ class PromptEvalRunner {
             previousGuidance = updatePreviousGuidance({
                 stateMode,
                 previousGuidance,
-                expectedShowrunner: checkpoint.expected.showrunner,
                 showrunnerOutput
             });
         }
@@ -589,12 +582,9 @@ class PromptEvalRunner {
     }
 }
 
-function choosePodcastGuidance({ execute, showrunnerOutput, expectedShowrunner, previousGuidance, stateMode }) {
+function choosePodcastGuidance({ execute, showrunnerOutput, previousGuidance, stateMode }) {
     if (execute && showrunnerOutput) {
         return showrunnerOutput;
-    }
-    if (expectedShowrunner) {
-        return expectedShowrunner;
     }
     if (stateMode === 'oracle') {
         return previousGuidance;
@@ -602,14 +592,11 @@ function choosePodcastGuidance({ execute, showrunnerOutput, expectedShowrunner, 
     return null;
 }
 
-function updatePreviousGuidance({ stateMode, previousGuidance, expectedShowrunner, showrunnerOutput }) {
+function updatePreviousGuidance({ stateMode, previousGuidance, showrunnerOutput }) {
     if (stateMode === 'none') {
         return null;
     }
-    if (stateMode === 'predicted') {
-        return showrunnerOutput || previousGuidance;
-    }
-    return expectedShowrunner || showrunnerOutput || previousGuidance;
+    return showrunnerOutput || previousGuidance;
 }
 
 function buildRequestBody(generator, messages) {

@@ -3202,11 +3202,12 @@ async function runTests() {
             throw new Error(`Prompt export should be deterministic and call no generators: ${JSON.stringify({ promptOnlyCalls, exportResult })}`);
         }
         if (
-            exportResult.promptRecords[0].podcast.input.showRunnerGuidance.phase !== 'opening' ||
-            exportResult.promptRecords[1].showrunner.input.previousGuidance.phase !== 'opening' ||
+            exportResult.promptRecords[0].podcast.input.showRunnerGuidance !== null ||
+            exportResult.promptRecords[1].showrunner.input.previousGuidance !== null ||
+            exportResult.promptRecords[1].podcast.input.showRunnerGuidance !== null ||
             !exportResult.promptRecords[1].showrunner.input.transcript.includes('Alpha-Clawd: So the opening lane is presence')
         ) {
-            throw new Error(`Prompt export did not carry oracle guidance or relabel host turns: ${JSON.stringify(exportResult.promptRecords)}`);
+            throw new Error(`Prompt export leaked oracle guidance or failed to relabel host turns: ${JSON.stringify(exportResult.promptRecords)}`);
         }
         if (
             !fs.existsSync(path.join(exportResult.runDir, 'prompts.jsonl')) ||

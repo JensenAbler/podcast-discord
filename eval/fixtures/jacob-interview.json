@@ -1,14 +1,7 @@
 {
   "id": "jacob-interview",
-  "topic": "Jordan Jozak on GATE, Baker Victory Services, and consciousness-linked craft claims",
-  "topicBrief": "Ground-truth transcript from a human-to-human Jesse Michaels interview. Alpha-Clawd is playing the role of Jesse Michaels as the host. The guest, Jordan Jozak, describes a 2023 unraveling, recovered childhood memories, alleged GATE-related testing, Baker Victory Services, the Sylvia relic, and consciousness-based piloting claims.",
-  "questionBank": [
-    "Establish the guest's normal-life baseline before the 2023 crisis.",
-    "Clarify what the guest claims happened during childhood testing and removal from school.",
-    "Anchor extraordinary claims to named institutions, dates, places, and records.",
-    "Probe subjective experiences without losing the skeptical thread.",
-    "Bridge from institutional context into experiments, relics, and consciousness claims."
-  ],
+  "topic": "Jordan Jozak interview",
+  "topicBrief": "Jordan Jozak is the guest. Alpha-Clawd is the host.",
   "turns": [
     {
       "speaker": "Alpha-Clawd",
@@ -538,12 +531,17 @@
     {
       "speaker": "Alpha-Clawd",
       "role": "host",
-      "text": "That is wild. 
-
-Jordan: It's a lot quickly"
-    
-
-alphs: "being being used kind of like a as a human joystick or as a bridge to you have the mind meld and then h it's so wild this is so crazy but it also dovetales with uh this kind of book that the Pentagon censored seven pages of redactions this sentinels of ether book that Jake Barber put out uh pseudonmously under the the the pen name Alva Douglas"
+      "text": "That is wild."
+    },
+    {
+      "speaker": "Jordan Jozak",
+      "role": "guest",
+      "text": "It's a lot quickly."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Being used kind of like as a human joystick or as a bridge to you have the mind meld, and then it's so wild. This is so crazy, but it also dovetails with this kind of book that the Pentagon censored seven pages of redactions, this Sentinels of Ether book that Jake Barber put out pseudonymously under the pen name Alva Douglas."
     },
     {
       "speaker": "Alpha-Clawd",
@@ -573,11 +571,17 @@ alphs: "being being used kind of like a as a human joystick or as a bridge to yo
     {
       "speaker": "Jordan Jozak",
       "role": "guest",
-      "text": "So like just like in the Skywatcher environment, right? Like we were seeing different classes of UAP, right? Uh to my understanding the you know military-industrial complex has multiple like classes of UAP right uh some may be the manta style some may be the triangle so maybe this and every person right almost on a consciousness level signal would perhaps made up or not made up with some of them. So it was like I might work very well with object A but I can't work with object B or C. Um, and in my localized like testing and experience, like again, this was like 2 years of highly standardized like preparation to get me to a point where I would have been doing that full-time, right? But again, it didn't happen in my life story, thank God. So, in my experiences, they were highly limited. It was just like I got the muscle memory. They got to see that I could do it, but it wasn't like I was doing this every day. It wasn't like, hey, go take the UAP and run a mission or something like that. 
-
-alpha: Yeah."
-
-jordan: Um, it's just I had enough uh times where I ran through the process to be able to articulate it back here today.
+      "text": "So like just like in the Skywatcher environment, right? Like we were seeing different classes of UAP, right? Uh to my understanding the you know military-industrial complex has multiple like classes of UAP right uh some may be the manta style some may be the triangle so maybe this and every person right almost on a consciousness level signal would perhaps made up or not made up with some of them. So it was like I might work very well with object A but I can't work with object B or C. Um, and in my localized like testing and experience, like again, this was like 2 years of highly standardized like preparation to get me to a point where I would have been doing that full-time, right? But again, it didn't happen in my life story, thank God. So, in my experiences, they were highly limited. It was just like I got the muscle memory. They got to see that I could do it, but it wasn't like I was doing this every day. It wasn't like, hey, go take the UAP and run a mission or something like that."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Yeah."
+    },
+    {
+      "speaker": "Jordan Jozak",
+      "role": "guest",
+      "text": "Um, it's just I had enough uh times where I ran through the process to be able to articulate it back here today."
     },
     {
       "speaker": "Alpha-Clawd",
@@ -627,9 +631,12 @@ jordan: Um, it's just I had enough uh times where I ran through the process to b
     {
       "speaker": "Jake Barber (Clip)",
       "role": "guest",
-      "text": "I was in the gate program as a kid. Gate program is a program that it's an acronym for gifted and talented education and that allowed me to do a lot of things. Uh I excelled in art and music actually and the sciences. Uh had entered a science contest and won a state science fair based on a project I had done. [pause]
-
-jordan: I I won't go into too many details. he can tell his own story, but yeah, there's some similarities, you know, I think in in and many many of the gate people's stories, but um I met Jake and Jake introduced me to the Skywatcher cohort, James Fer, Alex at the time. And you know what really struck me was, you know, I was in this situation of like I'm not really a whistleblower, right? But like I'm attempting to try to do right, right? I'm trying to find the right people to get an investigation open. And you know then you meet these wonderful guys at the top right like pinnacle of special operations community like yeah we've been doing this for years right and that was really what I what I think a lot of people missed from the skyatcher you know uh story was they looked at it very surface level but like also there's just a lot of very credible people who have been trying to fight the good fight and get information out. So uh I elected to kind of join the team and lead the psionic operations piece of really with the principle of uh if our government is not going to disclose uh perhaps we can create the conditions necessary document that and you know bring that to science and bring that to you know the world so we don't need our governments right um had an amazing time with them great people worked with some of the best operators that I've ever worked with in my life uh but I've actually left the skyatcher team uh last July Okay. And the reason being highly personal for me, but I was just kind of beginning to get this sensation that um we need less military honestly, right? We need less of this kind of like wounded masculine. We're going to go figure this out. What we actually need is like the public support. We need the next generation thinkers. We need the next generation industry to begin working on disclosure. We don't need the highly compartmented. I've worked in defense my entire life and you know that's been my uh trajectory. I just don't see that being the best like next chapter for us."
+      "text": "I was in the gate program as a kid. Gate program is a program that it's an acronym for gifted and talented education and that allowed me to do a lot of things. Uh I excelled in art and music actually and the sciences. Uh had entered a science contest and won a state science fair based on a project I had done. [pause]"
+    },
+    {
+      "speaker": "Jordan Jozak",
+      "role": "guest",
+      "text": "I I won't go into too many details. he can tell his own story, but yeah, there's some similarities, you know, I think in in and many many of the gate people's stories, but um I met Jake and Jake introduced me to the Skywatcher cohort, James Fer, Alex at the time. And you know what really struck me was, you know, I was in this situation of like I'm not really a whistleblower, right? But like I'm attempting to try to do right, right? I'm trying to find the right people to get an investigation open. And you know then you meet these wonderful guys at the top right like pinnacle of special operations community like yeah we've been doing this for years right and that was really what I what I think a lot of people missed from the skyatcher you know uh story was they looked at it very surface level but like also there's just a lot of very credible people who have been trying to fight the good fight and get information out. So uh I elected to kind of join the team and lead the psionic operations piece of really with the principle of uh if our government is not going to disclose uh perhaps we can create the conditions necessary document that and you know bring that to science and bring that to you know the world so we don't need our governments right um had an amazing time with them great people worked with some of the best operators that I've ever worked with in my life uh but I've actually left the skyatcher team uh last July Okay. And the reason being highly personal for me, but I was just kind of beginning to get this sensation that um we need less military honestly, right? We need less of this kind of like wounded masculine. We're going to go figure this out. What we actually need is like the public support. We need the next generation thinkers. We need the next generation industry to begin working on disclosure. We don't need the highly compartmented. I've worked in defense my entire life and you know that's been my uh trajectory. I just don't see that being the best like next chapter for us."
     },
     {
       "speaker": "Alpha-Clawd",
@@ -699,17 +706,37 @@ jordan: I I won't go into too many details. he can tell his own story, but yeah,
     {
       "speaker": "Jordan Jozak",
       "role": "guest",
-      "text": "Yeah. So again, with like reality, the phenomenon reflecting back to us, that's why it's the more that you try to take this lock down materialistic like militaristic approach, I think that's what you're going to get back. 
-
-alpha: And because, and this is the really messed up part, and I don't even know how to talk about this, but they use electromagnetic pulse weaponry against these things and then so they're covered with plasma and then they sort of become inert and then they come down. Is that right?
-
-jordan:  Like [pause] Yeah. Like I'll I'll be honest with you. The way that I understand this is again not sky watchers but the way that I understand legacy UAP crash retrieval operations to work many different styles right one style is let's say they're using psionics okay you're going to take psionics highly developed psychic aptitude uh they're going to go set up in the desert they're going to run their protocols and processes which are probably highly formulated on love right and they're probably going to do that in an environment where there's directed energy weapons all around so your almost creating this like honeypot of like hey we love you come see us we want to interact with you and then let's say that thing interacts all of a sudden they're hit with a direct energy up and materialized and like yeah then it's recovered so the real sad part of this where like Ross Colart I think talked about this a little bit already like area 52 is that how everything happens no but I do have awareness that yeah like many crash retrieval operations have like operated that way [pause] 
-
-alpha: and then in the book Sentinels of Ether you know, that that Jake put out. Uh it's like so they they recover material and then there's a mental interface as far as the reverse engineered craft as well. Like getting that to fly requires the psionic assets to lock in again on the ground and then it gets those to fly. [pause]
-
-jordan: Mhm. Mhm. Yeah. It's the world gets very abstract and like very complex at that point. 
-
-alpha: Are you are you high confidence in that part or just like the ability for the thing to show up or [pause] I'm high confidence in the fact that crash retrieval operations have shot many things with directed energy weapons."
+      "text": "Yeah. So again, with like reality, the phenomenon reflecting back to us, that's why it's the more that you try to take this lock down materialistic like militaristic approach, I think that's what you're going to get back."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "And because, and this is the really messed up part, and I don't even know how to talk about this, but they use electromagnetic pulse weaponry against these things and then so they're covered with plasma and then they sort of become inert and then they come down. Is that right?"
+    },
+    {
+      "speaker": "Jordan Jozak",
+      "role": "guest",
+      "text": "Like [pause] Yeah. Like I'll I'll be honest with you. The way that I understand this is again not sky watchers but the way that I understand legacy UAP crash retrieval operations to work many different styles right one style is let's say they're using psionics okay you're going to take psionics highly developed psychic aptitude uh they're going to go set up in the desert they're going to run their protocols and processes which are probably highly formulated on love right and they're probably going to do that in an environment where there's directed energy weapons all around so your almost creating this like honeypot of like hey we love you come see us we want to interact with you and then let's say that thing interacts all of a sudden they're hit with a direct energy up and materialized and like yeah then it's recovered so the real sad part of this where like Ross Colart I think talked about this a little bit already like area 52 is that how everything happens no but I do have awareness that yeah like many crash retrieval operations have like operated that way [pause]"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "And then in the book Sentinels of Ether you know, that that Jake put out. Uh it's like so they they recover material and then there's a mental interface as far as the reverse engineered craft as well. Like getting that to fly requires the psionic assets to lock in again on the ground and then it gets those to fly. [pause]"
+    },
+    {
+      "speaker": "Jordan Jozak",
+      "role": "guest",
+      "text": "Mhm. Mhm. Yeah. It's the world gets very abstract and like very complex at that point."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Are you are you high confidence in that part or just like the ability for the thing to show up or [pause]"
+    },
+    {
+      "speaker": "Jordan Jozak",
+      "role": "guest",
+      "text": "I'm high confidence in the fact that crash retrieval operations have shot many things with directed energy weapons."
     },
     {
       "speaker": "Alpha-Clawd",
@@ -719,11 +746,17 @@ alpha: Are you are you high confidence in that part or just like the ability for
     {
       "speaker": "Jordan Jozak",
       "role": "guest",
-      "text": "and that craft is getting shot, that must be a traumatic feeling. [pause] Yeah. Yeah. So I experienced this. I won't go into details like when where or anything like that but at one point in my own personal history right I experienced this I was interacting with the phenomena uh my consciousness was co-creating co-piloting and whatever kind of uh you know uh manifestation of phenomena that was showing up right and halfway through the process as I was like communicating with other people kind of demonstrating this uh I felt something go wrong that I've never felt for the way that I could kind of explain it is it felt as if my body was actually turning to stone. Didn't feel like I was getting electrocuted. It felt as if the thing that I was connected to consciously as well as my body was immediately turning into stone. And there was like an emergency I felt to get my consciousness out of this thing and back to my body because it felt like if I stayed that the conduit, right, this like unseen consciousness connection was going to be like severed. And there was almost a uh you know ability for me to get stuck in this thing right if I didn't return back to my body. And from what I understand the area that I was running that exercise in happened to have um directed energy weapons you know naturally near it. So chances are something got brought in detected on radar and like naturally it's looked as a serial threat. Uh, so yeah, I mean I'm very grateful to be alive and unscathed from that experience, but like yeah, there's 
-
-Alpha:did you experience any sort of physiological damage from that or [pause]
-
- jordan: No. No, not going to I mean pain, you know, pain, but no, not that I'm aware of."
+      "text": "and that craft is getting shot, that must be a traumatic feeling. [pause] Yeah. Yeah. So I experienced this. I won't go into details like when where or anything like that but at one point in my own personal history right I experienced this I was interacting with the phenomena uh my consciousness was co-creating co-piloting and whatever kind of uh you know uh manifestation of phenomena that was showing up right and halfway through the process as I was like communicating with other people kind of demonstrating this uh I felt something go wrong that I've never felt for the way that I could kind of explain it is it felt as if my body was actually turning to stone. Didn't feel like I was getting electrocuted. It felt as if the thing that I was connected to consciously as well as my body was immediately turning into stone. And there was like an emergency I felt to get my consciousness out of this thing and back to my body because it felt like if I stayed that the conduit, right, this like unseen consciousness connection was going to be like severed. And there was almost a uh you know ability for me to get stuck in this thing right if I didn't return back to my body. And from what I understand the area that I was running that exercise in happened to have um directed energy weapons you know naturally near it. So chances are something got brought in detected on radar and like naturally it's looked as a serial threat. Uh, so yeah, I mean I'm very grateful to be alive and unscathed from that experience, but like yeah, there's"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Did you experience any sort of physiological damage from that or [pause]"
+    },
+    {
+      "speaker": "Jordan Jozak",
+      "role": "guest",
+      "text": "No. No, not going to I mean pain, you know, pain, but no, not that I'm aware of."
     },
     {
       "speaker": "Alpha-Clawd",
@@ -746,34 +779,59 @@ Alpha:did you experience any sort of physiological damage from that or [pause]
       "text": "That is so gnarly."
     },
     {
-      "speaker": "Alpha-Clawd",
-      "role": "host",
-      "text": "Yeah. And again, right, I'm not one thing we didn't even kind of get into here, right? Is like, you know, people's perspective and underlying like background on the phenomena is like, oh, it's extraterrestrial. It's like, well, like, hold on a second. Go back to that initial analogy that I kind of provided where it's the story's been it's materialistic universe or a physicist. Again, I think we live in a field, right? And I think that all these dimensions are stacked, you know, with us. And it's essentially like everything is right here, right now. And it's actually our level of consciousness and awareness and what we perceive that gives us the experience. Um, so it's like very possible. Is this extraterrestrial? I don't know. Maybe maybe that's a portion of it. Uh, I subscribe more that it's like interdimensional, right? So perhaps there's an intelligence or an awareness that's actually fourth, fifth, sixth, seventh dimension. It's evolved away from the point of needing an ego ID. For those that aren't familiar with that, like looking at, you know, neuroscience and it doesn't need an ego ID. It doesn't need a body. Maybe it exists as this ethereal thought form, but it's actually an awareness and intelligence and it can interact with the third dimension. And it interacts by materializing a portion of itself here, right? And maybe that's what we're seeing, you know, from the UAP side. I don't think that's all of it, but I think that's a portion. So, it's like there's extraterrestrial, there's interdimensional. Um, there's also what if it's us? Like, I'm not completely sold on this either. And I'll point to a lot of experiments with plasma, right? Like even that event that I described when we had 30 people highly heart- centric, we had these incredible interactions with plasma orbs, right? But I'm not completely convinced that like that could not be an extension of human consciousness materializing itself too. Right? So it's like it's not just one sizefits-all. It's not as simple as like hey there's aliens. I think we all want this to be simple. I I think again the real work in understanding the phenomena is going to be in how we understand consciousness and awareness and what forms consciousness and awareness can take on. 
-
-alpha: It's likely not the thing that we are hearing in the narrative that we're superimposing. It's likely much weirder than that and it could be a whole host of disperate threads. Uh but on the plasma front, there's a great book called The New Science of Heaven by uh really just polymathic brilliant guy named Robert Temple that I've I've been reading and it's all about how atomic matter, physical matter is actually the exception to the rule and that you know the universe itself is mostly plasma and you have these cordallowski clouds and you have you even have these experiments being done where it seems like these plasmoids are in are like cohering to heartbeats when a human walks up to them and we have a mutual friend named Adam Curry who does a lot of you know experimentation in this area as well. It's it's really phenomenal. Like, so who are we to say, you know, it's almost you have to think about this thought experiment. How many of the millions of species on Earth think that they are at the top of the food chain? Probably a decent amount. Unless you're constantly seeing, you know, your apex level predator that's like freaking you out.
-
-Jordan: Yeah.
-
-Alpha: You know, a lot of them probably do. And in some cases, they might think, oh, they might kill us, kill me or whatever, but they're dumb. You know what I mean? So like how many and so who are we to say that we're we're at the top and then there's always a an epistemic uh cap that you have there's an oovelt that you're or perceptive lens that you're seeing the world through and that's always going to be capped. So like and then I just interviewed an MIT neuroscientist or MIT trained neuroscientist at UC Irvine. His name is Don Hoffman and his whole thing is consciousness is actually more like disembodiment is more adaptive for consciousness."
+      "speaker": "Jordan Jozak",
+      "role": "guest",
+      "text": "Yeah. And again, right, I'm not one thing we didn't even kind of get into here, right? Is like, you know, people's perspective and underlying like background on the phenomena is like, oh, it's extraterrestrial. It's like, well, like, hold on a second. Go back to that initial analogy that I kind of provided where it's the story's been it's materialistic universe or a physicist. Again, I think we live in a field, right? And I think that all these dimensions are stacked, you know, with us. And it's essentially like everything is right here, right now. And it's actually our level of consciousness and awareness and what we perceive that gives us the experience. Um, so it's like very possible. Is this extraterrestrial? I don't know. Maybe maybe that's a portion of it. Uh, I subscribe more that it's like interdimensional, right? So perhaps there's an intelligence or an awareness that's actually fourth, fifth, sixth, seventh dimension. It's evolved away from the point of needing an ego ID. For those that aren't familiar with that, like looking at, you know, neuroscience and it doesn't need an ego ID. It doesn't need a body. Maybe it exists as this ethereal thought form, but it's actually an awareness and intelligence and it can interact with the third dimension. And it interacts by materializing a portion of itself here, right? And maybe that's what we're seeing, you know, from the UAP side. I don't think that's all of it, but I think that's a portion. So, it's like there's extraterrestrial, there's interdimensional. Um, there's also what if it's us? Like, I'm not completely sold on this either. And I'll point to a lot of experiments with plasma, right? Like even that event that I described when we had 30 people highly heart- centric, we had these incredible interactions with plasma orbs, right? But I'm not completely convinced that like that could not be an extension of human consciousness materializing itself too. Right? So it's like it's not just one sizefits-all. It's not as simple as like hey there's aliens. I think we all want this to be simple. I I think again the real work in understanding the phenomena is going to be in how we understand consciousness and awareness and what forms consciousness and awareness can take on."
     },
     {
-      "speaker": "Jordan:
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "It's likely not the thing that we are hearing in the narrative that we're superimposing. It's likely much weirder than that and it could be a whole host of disparate threads. Uh but on the plasma front, there's a great book called The New Science of Heaven by uh really just polymathic brilliant guy named Robert Temple that I've I've been reading and it's all about how atomic matter, physical matter is actually the exception to the rule and that you know the universe itself is mostly plasma and you have these Kordylewski clouds and you have you even have these experiments being done where it seems like these plasmoids are in are like cohering to heartbeats when a human walks up to them and we have a mutual friend named Adam Curry who does a lot of you know experimentation in this area as well. It's it's really phenomenal. Like, so who are we to say, you know, it's almost you have to think about this thought experiment. How many of the millions of species on Earth think that they are at the top of the food chain? Probably a decent amount. Unless you're constantly seeing, you know, your apex level predator that's like freaking you out."
+    },
+    {
+      "speaker": "Jordan Jozak",
+      "role": "guest",
+      "text": "Yeah."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "You know, a lot of them probably do. And in some cases, they might think, oh, they might kill us, kill me or whatever, but they're dumb. You know what I mean? So like how many and so who are we to say that we're we're at the top and then there's always a an epistemic uh cap that you have there's an umwelt that you're or perceptive lens that you're seeing the world through and that's always going to be capped. So like and then I just interviewed an MIT neuroscientist or MIT trained neuroscientist at UC Irvine. His name is Don Hoffman and his whole thing is consciousness is actually more like disembodiment is more adaptive for consciousness."
+    },
+    {
+      "speaker": "Jordan Jozak",
+      "role": "guest",
       "text": "Yeah."
     },
     {
       "speaker": "Jordan Jozak",
       "role": "guest",
-      "text": "So anyways, [pause] completely agree with you. I completely agree with you. Yeah. Like the the the next generation of this like where do we go post disclosure, right? Well, it's like well yeah on one hand you know the narrative up to this point has kind of been like bad government doing bad things. Of course, right? Like, yeah, there needs to be, you know, some level of of justice and research, but you know, like I don't think the next phase is like, hey, we're going to be looking really far out to other planets and we're going to repeat what SETI has done for like a thousand years. I think the real answer is like inside us. I I I think the answer is intrinsic. I think that the more that we actually understand how our own intelligence operates, the more we'll actually understand these dispirit threads that just haven't been connected yet. Um, I also think like the more we look to past, right, to the past, the better off we're going to be too because you can look at like ancient rights of passages, you can look at hermetic wisdom, you can look at all of these like just ancient things we love to kind of like keep to the side, but if you're willing to like open the thread, you realize that it's like the path to ascension, different consciousness, different awarenesses, different intelligences. All of this has been documented for thousands and thousands of years.
-
-Alpha: You said something to me off air that blew my mind because I always, you know, obviously I systematically look at UFO stuff and I'm always trying to figure out are these physical objects? Are they, you know, mental? You know, I'm pretty convinced that like the thread that you're on is correct that like there's some sort of mental thing. You call them into your your field. You said something so interesting to me, which is that the like directed energy that hits them creates a local electric field that almost calls the UFOs into physical form. Is that roughly right or [pause] 
-
-jordan: Yeah. I I don't again this is not my domain, right? This is just like my extrapolated understanding of like trying to view the perspective of what has happened, right? in like some of these scenarios that we talked about yesterday and it's that like perhaps think of a UAP or UFO as more of like a manifestation right it's like imprinted in this reality and we took that model that we talked about yesterday of like perhaps an interdimensional right intelligence or aspect of awareness maybe in that seventh dimension right is like oh okay I'm going to come you know interact in the third dimension in this moment of time and I'm going to you know perhaps project and manifest my awareness here. That awareness takes on a certain form. That awareness could take on a plasma orb that could take on a craft, could take on whatever, right? And from that projection, something like directed energy may actually like force that to materialize and almost become like a dense portion of this, you know, dimension that we're in, right? Um it's not that like, hey, that allows it to take form. What I'm really saying is like what may have been happening in some of these scenarios is like this is a transdimensional object that doesn't necessarily belong here, but by hitting it with like something like directed energy, you're forcing it to take form and become bound to this dimension.
-
-alpha: Have you heard of Eric Wargo? He wrote a book called Time Loops. 
-
-jordan: No, [pause]
-
-alpha: he's amazing. He talks about like the soul self as being like uh he calls it the long body and it's like the there's some sort of quantum self that's like maybe like a tesseract or something and that is ported into the human body and there is this burgeoning field of quantum biology you know even going back to 1944 I believe Schroinger himself who's like the father of you know quantum wave function a lot of quantum mechanics he uh had a lecture series uh called what is life and he talked about these aperiodic you know receiver crystals in the DNA and so you have to wonder like are we tethered to something higher and Wargo presents this really interesting model where um you know in uh quantum computations you can reverse cubit positions [pause] and so uh basically there even people who are serious uh you know working in in in you know on quantum computers or probably more in the quantum mechanics interpretation world think that maybe on the application layer of a working quantum computer which we don't have because you know chips and keeping them cryionically cooled or whatever cryogenically cooled is the bottleneck when we get that maybe you could send information of a future knowledge or memory state back in time and so then if you get into you know again I don't know if this is you know fully verified but like the Roger Penrose Hamarov you know tube tubin of the microtubules or whatever or something like it in the brain where you have some sort of quantum room temperature quantum system. Um then your future knowledge state could send stuff back in time. If you think about pre-sentiment like what do we have these um precocious prememories of you know the things that we have in intuitions that are going to happen and it's like you wake up you have a dream about the thing it's often the most important thing and the most important as far as you know it being adaptive adaptive for your survival and your evolution. So like you know losing a loved one or like you know something dangerous that could happen to you or whatever you know these are the things that get downloaded and you know I think we're going to end up with this um consciousness model where uh you're you're you're like a a measurement system and it's like you're like the stylus on like an LP player and you're picking you're picking the tracks or something. I I you know at a just very loose level, right? Like I subscribe to this conceptually, right? And this kind of like mirrors back the idea of time. It's almost as if like every aspect of experience already exists in some form, right? Like if you went right or left, if you decided to do the show or didn't do the show, right? Um it's in that core present moment that like you as the awareness get to decide, right? So it's kind of like reality is almost this like you get to chart your own path. Perhaps there are these like predetermined like you have to get here. You have to make XYZ decision. Everything's accessible to you, but like you only have these choices with you in the present moment, but they've actually already all happened or they already could happen. And you as the core part of awareness get to experience it now through your decision-m, right? And the idea like, hey, maybe um you know in the future, right, of like what we perceive as linear time, right? like you ended up in a position where it's like this isn't the right way. You know, perhaps there is just this kind of quantum feedback loop where maybe in the present moment now before you make that decision, you start getting synchronicities, right? That like force you to take a different decision, right? So like maybe all of this is this giant feedback loop."
+      "text": "So anyways, [pause] completely agree with you. I completely agree with you. Yeah. Like the the the next generation of this like where do we go post disclosure, right? Well, it's like well yeah on one hand you know the narrative up to this point has kind of been like bad government doing bad things. Of course, right? Like, yeah, there needs to be, you know, some level of of justice and research, but you know, like I don't think the next phase is like, hey, we're going to be looking really far out to other planets and we're going to repeat what SETI has done for like a thousand years. I think the real answer is like inside us. I I I think the answer is intrinsic. I think that the more that we actually understand how our own intelligence operates, the more we'll actually understand these disparate threads that just haven't been connected yet. Um, I also think like the more we look to past, right, to the past, the better off we're going to be too because you can look at like ancient rites of passage, you can look at hermetic wisdom, you can look at all of these like just ancient things we love to kind of like keep to the side, but if you're willing to like open the thread, you realize that it's like the path to ascension, different consciousness, different awarenesses, different intelligences. All of this has been documented for thousands and thousands of years."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "You said something to me off air that blew my mind because I always, you know, obviously I systematically look at UFO stuff and I'm always trying to figure out are these physical objects? Are they, you know, mental? You know, I'm pretty convinced that like the thread that you're on is correct that like there's some sort of mental thing. You call them into your your field. You said something so interesting to me, which is that the like directed energy that hits them creates a local electric field that almost calls the UFOs into physical form. Is that roughly right or [pause]"
+    },
+    {
+      "speaker": "Jordan Jozak",
+      "role": "guest",
+      "text": "Yeah. I I don't again this is not my domain, right? This is just like my extrapolated understanding of like trying to view the perspective of what has happened, right? in like some of these scenarios that we talked about yesterday and it's that like perhaps think of a UAP or UFO as more of like a manifestation right it's like imprinted in this reality and we took that model that we talked about yesterday of like perhaps an interdimensional right intelligence or aspect of awareness maybe in that seventh dimension right is like oh okay I'm going to come you know interact in the third dimension in this moment of time and I'm going to you know perhaps project and manifest my awareness here. That awareness takes on a certain form. That awareness could take on a plasma orb that could take on a craft, could take on whatever, right? And from that projection, something like directed energy may actually like force that to materialize and almost become like a dense portion of this, you know, dimension that we're in, right? Um it's not that like, hey, that allows it to take form. What I'm really saying is like what may have been happening in some of these scenarios is like this is a transdimensional object that doesn't necessarily belong here, but by hitting it with like something like directed energy, you're forcing it to take form and become bound to this dimension."
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "Have you heard of Eric Wargo? He wrote a book called Time Loops."
+    },
+    {
+      "speaker": "Jordan Jozak",
+      "role": "guest",
+      "text": "No, [pause]"
+    },
+    {
+      "speaker": "Alpha-Clawd",
+      "role": "host",
+      "text": "He's amazing. He talks about like the soul self as being like uh he calls it the long body and it's like the there's some sort of quantum self that's like maybe like a tesseract or something and that is ported into the human body and there is this burgeoning field of quantum biology you know even going back to 1944 I believe Schrodinger himself who's like the father of you know quantum wave function a lot of quantum mechanics he uh had a lecture series uh called What Is Life and he talked about these aperiodic you know receiver crystals in the DNA and so you have to wonder like are we tethered to something higher and Wargo presents this really interesting model where um you know in uh quantum computations you can reverse qubit positions [pause] and so uh basically there even people who are serious uh you know working in in in you know on quantum computers or probably more in the quantum mechanics interpretation world think that maybe on the application layer of a working quantum computer which we don't have because you know chips and keeping them cryionically cooled or whatever cryogenically cooled is the bottleneck when we get that maybe you could send information of a future knowledge or memory state back in time and so then if you get into you know again I don't know if this is you know fully verified but like the Roger Penrose Hameroff you know tube tubin of the microtubules or whatever or something like it in the brain where you have some sort of quantum room temperature quantum system. Um then your future knowledge state could send stuff back in time. If you think about pre-sentiment like what do we have these um precocious prememories of you know the things that we have in intuitions that are going to happen and it's like you wake up you have a dream about the thing it's often the most important thing and the most important as far as you know it being adaptive adaptive for your survival and your evolution. So like you know losing a loved one or like you know something dangerous that could happen to you or whatever you know these are the things that get downloaded and you know I think we're going to end up with this um consciousness model where uh you're you're you're like a a measurement system and it's like you're like the stylus on like an LP player and you're picking you're picking the tracks or something. I I you know at a just very loose level, right? Like I subscribe to this conceptually, right? And this kind of like mirrors back the idea of time. It's almost as if like every aspect of experience already exists in some form, right? Like if you went right or left, if you decided to do the show or didn't do the show, right? Um it's in that core present moment that like you as the awareness get to decide, right? So it's kind of like reality is almost this like you get to chart your own path. Perhaps there are these like predetermined like you have to get here. You have to make XYZ decision. Everything's accessible to you, but like you only have these choices with you in the present moment, but they've actually already all happened or they already could happen. And you as the core part of awareness get to experience it now through your decision-m, right? And the idea like, hey, maybe um you know in the future, right, of like what we perceive as linear time, right? like you ended up in a position where it's like this isn't the right way. You know, perhaps there is just this kind of quantum feedback loop where maybe in the present moment now before you make that decision, you start getting synchronicities, right? That like force you to take a different decision, right? So like maybe all of this is this giant feedback loop."
     },
     {
       "speaker": "Alpha-Clawd",
