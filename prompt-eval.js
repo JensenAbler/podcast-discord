@@ -323,9 +323,6 @@ function buildCheckpointContext(fixture, checkpoint, previousGuidance = null) {
         targetTurnIndex: checkpoint.targetTurnIndex,
         hostTurnOrdinal: checkpoint.hostTurnOrdinal,
         transcript,
-        expectedSpeech: checkpoint.expectedSpeech,
-        targetTurn: checkpoint.targetTurn,
-        expectedShowrunner: checkpoint.expected.showrunner,
         previousGuidance
     };
 

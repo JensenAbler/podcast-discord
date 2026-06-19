@@ -1,12 +1,12 @@
 {
   "id": "michael-horn-opening",
   "topic": "Michael Horn on the Billy Meyer case",
-  "topicBrief": "Ground-truth opening from a human-to-human podcast interview. Alpha-Clawd is playing the role of the human host. The host introduces Michael Horn, frames the Billy Meyer case through audience controversy and the prior Bob Lazar discussion, then hands the floor to Michael.",
+  "topicBrief": "Michael Horn is a longtime researcher and advocate associated with the Billy Meier UFO/contactee case. He has produced documentaries, studied Meier's contact reports, visited Meier in Switzerland, and argues that the case contains evidence worth examining. The case is controversial in UFO circles; many listeners may know it through the I Want to Believe X-Files poster image attributed to a Meier photo.",
   "questionBank": [
-    "Establish who the guest is and why listeners should care.",
-    "Frame the controversy without making the guest defensive.",
-    "Connect the opening to the prior Bob Lazar / Billy Meyer photo-book discussion.",
-    "Let the guest respond once the premise and stakes are clear."
+    "Ask who Billy Meier is and why the case matters.",
+    "Ask what evidence Horn considers strongest.",
+    "Ask how Horn separates contested photos from contact reports and corroborated information.",
+    "Ask what a skeptical listener should examine first."
   ],
   "turns": [
     {
