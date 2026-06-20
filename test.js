@@ -1533,6 +1533,8 @@ async function runTests() {
         });
         if (
             !showRunnerPrompt.includes('Episode plan structure') ||
+            !showRunnerPrompt.includes('preproduction background knowledge') ||
+            !showRunnerPrompt.includes('not prior live speech') ||
             !showRunnerPrompt.includes('Current phase: developing.') ||
             !showRunnerPrompt.includes('Last turn chosenAngle: origin-story.') ||
             !showRunnerPrompt.includes('- collaboration: who changed how the guest thinks about the craft') ||
@@ -2992,6 +2994,8 @@ async function runTests() {
         }, { now: '2026-05-15T00:33:00.000Z' });
         const afterMove = tracker.getStructureBlock('2026-05-15T00:33:00.000Z');
         if (
+            !initialBlock.includes('preproduction background knowledge') ||
+            !initialBlock.includes('Only say the guest "mentioned" or "said earlier"') ||
             !initialBlock.includes('- guest-background: Establish the builder and why the system matters.') ||
             !afterExpansion.includes('Current phase: developing.') ||
             !afterExpansion.includes('- internal-thoughts: Explore how internal awareness changes hosting.') ||

@@ -944,6 +944,7 @@ class PodcastGenerator {
             lines.push(
                 '',
                 'Episode plan structure:',
+                'This is preproduction background knowledge and deterministic structure, not prior live speech. Do not say the guest "mentioned", "said", or "told you" a planned fact unless it also appears in the live transcript.',
                 episodePlanStructure
             );
         }
