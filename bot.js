@@ -2429,12 +2429,14 @@ class AlphaClawdVoiceBot {
                 processing: Promise.resolve()
             };
             this.planningSessions.set(channelId, session);
+            console.log(`[Bot] Podcast planning opened: ${this.describePlanningSession(session)}`);
             await interaction.reply(
                 "Episode planning is open in this channel. Drop the guest background, desired arc, constraints, and anything Alpha-Clawd should know. I'll shape it into a versioned episode plan when there's enough signal."
             );
             return;
         }
 
+        console.log(`[Bot] Podcast planning status requested: ${this.describePlanningSession(session)}`);
         const latest = session.latestPlan
             ? `\n\nLatest plan: **${session.latestPlan.basename} ${session.latestPlan.version}**`
             : '';
@@ -2450,27 +2452,31 @@ class AlphaClawdVoiceBot {
             return false;
         }
         if (message.author?.bot) {
+            console.log(`[Bot] Podcast planning ignored bot message: channel=${channelId}, author=${message.author?.id || 'unknown'}`);
             return true;
         }
 
         const record = this.buildPlanningMessageRecord(message);
         if (!record.text) {
+            console.log(`[Bot] Podcast planning ignored empty message: channel=${channelId}, author=${message.author?.id || 'unknown'}`);
             return true;
         }
 
-        if (this.isPlanningSessionCloseRequest(record.text)) {
-            await this.closePlanningSession(session, record, message.channel, 'human_requested');
-            return true;
-        }
-
-        console.log(`[Bot] Podcast planning message captured in channel ${channelId} from ${record.speaker}: ${this.truncateForLog(record.text, 120)}`);
+        session.messageSequence = Number(session.messageSequence || 0) + 1;
+        record.sequence = session.messageSequence;
+        const wasProcessing = Boolean(session.processingActive);
+        console.log(
+            `[Bot] Podcast planning message captured: ${this.describePlanningSession(session)}, ` +
+            `seq=${record.sequence}, speaker=${record.speaker}, queuedBehindActive=${wasProcessing}, ` +
+            `text="${this.truncateForLog(record.text, 160)}"`
+        );
         session.messages.push(record);
         this.persistPlanningSessionMessages(session);
 
         session.processing = (session.processing || Promise.resolve())
             .then(() => this.processPlanningSession(session, record, message.channel))
             .catch((error) => {
-                console.warn(`[Bot] Podcast planning failed: ${error.message}`);
+                console.error(`[Bot] Podcast planning failed: ${error.message}`);
                 return message.channel?.send?.(`I hit a planning error: ${error.message}`).catch(() => {});
             });
         return true;
@@ -2486,23 +2492,24 @@ class AlphaClawdVoiceBot {
         };
     }
 
-    isPlanningSessionCloseRequest(text = '') {
-        const normalized = String(text || '')
-            .toLowerCase()
-            .replace(/<@!?\d+>/g, '')
-            .replace(/[^\w\s']/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-        return (
-            /^(?:let'?s\s+)?(?:end|close|cancel|stop|abort)\s+(?:this\s+|the\s+)?(?:episode\s+)?(?:planning\s+)?session\b/.test(normalized) ||
-            /^(?:end|close|cancel|stop|abort)\s+(?:episode\s+)?planning\b/.test(normalized)
-        );
+    describePlanningSession(session) {
+        if (!session) {
+            return 'session=none';
+        }
+        return [
+            `channel=${session.channelId || 'unknown'}`,
+            `messages=${session.messages?.length || 0}`,
+            `basename=${session.basename || 'none'}`,
+            `latest=${session.latestVersion || 'none'}`,
+            `closed=${Boolean(session.closed)}`
+        ].join(', ');
     }
 
     async closePlanningSession(session, record = null, channel = null, reason = 'closed') {
         if (!session || session.closed) {
             return;
         }
+        console.log(`[Bot] Podcast planning closing: ${this.describePlanningSession(session)}, reason=${reason}`);
         session.closed = true;
         if (record?.text) {
             session.messages.push(record);
@@ -2525,34 +2532,77 @@ class AlphaClawdVoiceBot {
 
     async processPlanningSession(session, latestMessage, channel) {
         if (session.closed || this.planningSessions.get(session.channelId) !== session) {
+            console.log(`[Bot] Podcast planning skipped stale work before model call: ${this.describePlanningSession(session)}`);
             return;
         }
         if (!this.showRunnerEnabled) {
+            console.log(`[Bot] Podcast planning showrunner disabled: ${this.describePlanningSession(session)}`);
             return;
         }
         if (!this.showRunnerGenerator?.generate) {
+            console.log(`[Bot] Podcast planning showrunner missing: ${this.describePlanningSession(session)}`);
             await channel?.send?.('I can collect planning context, but the showrunner generator is not configured.');
             return;
         }
 
+        const start = Date.now();
+        session.processingActive = true;
+        console.log(
+            `[Bot] Podcast planning model start: ${this.describePlanningSession(session)}, ` +
+            `latestSeq=${latestMessage?.sequence || 'unknown'}, latestFeedback="${this.truncateForLog(latestMessage?.text || '', 160)}"`
+        );
         try {
             await channel?.sendTyping?.();
-        } catch {}
-        const output = await this.showRunnerGenerator.generate({
-            planningMessages: session.messages,
-            previousPlan: session.latestPlan,
-            basename: session.basename,
-            latestFeedback: latestMessage?.text || ''
-        });
+            console.log(`[Bot] Podcast planning typing sent: channel=${session.channelId}`);
+        } catch (error) {
+            console.log(`[Bot] Podcast planning typing failed: channel=${session.channelId}, error=${error.message}`);
+        }
+        let output = null;
+        try {
+            output = await this.showRunnerGenerator.generate({
+                planningMessages: session.messages,
+                previousPlan: session.latestPlan,
+                basename: session.basename,
+                latestFeedback: latestMessage?.text || ''
+            });
+        } finally {
+            session.processingActive = false;
+        }
+        console.log(
+            `[Bot] Podcast planning model output: ${this.describePlanningSession(session)}, ` +
+            `durationMs=${Date.now() - start}, action=${output?.action || 'none'}, approved=${Boolean(output?.approved)}, ` +
+            `hasPlan=${Boolean(output?.plan)}, messageChars=${String(output?.messageToChannel || '').length}`
+        );
         if (session.closed || this.planningSessions.get(session.channelId) !== session) {
+            console.log(`[Bot] Podcast planning discarded stale model output: ${this.describePlanningSession(session)}, action=${output?.action || 'none'}`);
+            return;
+        }
+
+        if (output.action === 'close_session') {
+            if (session.basename) {
+                this.episodePlanStore.appendSessionRecord(session.basename, {
+                    type: 'closed',
+                    reason: 'showrunner_close_session',
+                    latestVersion: session.latestVersion || '',
+                    message: output.messageToChannel || ''
+                });
+            }
+            this.planningSessions.delete(session.channelId);
+            const closeMessage = output.messageToChannel || 'Okay, I will close this planning session without approving an episode plan.';
+            console.log(`[Bot] Podcast planning closed by showrunner: channel=${session.channelId}, message="${this.truncateForLog(closeMessage, 160)}"`);
+            await channel?.send?.(closeMessage);
             return;
         }
 
         if (output.plan) {
             const saved = this.savePlanningOutput(session, output);
+            console.log(`[Bot] Podcast planning saved plan: channel=${session.channelId}, basename=${saved.plan.basename}, version=${saved.plan.version}, path=${saved.path}`);
             await this.sendLongMessage(channel, this.formatEpisodePlanForDiscord(saved.plan, output));
         } else if (output.messageToChannel) {
+            console.log(`[Bot] Podcast planning sending message: channel=${session.channelId}, chars=${output.messageToChannel.length}`);
             await channel?.send?.(output.messageToChannel);
+        } else {
+            console.log(`[Bot] Podcast planning chose no channel message: channel=${session.channelId}, action=${output.action}`);
         }
 
         if (output.approved) {
@@ -2564,6 +2614,7 @@ class AlphaClawdVoiceBot {
                 });
             }
             this.planningSessions.delete(session.channelId);
+            console.log(`[Bot] Podcast planning approved and closed: channel=${session.channelId}, basename=${session.basename || 'none'}, latest=${session.latestVersion || 'none'}`);
             if (output.messageToChannel && !output.plan) {
                 await channel?.send?.(output.messageToChannel);
             } else {
@@ -2633,6 +2684,7 @@ class AlphaClawdVoiceBot {
 
     async sendLongMessage(channel, text) {
         if (!channel?.send) {
+            console.log('[Bot] sendLongMessage skipped: missing channel.send');
             return;
         }
         const chunks = [];
@@ -2644,7 +2696,9 @@ class AlphaClawdVoiceBot {
             remaining = remaining.slice(splitAt).trim();
         }
         if (remaining) chunks.push(remaining);
-        for (const chunk of chunks) {
+        console.log(`[Bot] sendLongMessage sending ${chunks.length} chunk(s), totalChars=${String(text || '').length}`);
+        for (const [index, chunk] of chunks.entries()) {
+            console.log(`[Bot] sendLongMessage chunk ${index + 1}/${chunks.length}, chars=${chunk.length}`);
             await channel.send(chunk);
         }
     }

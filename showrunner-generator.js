@@ -75,6 +75,7 @@ class ShowRunnerGenerator extends PodcastGenerator {
             'When there is enough background, produce a plan and present it in messageToChannel.',
             'When feedback arrives after a plan exists, revise the plan directly and explain the revision briefly.',
             'When humans clearly approve the plan, set approved=true and include a concise closing message.',
+            'When humans clearly ask to end, close, cancel, stop, or abort the planning session without approving a plan, set action=close_session, approved=false, plan=null, and include a concise closing message.',
             '',
             'Plan phases must be exactly: expanding, developing, converging, closing.',
             'Each phase has targetMinutes and angles only. Do not include phase purpose.',
@@ -145,7 +146,7 @@ class ShowRunnerGenerator extends PodcastGenerator {
             properties: {
                 action: {
                     type: 'string',
-                    enum: ['ask_followup', 'listen', 'generate_plan', 'revise_plan', 'approve_plan'],
+                    enum: ['ask_followup', 'listen', 'generate_plan', 'revise_plan', 'approve_plan', 'close_session'],
                     description: 'The planning-session action Alpha-Clawd should take.'
                 },
                 messageToChannel: {
@@ -199,7 +200,7 @@ class ShowRunnerGenerator extends PodcastGenerator {
         const approved = output.approved === true;
         const action = approved
             ? 'approve_plan'
-            : ['ask_followup', 'listen', 'generate_plan', 'revise_plan'].includes(rawAction)
+            : ['ask_followup', 'listen', 'generate_plan', 'revise_plan', 'close_session'].includes(rawAction)
                 ? rawAction
                 : (output.plan ? (input.previousPlan ? 'revise_plan' : 'generate_plan') : 'ask_followup');
         const messageToChannel = this.cleanMultiline(output.messageToChannel || fallbackPlanningMessage(action, approved));
@@ -273,6 +274,9 @@ function fallbackPlanningMessage(action, approved) {
     }
     if (action === 'listen') {
         return '';
+    }
+    if (action === 'close_session') {
+        return 'Okay, I will close this planning session without approving an episode plan.';
     }
     return 'Give me a little more guest background, desired arc, or must-cover territory and I will shape the episode plan.';
 }
