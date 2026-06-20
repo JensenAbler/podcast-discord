@@ -117,7 +117,7 @@ class AlphaClawdVoiceBot {
         this.idleDecisionIntervalMs = Number(process.env.PODCAST_IDLE_DECISION_INTERVAL_MS || 5000);
         this.idleDecisionTimers = new Map(); // guildId -> interval
         this.idleDecisionInFlight = new Set(); // guildId
-        this.idleDecisionHandledSpeechAt = new Map(); // guildId -> ms timestamp of participant speech already handled by idle logic
+        this.idleDecisionHandledSpeechAt = new Map(); // guildId -> ms timestamp of participant speech last considered by idle/direct logic
         this.directResponseInFlight = new Set(); // guildId
         this.lastParticipantSpeechAt = new Map(); // guildId -> ms timestamp
         this.asrErrorNoticeLastSpokenAt = new Map(); // guildId -> ms timestamp
@@ -1214,12 +1214,6 @@ class AlphaClawdVoiceBot {
         if (!this.isRecordingActive(guildId)) return false;
         if (!this.lastParticipantSpeechAt.has(guildId)) return false;
         if (this.directResponseInFlight.has(guildId)) return false;
-
-        const lastSpeechAt = this.lastParticipantSpeechAt.get(guildId);
-        const handledSpeechAt = this.idleDecisionHandledSpeechAt.get(guildId) || 0;
-        if (!this.hasStagedBigBrain(guildId) && Number.isFinite(lastSpeechAt) && handledSpeechAt >= lastSpeechAt) {
-            return false;
-        }
 
         const bufferState = this.conversationBuffer.getState();
         if (

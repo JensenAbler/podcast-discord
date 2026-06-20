@@ -881,6 +881,7 @@ class PodcastGenerator {
 
         if (options.idleCheck && Number.isFinite(Number(options.idleSeconds))) {
             lines.push(`No new participant speech for about ${Math.max(0, Math.round(Number(options.idleSeconds)))} seconds.`);
+            lines.push('This is a dead-air check. As silence stretches or prior silence decisions accumulate, you may offer a brief bridge, synthesis, or next question to keep the episode alive while respecting explicit standby/listening cues.');
         }
 
         const currentTime = String(options.currentTime || options.generatorCalledAt || '').trim();

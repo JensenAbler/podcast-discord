@@ -4407,6 +4407,7 @@ async function runTests() {
         })]]);
         bot.lastParticipantSpeechAt = new Map([[guildId, firstSpeechAt]]);
         bot.idleDecisionHandledSpeechAt = new Map();
+        bot.idleDecisionInFlight = new Set();
         bot.directResponseInFlight = new Set();
         bot.conversationBuffer = {
             getState: () => ({
@@ -4436,8 +4437,8 @@ async function runTests() {
         bot.directResponseInFlight.delete(guildId);
         bot.markIdleDecisionHandled(guildId);
 
-        if (bot.canRunIdleDecision(guildId)) {
-            throw new Error('Idle decision was allowed after this silence period was already handled');
+        if (!bot.canRunIdleDecision(guildId)) {
+            throw new Error('Idle decision should keep rechecking a handled silence period so Alpha-Clawd can fill dead air');
         }
 
         bot.lastParticipantSpeechAt.set(guildId, firstSpeechAt + 2000);
@@ -4468,7 +4469,10 @@ async function runTests() {
                 directCurrentTime = input.currentTime || null;
                 directCurrentEpisodeTimestamp = input.currentEpisodeTimestamp || null;
                 directSilenceCounts.push(input.consecutiveSilenceTurns);
-                if (!bot.directResponseInFlight.has(guildId)) {
+                if (input.idleCheck && !bot.idleDecisionInFlight.has(guildId)) {
+                    throw new Error('Idle decision was not marked in-flight during generation');
+                }
+                if (!input.idleCheck && !bot.directResponseInFlight.has(guildId)) {
                     throw new Error('Direct response was not marked in-flight during generation');
                 }
                 return {
@@ -4540,6 +4544,21 @@ async function runTests() {
         if (directSilenceCounts.at(-1) !== 1 || bot.getConsecutiveGeneratorSilences(guildId) !== 2) {
             throw new Error(`Direct generator did not carry consecutive silence streak into the next call: ${JSON.stringify({ directSilenceCounts, streak: bot.getConsecutiveGeneratorSilences(guildId) })}`);
         }
+
+        bot.resetConsecutiveGeneratorSilences(guildId);
+        directSilenceCounts.length = 0;
+        directGenerateCalled = false;
+        await bot.handleIdleDecisionTick(guildId);
+        await bot.handleIdleDecisionTick(guildId);
+        if (
+            directSilenceCounts.length !== 2 ||
+            directSilenceCounts[0] !== 0 ||
+            directSilenceCounts[1] !== 1 ||
+            bot.getConsecutiveGeneratorSilences(guildId) !== 2
+        ) {
+            throw new Error(`Idle decision did not re-run while dead air persisted: ${JSON.stringify({ directGenerateCalled, directSilenceCounts, streak: bot.getConsecutiveGeneratorSilences(guildId) })}`);
+        }
+        bot.resetConsecutiveGeneratorSilences(guildId);
 
         directGenerateCalled = false;
         bot.directResponseInFlight.add(guildId);
