@@ -91,6 +91,8 @@ class EpisodePlanTracker {
             `Phase time remaining: ${formatMinutes(remaining)}.`,
             '',
             `Last turn chosenAngle: ${this.lastChosenAngle || '(none)'}.`,
+            'The planned angles below are preproduction background knowledge, not things the guest already said in this live conversation.',
+            'When using planned background, frame it as background or the episode plan. Only say the guest "mentioned" or "said earlier" when that fact appears in the live transcript.',
             'Available planned angles in this phase:'
         ];
 
