@@ -2485,6 +2485,14 @@ class AlphaClawdVoiceBot {
         session.processing = (session.processing || Promise.resolve())
             .then(() => this.processPlanningSession(session, record, message.channel))
             .catch((error) => {
+                const staleFailure = record.sequence && record.sequence < Number(session.messageSequence || 0);
+                if (staleFailure || session.closed || this.planningSessions.get(session.channelId) !== session) {
+                    console.log(
+                        `[Bot] Podcast planning stale failure suppressed: ${this.describePlanningSession(session)}, ` +
+                        `seq=${record.sequence || 'unknown'}, latestSeq=${session.messageSequence || 'unknown'}, error=${error.message}`
+                    );
+                    return;
+                }
                 console.error(`[Bot] Podcast planning failed: ${error.message}`);
                 return message.channel?.send?.(`I hit a planning error: ${error.message}`).catch(() => {});
             });
@@ -2555,6 +2563,13 @@ class AlphaClawdVoiceBot {
             await channel?.send?.('I can collect planning context, but the showrunner generator is not configured.');
             return;
         }
+        if (latestMessage?.sequence && latestMessage.sequence < Number(session.messageSequence || 0)) {
+            console.log(
+                `[Bot] Podcast planning skipped superseded work before model call: ${this.describePlanningSession(session)}, ` +
+                `seq=${latestMessage.sequence}, latestSeq=${session.messageSequence}`
+            );
+            return;
+        }
 
         const start = Date.now();
         session.processingActive = true;
@@ -2584,6 +2599,13 @@ class AlphaClawdVoiceBot {
             `durationMs=${Date.now() - start}, action=${output?.action || 'none'}, approved=${Boolean(output?.approved)}, ` +
             `hasPlan=${Boolean(output?.plan)}, messageChars=${String(output?.messageToChannel || '').length}`
         );
+        if (latestMessage?.sequence && latestMessage.sequence < Number(session.messageSequence || 0)) {
+            console.log(
+                `[Bot] Podcast planning discarded superseded model output: ${this.describePlanningSession(session)}, ` +
+                `seq=${latestMessage.sequence}, latestSeq=${session.messageSequence}, action=${output?.action || 'none'}`
+            );
+            return;
+        }
         if (session.closed || this.planningSessions.get(session.channelId) !== session) {
             console.log(`[Bot] Podcast planning discarded stale model output: ${this.describePlanningSession(session)}, action=${output?.action || 'none'}`);
             return;
