@@ -3166,6 +3166,75 @@ async function runTests() {
             throw new Error(`Planning revisions did not preserve basename/version history: ${JSON.stringify({ planningCalls, firstSaved, secondSaved, sentMessages })}`);
         }
 
+        const burstBot = Object.create(AlphaClawdVoiceBot.prototype);
+        burstBot.planningSessions = new Map();
+        burstBot.planningControllerEnabled = true;
+        burstBot.episodePlanStore = store;
+        const burstCalls = [];
+        const burstMessages = [];
+        let burstTypingCount = 0;
+        let releaseFirstBurst;
+        let markFirstBurstStarted;
+        const firstBurstReleased = new Promise((resolve) => { releaseFirstBurst = resolve; });
+        const firstBurstStarted = new Promise((resolve) => { markFirstBurstStarted = resolve; });
+        burstBot.showRunnerGenerator = {
+            generate: async (input) => {
+                burstCalls.push(input);
+                if (burstCalls.length === 1) {
+                    markFirstBurstStarted();
+                    await firstBurstReleased;
+                    return {
+                        action: 'ask_followup',
+                        messageToChannel: 'stale burst response',
+                        approved: false,
+                        plan: null
+                    };
+                }
+                return {
+                    action: 'ask_followup',
+                    messageToChannel: `fresh ${input.latestFeedback}`,
+                    approved: false,
+                    plan: null
+                };
+            }
+        };
+        const burstChannel = {
+            id: 'channel-burst',
+            send: async (content) => { burstMessages.push(content); },
+            sendTyping: async () => { burstTypingCount += 1; }
+        };
+        const makeBurstMessage = (content, id) => ({
+            channelId: 'channel-burst',
+            channel: burstChannel,
+            guildId: 'guild-plan',
+            content,
+            createdAt: new Date('2026-05-15T00:02:00.000Z'),
+            author: { id, username: id, bot: false },
+            member: { displayName: id }
+        });
+        await burstBot.handlePodcastPlanCommand({
+            channelId: 'channel-burst',
+            guildId: 'guild-plan',
+            user: { id: 'planner' },
+            reply: async () => {}
+        });
+        await burstBot.handlePlanningMessage(makeBurstMessage('first chunk', 'producer'));
+        await firstBurstStarted;
+        await burstBot.handlePlanningMessage(makeBurstMessage('second chunk', 'producer'));
+        await burstBot.handlePlanningMessage(makeBurstMessage('third chunk', 'producer'));
+        releaseFirstBurst();
+        await burstBot.planningSessions.get('channel-burst')?.processing;
+        if (
+            burstCalls.length !== 2 ||
+            burstCalls[0].latestFeedback !== 'first chunk' ||
+            burstCalls[1].latestFeedback !== 'third chunk' ||
+            burstMessages.includes('stale burst response') ||
+            burstMessages.at(-1) !== 'fresh third chunk' ||
+            burstTypingCount !== 2
+        ) {
+            throw new Error(`Burst planning messages were not coalesced to the latest model call: ${JSON.stringify({ burstCalls, burstMessages, burstTypingCount })}`);
+        }
+
         const disabledPlanningBot = Object.create(AlphaClawdVoiceBot.prototype);
         disabledPlanningBot.planningSessions = new Map();
         disabledPlanningBot.planningControllerEnabled = false;

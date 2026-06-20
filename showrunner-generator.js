@@ -10,7 +10,7 @@ class ShowRunnerGenerator extends PodcastGenerator {
             apiKey: options.apiKey || process.env.PODCAST_SHOW_RUNNER_API_KEY || (frontier.enabled ? frontier.apiKey : undefined),
             baseUrl: options.baseUrl || process.env.PODCAST_SHOW_RUNNER_BASE_URL || (frontier.enabled ? frontier.baseUrl : undefined),
             model: options.model || process.env.PODCAST_SHOW_RUNNER_MODEL || (frontier.enabled ? frontier.model : undefined) || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini',
-            timeout: options.timeout || process.env.PODCAST_SHOW_RUNNER_TIMEOUT_MS || process.env.PODCAST_GENERATOR_TIMEOUT_MS || 20000,
+            timeout: options.timeout || process.env.PODCAST_SHOW_RUNNER_TIMEOUT_MS || 60000,
             maxCompletionTokens: options.maxCompletionTokens || process.env.PODCAST_SHOW_RUNNER_MAX_TOKENS || 2400,
             responseFormat: options.responseFormat || process.env.PODCAST_SHOW_RUNNER_RESPONSE_FORMAT || process.env.PODCAST_GENERATOR_RESPONSE_FORMAT || 'json_schema',
             reasoningFormat: options.reasoningFormat || process.env.PODCAST_SHOW_RUNNER_REASONING_FORMAT || process.env.PODCAST_GENERATOR_REASONING_FORMAT
