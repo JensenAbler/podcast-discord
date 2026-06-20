@@ -192,6 +192,9 @@ class AlphaClawdVoiceBot {
         this.showRunnerEnabled = options.showRunnerEnabled !== undefined
             ? Boolean(options.showRunnerEnabled)
             : process.env.PODCAST_SHOW_RUNNER_ENABLED !== 'false';
+        this.planningControllerEnabled = options.planningControllerEnabled !== undefined
+            ? Boolean(options.planningControllerEnabled)
+            : process.env.PODCAST_PLANNING_ENABLED !== 'false';
         this.showRunnerGenerator = options.showRunnerGenerator || new ShowRunnerGenerator(options.showRunnerOptions || {});
         this.episodePlanStore = options.episodePlanStore || new EpisodePlanStore(options.episodePlanStoreOptions || {});
         this.planningSessions = new Map(); // channelId -> planning session
@@ -2413,6 +2416,12 @@ class AlphaClawdVoiceBot {
 
     async handlePodcastPlanCommand(interaction) {
         const channelId = interaction.channelId;
+        if (!this.planningControllerEnabled) {
+            console.log(`[Bot] Podcast planning command rejected because planning controller is disabled: channel=${channelId}`);
+            await interaction.reply('Episode planning is currently disabled by configuration.');
+            return;
+        }
+
         let session = this.planningSessions.get(channelId);
         if (!session) {
             session = {
@@ -2535,8 +2544,10 @@ class AlphaClawdVoiceBot {
             console.log(`[Bot] Podcast planning skipped stale work before model call: ${this.describePlanningSession(session)}`);
             return;
         }
-        if (!this.showRunnerEnabled) {
-            console.log(`[Bot] Podcast planning showrunner disabled: ${this.describePlanningSession(session)}`);
+        if (!this.planningControllerEnabled) {
+            console.log(`[Bot] Podcast planning controller disabled during active session: ${this.describePlanningSession(session)}`);
+            this.planningSessions.delete(session.channelId);
+            await channel?.send?.('Episode planning is currently disabled by configuration.');
             return;
         }
         if (!this.showRunnerGenerator?.generate) {
