@@ -7,6 +7,7 @@
     "start": "node bot.js",
     "dev": "nodemon bot.js",
     "test": "node test.js",
+    "eval:podcast": "node prompt-eval.js",
     "view-transcripts": "node episode-transcript-viewer.js",
     "generate-cached-audio": "node generate-cached-audio.js"
   },
@@ -24,7 +25,8 @@
   "license": "MIT",
   "dependencies": {
     "@discordjs/builders": "^1.10.1",
-    "@discordjs/voice": "^0.19.0",
+    "@discordjs/voice": "^0.19.2",
+    "@google/genai": "^2.8.0",
     "@snazzah/davey": "^0.1.11",
     "discord.js": "^14.18.0",
     "ffmpeg-static": "^5.2.0",

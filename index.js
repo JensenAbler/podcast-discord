@@ -15,7 +15,7 @@ const { AudioReceiver } = require('./audio-receiver');
 const { AudioTransmitter } = require('./audio-transmitter');
 const { SilenceDetector } = require('./silence-detector');
 const { SpeakerTracker } = require('./speaker-tracker');
-const { FishAudioProvider } = require('./fish-audio-provider');
+const { FishAudioProvider, downmixStereo48kToMono16k } = require('./fish-audio-provider');
 const { ElevenLabsIntegration } = require('./elevenlabs-integration');
 const { GatewayBridge } = require('./gateway-bridge');
 const { AlphaClawdVoiceBot } = require('./bot');
@@ -26,10 +26,14 @@ const { DiscernmentGenerator } = require('./discernment-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
 const { ShowRunnerGenerator } = require('./showrunner-generator');
 const { ShowRunnerManager } = require('./showrunner-manager');
+const { EpisodePlanStore } = require('./episode-plan-store');
+const { EpisodePlanTracker } = require('./episode-plan-tracker');
 const { PacketizationBuffer } = require('./packetization-buffer');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
 const { ParticipantSignalProfile } = require('./participant-signal-profile');
 const { AwarenessShelf } = require('./awareness-shelf');
+const { RealtimePcmMixer } = require('./realtime-pcm-mixer');
+const { GeminiLiveHost, upsampleMono24kToStereo48k } = require('./gemini-live-host');
 const { EpisodeTranscriptStore, createEpisodeTranscriptServer } = require('./episode-transcript-viewer');
 const { buildTurnIdIntent, normalizeTurnIdIntent } = require('./turn-intent');
 
@@ -43,6 +47,7 @@ module.exports = {
     
     // Integrations
     FishAudioProvider,
+    downmixStereo48kToMono16k,
     ElevenLabsIntegration,
     GatewayBridge,
     PodcastGenerator,
@@ -52,10 +57,15 @@ module.exports = {
     InternalThoughtManager,
     ShowRunnerGenerator,
     ShowRunnerManager,
+    EpisodePlanStore,
+    EpisodePlanTracker,
     PacketizationBuffer,
     BigBrainAwarenessSelector,
     ParticipantSignalProfile,
     AwarenessShelf,
+    RealtimePcmMixer,
+    GeminiLiveHost,
+    upsampleMono24kToStereo48k,
     EpisodeTranscriptStore,
     createEpisodeTranscriptServer,
     buildTurnIdIntent,

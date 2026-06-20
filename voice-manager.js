@@ -48,12 +48,19 @@ class VoiceManager {
                 options.voiceJoinReadyTimeoutMs ?? process.env.PODCAST_VOICE_JOIN_READY_TIMEOUT_MS,
                 30000
             ),
+            audioPlayerMaxMissedFrames: this.parsePositiveInt(
+                options.audioPlayerMaxMissedFrames ?? process.env.DISCORD_AUDIO_MAX_MISSED_FRAMES,
+                1500
+            ),
             ...options
         };
 
         // Initialize STT service for transcription.
         this.stt = options.stt;
         this.enableTranscription = this.options.enableTranscription;
+        console.log(
+            `[VoiceManager] Discord audio maxMissedFrames=${this.options.audioPlayerMaxMissedFrames}`
+        );
 
         // Initialize post-processor for episode finalization
         this.postProcessor = new EpisodePostProcessor({
@@ -64,6 +71,21 @@ class VoiceManager {
         if (!fs.existsSync(this.options.recordingDir)) {
             fs.mkdirSync(this.options.recordingDir, { recursive: true });
         }
+
+        this.recoveryPromise = AudioRecorder.recoverIncompleteRecordings(this.options.recordingDir)
+            .then((recoveries) => {
+                for (const recovery of recoveries) {
+                    console.log(
+                        `[VoiceManager] Recovered interrupted episode audio: ` +
+                        `${recovery.episodePath} (${recovery.stems.length} stems)`
+                    );
+                }
+                return recoveries;
+            })
+            .catch((error) => {
+                console.error(`[VoiceManager] Interrupted recording recovery failed: ${error.message}`);
+                return [];
+            });
 
         this.handleVoiceStateUpdate = this.handleVoiceStateUpdate.bind(this);
         this.client.on('voiceStateUpdate', this.handleVoiceStateUpdate);
@@ -92,7 +114,7 @@ class VoiceManager {
         this.connectionChannels.set(guildId, channel.id);
 
         // Create audio player for transmitting
-        const player = createAudioPlayer();
+        const player = this.createPlaybackPlayer();
         this.players.set(guildId, player);
         connection.subscribe(player);
 
@@ -108,6 +130,7 @@ class VoiceManager {
             client: this.client,  // Pass Discord client for member lookups
             guildId: guildId,     // Pass guild ID for member lookups
             onUtterance: (utterance) => this.handleUtterance(guildId, utterance),
+            onAudioChunk: (userId, chunk) => this.handleAudioChunk(guildId, userId, chunk),
             onSpeakingStart: (userId) => this.handleSpeakingStart(guildId, userId),
             onSpeakingStop: (userId) => this.handleSpeakingStop(guildId, userId),
             onSpeechEvidence: (userId, metadata) => this.handleSpeechEvidence(guildId, userId, metadata),
@@ -155,6 +178,17 @@ class VoiceManager {
             channelName: channel.name,
             status: 'connected'
         };
+    }
+
+    createPlaybackPlayer() {
+        // @discordjs/voice emits an Opus silence packet for each missed frame.
+        // Keep doing that while Fish is synthesizing, with a finite ceiling
+        // matching the provider timeout in case an upstream stream hangs.
+        return createAudioPlayer({
+            behaviors: {
+                maxMissedFrames: this.options.audioPlayerMaxMissedFrames
+            }
+        });
     }
 
     async connectToVoiceChannel(channel) {
@@ -341,18 +375,31 @@ class VoiceManager {
             this.onUtterance(guildId, utterance);
         }
 
-        // If recording, save utterance to transcript and mixed audio
+        // Decoded participant PCM is journaled continuously in handleAudioChunk.
+        // A completed utterance only contributes transcript metadata here.
         if (this.isRecording.get(guildId)) {
             this.saveTranscriptEntry(guildId, utterance);
+        }
+    }
 
-            // Add speaker audio to mixed recording
+    /**
+     * Forward decoded 48 kHz stereo PCM while preserving the normal ASR path.
+     * @param {string} guildId - Discord guild ID
+     * @param {string} userId - Discord user ID
+     * @param {Buffer} chunk - Raw s16le PCM
+     */
+    handleAudioChunk(guildId, userId, chunk) {
+        if (this.isRecording.get(guildId)) {
             const recorder = this.recorders.get(guildId);
-            if (recorder && utterance.audioBuffer) {
-                recorder.addSpeakerAudio(utterance.userId, utterance.audioBuffer, {
-                    volume: 1.0,
-                    startTime: utterance.startTime
-                });
-            }
+            recorder?.addParticipantAudioChunk(userId, chunk, {
+                capturedAt: Date.now(),
+                sampleRate: 48000,
+                channels: 2
+            });
+        }
+
+        if (this.onAudioChunk) {
+            this.onAudioChunk(guildId, userId, chunk);
         }
     }
 
@@ -466,6 +513,20 @@ class VoiceManager {
         if (recorder) {
             recorder.addBotAudio(audioBuffer, { volume: 0.9, ...options });
         }
+    }
+
+    addBotPcmChunkToRecording(guildId, audioBuffer, options = {}) {
+        if (!this.isRecording.get(guildId)) return;
+        this.recorders.get(guildId)?.addBotPcmChunk(audioBuffer, options);
+    }
+
+    anchorBotAudioRecordingGroup(guildId, groupId, playbackStartedAt) {
+        if (!this.isRecording.get(guildId)) return;
+        const startTime = typeof playbackStartedAt === 'string'
+            ? Date.parse(playbackStartedAt)
+            : Number(playbackStartedAt);
+        if (!Number.isFinite(startTime)) return;
+        this.recorders.get(guildId)?.anchorBotAudioGroup(groupId, startTime);
     }
 
     /**
@@ -881,6 +942,14 @@ class VoiceManager {
      */
     setUtteranceHandler(handler) {
         this.onUtterance = handler;
+    }
+
+    /**
+     * Set the decoded PCM handler callback.
+     * @param {Function} handler - (guildId, userId, chunk) => void
+     */
+    setAudioChunkHandler(handler) {
+        this.onAudioChunk = handler;
     }
 
     /**

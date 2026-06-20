@@ -25,7 +25,7 @@ const BufferState = Object.freeze({
 const DEFAULT_USER_ID = '__default_user__';
 const DEFAULT_PENDING_ASR_TIMEOUT = 8000;
 const DEFAULT_GRACE_PERIOD = 50;        // fallback post-ASR hold when speech timing is missing
-const DEFAULT_COOLDOWN_PERIOD = 2000;   // hold after a host turn before another response
+const DEFAULT_COOLDOWN_PERIOD = 50;     // hold after a host turn before another response
 const DYNAMIC_GRACE_POINTS = Object.freeze([
     { speechMs: 100, graceMs: 50 },
     { speechMs: 1000, graceMs: 200 },
@@ -49,6 +49,7 @@ function parseBoolEnv(raw) {
 class ConversationBuffer {
     constructor(config = {}) {
         const envGracePeriod = parseFiniteEnv(process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS);
+        const envCooldownPeriod = parseFiniteEnv(process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS);
         const envDynamicGrace = parseBoolEnv(process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE);
 
         const explicitGracePeriod = Object.prototype.hasOwnProperty.call(config, 'gracePeriod');
@@ -71,7 +72,7 @@ class ConversationBuffer {
             gracePeriod,
             cooldownPeriod: Object.prototype.hasOwnProperty.call(config, 'cooldownPeriod')
                 ? config.cooldownPeriod
-                : DEFAULT_COOLDOWN_PERIOD,
+                : (envCooldownPeriod !== null ? envCooldownPeriod : DEFAULT_COOLDOWN_PERIOD),
             pendingAsrTimeout: Object.prototype.hasOwnProperty.call(config, 'pendingAsrTimeout')
                 ? config.pendingAsrTimeout
                 : DEFAULT_PENDING_ASR_TIMEOUT,

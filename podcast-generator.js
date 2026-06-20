@@ -3,8 +3,9 @@
  *
  * This bypasses the general OpenClaw/Gateway agent path for the spoken reply
  * itself. It asks a small model for one strict JSON object:
- * - shouldRespond: whether Alpha-Clawd should speak at all
  * - speech: exact TTS text
+ * - shouldRespond: whether Alpha-Clawd should speak at all
+ * - chosenAngle: episode-plan angle id currently being worked
  * - bigBrain: escape-hatch handoff to the deeper agent (see schema)
  */
 const {
@@ -22,7 +23,7 @@ const {
  * speech field out token-by-token, so we can hand characters to Fish TTS
  * before the full payload has finished generating.
  *
- * Intended for the schema { shouldRespond, speech, bigBrain, bigHeart }. Tolerates
+ * Intended for the schema { speech, shouldRespond, chosenAngle, bigBrain, bigHeart }. Tolerates
  * keys arriving in any order, but requires the speech value to be a JSON
  * string. JSON escapes (\", \n, \uXXXX, etc.) are decoded incrementally;
  * if a chunk lands mid-escape we wait for the rest of the bytes before
@@ -137,6 +138,7 @@ class IncrementalSpeechReader {
             return {
                 shouldRespond: this.shouldRespondValue ?? this.fullSpeech.length > 0,
                 speech: this.fullSpeech,
+                chosenAngle: '',
                 bigBrain: { requested: false, reason: '', consumedRunId: '' },
                 bigHeart: { requested: false, reason: '', consumedRunId: '' }
             };
@@ -144,9 +146,12 @@ class IncrementalSpeechReader {
     }
 }
 
-function normalizeSpokenSeparators(text) {
+function normalizeSpokenSeparators(text, onRewrite = null) {
     return String(text || '').replace(/\s+\/+\s+/g, (match, offset, whole) => {
         const before = whole.slice(0, offset).match(/\S\s*$/)?.[0]?.trim() || '';
+        if (typeof onRewrite === 'function') {
+            onRewrite();
+        }
         return /[.!?,;:]/.test(before) ? ' ' : ', ';
     });
 }
@@ -154,11 +159,21 @@ function normalizeSpokenSeparators(text) {
 class StreamingSpeechSanitizer {
     constructor(options = {}) {
         this.pending = '';
-        this.lookbehindChars = Number(options.lookbehindChars || 32);
+        this.lookbehindChars = Number(options.lookbehindChars ?? 8);
+        this.rewriteCount = 0;
     }
 
     push(text) {
         this.pending += String(text || '');
+        let rewrites = 0;
+        const normalized = normalizeSpokenSeparators(this.pending, () => {
+            rewrites++;
+        });
+        if (normalized !== this.pending) {
+            this.rewriteCount += rewrites;
+        }
+        this.pending = normalized;
+
         if (this.pending.length <= this.lookbehindChars) {
             return '';
         }
@@ -166,13 +181,26 @@ class StreamingSpeechSanitizer {
         const readyLength = this.pending.length - this.lookbehindChars;
         const ready = this.pending.slice(0, readyLength);
         this.pending = this.pending.slice(readyLength);
-        return normalizeSpokenSeparators(ready);
+        return ready;
     }
 
     flush() {
-        const ready = this.pending;
+        let rewrites = 0;
+        const ready = normalizeSpokenSeparators(this.pending, () => {
+            rewrites++;
+        });
+        if (ready !== this.pending) {
+            this.rewriteCount += rewrites;
+        }
         this.pending = '';
-        return normalizeSpokenSeparators(ready);
+
+        const rewriteCount = this.rewriteCount;
+        this.rewriteCount = 0;
+        if (rewriteCount > 0) {
+            console.log(`[StreamingSpeechSanitizer] rewrote ${rewriteCount} slash separator(s) this turn`);
+        }
+
+        return ready;
     }
 }
 
@@ -325,7 +353,8 @@ class PodcastGenerator {
             console.warn(`[PodcastGenerator] Model refusal: ${refusal}`);
             return this.normalizeOutput({
                 shouldRespond: false,
-                speech: ''
+                speech: '',
+                chosenAngle: ''
             });
         }
 
@@ -785,8 +814,9 @@ class PodcastGenerator {
             'Do not autocomplete with generic questions. In particular, avoid shallow "what does that feel like" style questions unless the guest has clearly opened a felt-sense thread and that exact move would help. If awareness notes or live correction point out repeated questioning, let that change behavior immediately: choose silence, reflection, or a concise acknowledgment instead of another question.',
             '',
             'When in doubt, choose silence or the smaller move. You will get another turn.',
+            'But do not confuse completed interview beats with interruptions. If the guest has finished a substantive answer and private show-runner direction names a next bridge or question, that is a strong reason to speak. Silence is for active floor-holding, unfinished thoughts, direct guest instructions, or moments where reception matters more than forward motion.',
             '',
-            'Do not ask a question every turn. After a guest shares a substantial story, correction, boundary, or emotion, prefer reflection over question unless they explicitly ask you for a question or next step.',
+            'Do not ask a question every turn. After a guest shares a substantial story, correction, boundary, or emotion, prefer reflection over question unless they explicitly ask you for a question or next step, or the show-runner direction identifies a specific next interview move that fits the completed beat.',
             '',
             'Guest floor holding:',
             'When the guest is looking at a tool, document, file, or screen and narrating discoveries, do not dump instructions unless they explicitly ask for technical assistance. If they say "stand by", "hold on", "let me explore", or "I am looking", acknowledge briefly once if needed, then wait.',
@@ -811,7 +841,8 @@ class PodcastGenerator {
             'Your job is to decide whether to speak.',
             '',
             'Hard contract:',
-            '- Return JSON matching the provided schema.',
+            '- Return one JSON object with fields in this exact order: speech, shouldRespond, chosenAngle, bigBrain, bigHeart. This order also applies when only JSON mode is available and no schema is provided.',
+            '- Emit speech first. Use an empty string when shouldRespond is false.',
             '- If humans are acknowledging, thinking aloud, talking amongst themselves, or developing a thought, usually set shouldRespond=false. If a response is needed only to show presence, Minimal backchannel is allowed but should be rare because delayed bare acknowledgements can feel awkward; do not ask a question.',
             '- If shouldRespond=true, speech is exactly what the TTS should say out loud.',
             ...this.buildSpeechControlGuidance(),
@@ -845,10 +876,7 @@ class PodcastGenerator {
 
     buildUserPrompt(transcript, wordData, options = {}) {
         const lines = [];
-        const directiveText = [
-            transcript,
-            this.formatUtterances(options.utterances || [])
-        ].filter(Boolean).join('\n');
+        const directiveText = this.getCurrentDirectiveText(transcript, options.utterances || []);
         const turnDirectives = this.detectConversationDirectives(directiveText);
 
         if (options.idleCheck && Number.isFinite(Number(options.idleSeconds))) {
@@ -896,7 +924,11 @@ class PodcastGenerator {
             );
         }
 
-        const episodeStructure = this.formatEpisodeStructureNotes(this.extractEpisodeStructureNotes(directiveText));
+        const episodeStructureText = [
+            transcript,
+            this.formatUtterances(options.utterances || [])
+        ].filter(Boolean).join('\n');
+        const episodeStructure = this.formatEpisodeStructureNotes(this.extractEpisodeStructureNotes(episodeStructureText));
         if (episodeStructure) {
             lines.push(
                 '',
@@ -907,14 +939,12 @@ class PodcastGenerator {
             );
         }
 
-        const showRunnerGuidance = this.formatShowRunnerGuidance(options.showRunnerGuidance || null);
-        if (showRunnerGuidance) {
+        const episodePlanStructure = this.cleanMultiline(options.episodePlanStructure || '');
+        if (episodePlanStructure) {
             lines.push(
                 '',
-                'Show runner direction:',
-                showRunnerGuidance,
-                '',
-                'This is private editorial steering for episode structure, not speech to quote. Let it guide topic coverage, bridges, and wrap-up timing, but do not let it override hard live floor cues, direct guest requests, Big Brain rules, or the need to stay with what the guest is actually doing.'
+                'Episode plan structure:',
+                episodePlanStructure
             );
         }
 
@@ -1005,7 +1035,7 @@ class PodcastGenerator {
     }
 
     buildDecisionPrompt() {
-        return 'Decide whether Alpha-Clawd should speak now.';
+        return 'Produce the host turn now. Emit speech first, then shouldRespond, followed by chosenAngle, bigBrain, and bigHeart.';
     }
 
     formatStagedBigBrain(items = [], options = {}) {
@@ -1210,42 +1240,6 @@ class PodcastGenerator {
         return thoughts.join('\n');
     }
 
-    formatShowRunnerGuidance(guidance = null) {
-        if (!guidance || typeof guidance !== 'object') {
-            return '';
-        }
-
-        const lines = [];
-        const push = (label, value) => {
-            const text = String(value || '').trim();
-            if (text) lines.push(`${label}: ${text}`);
-        };
-        const pushList = (label, values) => {
-            const items = (Array.isArray(values) ? values : [])
-                .map((item) => String(item || '').trim())
-                .filter(Boolean)
-                .slice(0, 8);
-            if (items.length > 0) {
-                lines.push(`${label}: ${items.join('; ')}`);
-            }
-        };
-
-        push('phase', guidance.phase);
-        push('currentLane', guidance.currentLane);
-        pushList('coveredAngles', guidance.coveredAngles);
-        pushList('untouchedAngles', guidance.untouchedAngles);
-        push('nextHostMove', guidance.nextHostMove);
-        pushList('avoid', guidance.avoid);
-        push('suggestedQuestion', guidance.suggestedQuestion);
-        if (guidance.wrapNow === true) {
-            lines.push('wrapNow: true');
-            push('wrapReason', guidance.wrapReason);
-        }
-        push('generatorInstruction', guidance.generatorInstruction);
-
-        return lines.join('\n');
-    }
-
     buildRequestBody(messages, options = {}) {
         const responseFormat = options.responseFormat || this.responseFormat;
         const body = {
@@ -1312,7 +1306,7 @@ class PodcastGenerator {
             pendingBigBrain: this.compactPendingBigBrain(input.pendingBigBrain || []),
             pendingBigHeart: this.compactPendingBigHeart(input.pendingBigHeart || []),
             recentInternalThoughts: this.compactRecentInternalThoughts(input.recentInternalThoughts || []),
-            showRunnerGuidance: this.compactShowRunnerGuidance(input.showRunnerGuidance || null),
+            episodePlanStructure: this.truncateText(input.episodePlanStructure || '', 1600),
             maxStagedBigBrainAnswerChars: Math.min(this.maxStagedBigBrainAnswerChars, 900),
             maxStagedBigHeartAnswerChars: Math.min(this.maxStagedBigBrainAnswerChars, 900)
         });
@@ -1379,6 +1373,17 @@ class PodcastGenerator {
         const marker = ' ... [trimmed for prompt budget]';
         const sliceAt = Math.max(0, limit - marker.length);
         return `${text.slice(0, sliceAt).trim()}${marker}`;
+    }
+
+    cleanText(value) {
+        return String(value || '').replace(/\s+/g, ' ').trim();
+    }
+
+    cleanMultiline(value) {
+        return String(value || '')
+            .replace(/\r\n/g, '\n')
+            .replace(/[ \t]+\n/g, '\n')
+            .trim();
     }
 
     truncateTextToApproxTokens(value, maxTokens, options = {}) {
@@ -1458,31 +1463,6 @@ class PodcastGenerator {
                     internalThought: this.truncateText(item?.internalThought || item?.thought || item?.text || '', 360)
                 };
             });
-    }
-
-    compactShowRunnerGuidance(guidance = null) {
-        if (!guidance || typeof guidance !== 'object') {
-            return null;
-        }
-
-        return {
-            ...guidance,
-            phase: this.truncateText(guidance.phase || '', 80),
-            currentLane: this.truncateText(guidance.currentLane || '', 140),
-            coveredAngles: (Array.isArray(guidance.coveredAngles) ? guidance.coveredAngles : [])
-                .slice(-8)
-                .map((item) => this.truncateText(item, 160)),
-            untouchedAngles: (Array.isArray(guidance.untouchedAngles) ? guidance.untouchedAngles : [])
-                .slice(0, 8)
-                .map((item) => this.truncateText(item, 160)),
-            nextHostMove: this.truncateText(guidance.nextHostMove || '', 220),
-            avoid: (Array.isArray(guidance.avoid) ? guidance.avoid : [])
-                .slice(0, 6)
-                .map((item) => this.truncateText(item, 160)),
-            suggestedQuestion: this.truncateText(guidance.suggestedQuestion || '', 220),
-            wrapReason: this.truncateText(guidance.wrapReason || '', 220),
-            generatorInstruction: this.truncateText(guidance.generatorInstruction || '', 420)
-        };
     }
 
     async fetchCompletion(messages, input = {}) {
@@ -1759,8 +1739,9 @@ class PodcastGenerator {
             choices: [{
                 message: {
                     content: JSON.stringify({
-                        shouldRespond: false,
                         speech: '',
+                        shouldRespond: false,
+                        chosenAngle: '',
                         bigBrain: { requested: false, reason: '', consumedRunId: '' },
                         bigHeart: { requested: false, reason: '', consumedRunId: '' }
                     })
@@ -2027,15 +2008,19 @@ class PodcastGenerator {
         return {
             type: 'object',
             additionalProperties: false,
-            required: ['shouldRespond', 'speech', 'bigBrain', 'bigHeart'],
+            required: ['speech', 'shouldRespond', 'chosenAngle', 'bigBrain', 'bigHeart'],
             properties: {
+                speech: {
+                    type: 'string',
+                    description: 'Exact text to send to TTS. Empty string when shouldRespond is false. May include sparse Fish Audio controls when the system prompt says Fish is active.'
+                },
                 shouldRespond: {
                     type: 'boolean',
                     description: 'Whether the host should speak now.'
                 },
-                speech: {
+                chosenAngle: {
                     type: 'string',
-                    description: 'Exact text to send to TTS. Empty string when shouldRespond is false. May include sparse Fish Audio controls when the system prompt says Fish is active.'
+                    description: 'Episode-plan angle id this spoken response is working. Keep the same id while staying with it. Empty string for silence, backchannels, connective tissue, spontaneous tangents, or when no episode plan is active.'
                 },
                 bigBrain: {
                     type: 'object',
@@ -2088,8 +2073,9 @@ class PodcastGenerator {
         const speech = shouldRespond ? this.sanitizeSpeech(output?.speech || '') : '';
 
         return {
-            shouldRespond: shouldRespond && speech.length > 0,
             speech,
+            shouldRespond: shouldRespond && speech.length > 0,
+            chosenAngle: shouldRespond && speech.length > 0 ? this.cleanText(output?.chosenAngle || '') : '',
             text: speech,
             bigBrain: this.normalizeBigBrain(output?.bigBrain),
             bigHeart: this.normalizeBigHeart(output?.bigHeart)
@@ -2277,6 +2263,19 @@ class PodcastGenerator {
 
     getRecentHistory() {
         return this.history.slice(-this.maxHistoryTurns * 2);
+    }
+
+    getCurrentDirectiveText(transcript = '', utterances = []) {
+        const formattedUtterances = this.formatUtterances(utterances || []);
+        if (formattedUtterances.trim()) {
+            return formattedUtterances;
+        }
+
+        const lines = String(transcript || '')
+            .split(/\n+/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        return lines.length > 0 ? lines[lines.length - 1] : '';
     }
 
     detectConversationDirectives(transcript = '') {

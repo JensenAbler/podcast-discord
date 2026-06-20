@@ -568,6 +568,25 @@ class AudioReceiver {
     }
 
     /**
+     * Track nonblocking work associated with an utterance, such as Fish shadow ASR.
+     * @param {Promise<*>} task - Background work to drain before finalization
+     * @returns {Promise<*>}
+     */
+    trackBackgroundUtteranceTask(task) {
+        let tracked;
+        tracked = Promise.resolve(task)
+            .catch((error) => {
+                console.error('[AudioReceiver] Background utterance task failed:', error.message);
+            })
+            .finally(() => {
+                this.processingUtterances.delete(tracked);
+            });
+
+        this.processingUtterances.add(tracked);
+        return tracked;
+    }
+
+    /**
      * Queue utterance processing per user so transcript rows remain ordered.
      * @param {Object} snapshot - Snapshot created by snapshotUserBuffer
      * @returns {Promise<void>}
@@ -635,7 +654,9 @@ class AudioReceiver {
                         silentFrames: detectorStats.silentFrames || 0,
                         totalFrames: detectorStats.totalFrames || 0
                     });
-                    const sttResult = await this.stt.transcribe(audioBuffer);
+                    const sttResult = await this.stt.transcribe(audioBuffer, {
+                        trackBackgroundTask: (task) => this.trackBackgroundUtteranceTask(task)
+                    });
                     rawTranscription = sttResult.text || '';
                     const normalized = this.normalizeTranscription(rawTranscription);
                     transcription = normalized.transcription;

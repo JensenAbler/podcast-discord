@@ -10,6 +10,7 @@ const {
     AudioReceiver,
     VoiceManager,
     FishAudioProvider,
+    downmixStereo48kToMono16k,
     GatewayBridge,
     PodcastGenerator,
     BigHeartGenerator,
@@ -18,10 +19,15 @@ const {
     InternalThoughtManager,
     ShowRunnerGenerator,
     ShowRunnerManager,
+    EpisodePlanStore,
+    EpisodePlanTracker,
     PacketizationBuffer,
     BigBrainAwarenessSelector,
     ParticipantSignalProfile,
     AwarenessShelf,
+    RealtimePcmMixer,
+    GeminiLiveHost,
+    upsampleMono24kToStereo48k,
     EpisodeTranscriptStore,
     createEpisodeTranscriptServer,
     buildTurnIdIntent,
@@ -38,8 +44,15 @@ const {
     getRecordingDir,
     isLegacyEpisodesRecordingDir
 } = require('./paths');
+const {
+    PromptEvalRunner,
+    parseArgs,
+    scoreDeterministic,
+    validateFixture
+} = require('./prompt-eval');
 const { PassThrough } = require('stream');
 const { EventEmitter } = require('events');
+const msgpack = require('msgpack-lite');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -123,6 +136,242 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Participant signal profile failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 1c: Gemini Live PCM conversion and participant mixing');
+    try {
+        const mono24k = Buffer.alloc(4);
+        mono24k.writeInt16LE(1000, 0);
+        mono24k.writeInt16LE(-1000, 2);
+        const converted = upsampleMono24kToStereo48k(mono24k);
+        const expectedSamples = [1000, 1000, 1000, 1000, -1000, -1000, -1000, -1000];
+        const actualSamples = [];
+        for (let offset = 0; offset < converted.audio.length; offset += 2) {
+            actualSamples.push(converted.audio.readInt16LE(offset));
+        }
+        if (JSON.stringify(actualSamples) !== JSON.stringify(expectedSamples)) {
+            throw new Error(`Unexpected Gemini output conversion: ${JSON.stringify(actualSamples)}`);
+        }
+
+        let mixedFrame = null;
+        const mixer = new RealtimePcmMixer({
+            onFrame: (frame) => {
+                mixedFrame = frame;
+            }
+        });
+        const positive = createSpeechPcm(20);
+        const negative = Buffer.alloc(positive.length);
+        for (let offset = 0; offset < negative.length; offset += 2) {
+            negative.writeInt16LE(-600, offset);
+        }
+        mixer.push('speaker-a', positive);
+        mixer.push('speaker-b', negative);
+        mixer.emitFrame();
+
+        if (!mixedFrame || mixedFrame.length !== 640) {
+            throw new Error(`Expected one 20ms 16 kHz frame, got ${mixedFrame?.length || 0} bytes`);
+        }
+        if (mixedFrame.readInt16LE(0) !== 300) {
+            throw new Error(`Expected mixed sample 300, got ${mixedFrame.readInt16LE(0)}`);
+        }
+
+        console.log('  Gemini PCM resampling and concurrent participant mixing preserve frame shape');
+        passed++;
+    } catch (error) {
+        console.log(`  Gemini PCM conversion/mixing failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 1d: Gemini Live session config and streamed turn lifecycle');
+    try {
+        let connectParams = null;
+        const realtimeInputs = [];
+        let closed = false;
+        const fakeSession = {
+            sendRealtimeInput: (input) => realtimeInputs.push(input),
+            close: () => {
+                closed = true;
+            }
+        };
+        const fakeClient = {
+            live: {
+                connect: async (params) => {
+                    connectParams = params;
+                    params.callbacks.onopen();
+                    return fakeSession;
+                }
+            }
+        };
+
+        let streamBytes = Buffer.alloc(0);
+        let completedTurn = null;
+        const host = new GeminiLiveHost({
+            apiKey: 'test-key',
+            client: fakeClient,
+            systemInstruction: 'Test live host',
+            onAudioStream: ({ stream }) => {
+                stream.on('data', (chunk) => {
+                    streamBytes = Buffer.concat([streamBytes, chunk]);
+                });
+            },
+            onTurnComplete: (turn) => {
+                completedTurn = turn;
+            }
+        });
+
+        await host.start();
+        if (connectParams.config.realtimeInputConfig.activityHandling !== 'NO_INTERRUPTION') {
+            throw new Error('Gemini Live did not disable barge-in');
+        }
+        const automaticActivityDetection =
+            connectParams.config.realtimeInputConfig.automaticActivityDetection;
+        if (automaticActivityDetection?.disabled !== true) {
+            throw new Error('Gemini Live did not disable server-side automatic activity detection');
+        }
+        if ('silenceDurationMs' in automaticActivityDetection) {
+            throw new Error('Gemini Live retained a server-side silence endpoint');
+        }
+        if (!connectParams.config.proactivity.proactiveAudio) {
+            throw new Error('Gemini Live proactive audio was not enabled');
+        }
+        if (connectParams.config.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName !== 'Aoede') {
+            throw new Error('Gemini Live did not use the Aoede voice by default');
+        }
+        if ('transparent' in connectParams.config.sessionResumption) {
+            throw new Error('Gemini Developer API does not support transparent session resumption');
+        }
+
+        host.sendAudioFrame(Buffer.alloc(640));
+        if (realtimeInputs[0]?.audio?.mimeType !== 'audio/pcm;rate=16000') {
+            throw new Error(`Unexpected realtime input: ${JSON.stringify(realtimeInputs[0])}`);
+        }
+        if (!host.startActivity() || host.startActivity()) {
+            throw new Error('Gemini Live activity start was not edge-triggered');
+        }
+        if (!host.endActivity() || host.endActivity()) {
+            throw new Error('Gemini Live activity end was not edge-triggered');
+        }
+        if (!realtimeInputs[1]?.activityStart || !realtimeInputs[2]?.activityEnd) {
+            throw new Error(`Gemini Live explicit activity signals were not sent: ${JSON.stringify(realtimeInputs)}`);
+        }
+
+        const responsePcm = Buffer.alloc(4);
+        responsePcm.writeInt16LE(250, 0);
+        responsePcm.writeInt16LE(-250, 2);
+        connectParams.callbacks.onmessage({
+            serverContent: {
+                outputTranscription: { text: 'Hello from Gemini.' },
+                modelTurn: {
+                    parts: [{
+                        inlineData: {
+                            mimeType: 'audio/pcm;rate=24000',
+                            data: responsePcm.toString('base64')
+                        }
+                    }]
+                }
+            }
+        });
+        connectParams.callbacks.onmessage({
+            serverContent: {
+                turnComplete: true
+            }
+        });
+
+        if (streamBytes.length !== 16) {
+            throw new Error(`Expected 16 Discord PCM bytes, got ${streamBytes.length}`);
+        }
+        if (completedTurn?.transcription !== 'Hello from Gemini.') {
+            throw new Error(`Missing output transcription: ${JSON.stringify(completedTurn)}`);
+        }
+
+        host.stop();
+        if (!closed) {
+            throw new Error('Gemini Live session did not close');
+        }
+
+        console.log('  Gemini Live uses proactive no-interruption audio and finalizes streamed turns');
+        passed++;
+    } catch (error) {
+        console.log(`  Gemini Live lifecycle failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 1e: Gemini Live explicit activity follows confirmed participant floor');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const guildId = 'guild-gemini-activity';
+        const userId = 'user-gemini-activity';
+        const activityEvents = [];
+        let floorActive = false;
+
+        bot.sessionHostModes = new Map([[guildId, 'gemini-live']]);
+        bot.geminiLiveActivityStates = new Map();
+        bot.geminiLiveActivityReleaseMs = 35;
+        bot.participantSignalStates = new Map();
+        bot.geminiLiveHosts = new Map([[
+            guildId,
+            {
+                activityActive: false,
+                startActivity() {
+                    activityEvents.push('start');
+                    this.activityActive = true;
+                    return true;
+                },
+                endActivity() {
+                    activityEvents.push('end');
+                    this.activityActive = false;
+                    return true;
+                }
+            }
+        ]]);
+        bot.hasCurrentParticipantFloor = () => floorActive;
+
+        const participantStates = bot.getParticipantSignalStateMap(guildId);
+        participantStates.set(userId, {
+            userId,
+            rawActive: false,
+            floorHasFreshSpeechEvidence: true
+        });
+        if (bot.beginGeminiLiveParticipantActivity(guildId, userId, 'test without raw VAD')) {
+            throw new Error('Gemini activity started without concurrent raw VAD');
+        }
+
+        participantStates.get(userId).rawActive = true;
+        floorActive = true;
+        if (!bot.beginGeminiLiveParticipantActivity(guildId, userId, 'test confirmed speech')) {
+            throw new Error('Confirmed participant speech did not start Gemini activity');
+        }
+        if (activityEvents.join(',') !== 'start') {
+            throw new Error(`Unexpected activity start events: ${activityEvents.join(',')}`);
+        }
+
+        floorActive = false;
+        if (!bot.scheduleGeminiLiveParticipantActivityEnd(guildId, 'test floor release')) {
+            throw new Error('Participant floor release did not schedule Gemini activity end');
+        }
+        await sleep(15);
+        if (!bot.holdGeminiLiveParticipantActivity(guildId, userId, 'test continuation')) {
+            throw new Error('Same-utterance continuation did not hold Gemini activity open');
+        }
+        await sleep(45);
+        if (activityEvents.includes('end')) {
+            throw new Error('Gemini activity ended despite a same-utterance continuation');
+        }
+
+        if (!bot.scheduleGeminiLiveParticipantActivityEnd(guildId, 'test final release')) {
+            throw new Error('Final participant floor release did not schedule Gemini activity end');
+        }
+        await sleep(45);
+        if (activityEvents.join(',') !== 'start,end') {
+            throw new Error(`Gemini activity did not end after the release hold: ${activityEvents.join(',')}`);
+        }
+
+        bot.clearGeminiLiveActivityState(guildId);
+        console.log('  Confirmed speech starts explicit activity and thoughtful pauses defer its end');
+        passed++;
+    } catch (error) {
+        console.log(`  Gemini Live explicit activity bridge failed: ${error.message}`);
         failed++;
     }
 
@@ -285,6 +534,67 @@ async function runTests() {
             throw new Error('WAV conversion failed');
         }
 
+        const sineFrames = 480;
+        const sinePcm = Buffer.alloc(sineFrames * 4);
+        for (let frame = 0; frame < sineFrames; frame++) {
+            const phase = 2 * Math.PI * 1000 * frame / 48000;
+            sinePcm.writeInt16LE(Math.round(12000 * Math.sin(phase)), frame * 4);
+            sinePcm.writeInt16LE(Math.round(6000 * Math.sin(phase)), frame * 4 + 2);
+        }
+        const originalSinePcm = Buffer.from(sinePcm);
+        const downmixedPcm = downmixStereo48kToMono16k(sinePcm);
+        const expectedFirstSample = Math.round(
+            Array.from({ length: 3 }, (_, frame) => {
+                const offset = frame * 4;
+                return (sinePcm.readInt16LE(offset) + sinePcm.readInt16LE(offset + 2)) / 2;
+            }).reduce((sum, sample) => sum + sample, 0) / 3
+        );
+        if (downmixedPcm.length !== sinePcm.length / 6) {
+            throw new Error(`Downmix length mismatch: ${downmixedPcm.length} vs ${sinePcm.length / 6}`);
+        }
+        if (downmixedPcm.readInt16LE(0) !== expectedFirstSample) {
+            throw new Error(`Stereo averaging mismatch: ${downmixedPcm.readInt16LE(0)} vs ${expectedFirstSample}`);
+        }
+        if (!sinePcm.equals(originalSinePcm)) {
+            throw new Error('Downmix mutated the raw capture buffer');
+        }
+
+        const downmixedWav = await fishAudio.prepareAudioForSTT(downmixedPcm, {
+            sampleRate: 16000,
+            channels: 1
+        });
+        const headerChecks = {
+            riff: downmixedWav.slice(0, 4).toString('ascii'),
+            fileSize: downmixedWav.readUInt32LE(4),
+            wave: downmixedWav.slice(8, 12).toString('ascii'),
+            audioFormat: downmixedWav.readUInt16LE(20),
+            channels: downmixedWav.readUInt16LE(22),
+            sampleRate: downmixedWav.readUInt32LE(24),
+            byteRate: downmixedWav.readUInt32LE(28),
+            blockAlign: downmixedWav.readUInt16LE(32),
+            bitsPerSample: downmixedWav.readUInt16LE(34),
+            dataTag: downmixedWav.slice(36, 40).toString('ascii'),
+            dataSize: downmixedWav.readUInt32LE(40)
+        };
+        if (
+            headerChecks.riff !== 'RIFF' ||
+            headerChecks.fileSize !== downmixedPcm.length + 36 ||
+            headerChecks.wave !== 'WAVE' ||
+            headerChecks.audioFormat !== 1 ||
+            headerChecks.channels !== 1 ||
+            headerChecks.sampleRate !== 16000 ||
+            headerChecks.byteRate !== 32000 ||
+            headerChecks.blockAlign !== 2 ||
+            headerChecks.bitsPerSample !== 16 ||
+            headerChecks.dataTag !== 'data' ||
+            headerChecks.dataSize !== downmixedPcm.length ||
+            !downmixedWav.subarray(44).equals(downmixedPcm)
+        ) {
+            throw new Error(`16kHz mono WAV header mismatch: ${JSON.stringify(headerChecks)}`);
+        }
+        console.log('  48kHz stereo PCM downmixes to filtered 16kHz mono with a valid WAV header');
+        passed++;
+
         const s2Text = fishAudio.preprocessText('Hold <break time="2.2s" /> the thought.');
         const fishS1 = new FishAudioProvider({
             apiKey: process.env.FISH_AUDIO_API_KEY || 'test_fish_audio_key_placeholder',
@@ -317,6 +627,307 @@ async function runTests() {
         }
     } catch (error) {
         console.log(`  Fish Audio provider failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 3a: Fish ASR shadow returns authoritative audio without waiting');
+    try {
+        let releaseShadow;
+        let shadowFinished = false;
+        const shadowGate = new Promise((resolve) => {
+            releaseShadow = resolve;
+        });
+        const trackedTasks = [];
+        const uploadedHeaders = [];
+        const fishAudio = new FishAudioProvider({
+            apiKey: 'test_fish_audio_key_placeholder',
+            asrDownmix: 'shadow'
+        });
+        fishAudio.fetchWithTimeout = async (url, options) => {
+            const uploadedWav = Buffer.from(await options.body.get('audio').arrayBuffer());
+            const channels = uploadedWav.readUInt16LE(22);
+            const sampleRate = uploadedWav.readUInt32LE(24);
+            uploadedHeaders.push({ channels, sampleRate, bytes: uploadedWav.length });
+
+            if (channels === 1) {
+                await shadowGate;
+                shadowFinished = true;
+                return {
+                    ok: true,
+                    json: async () => ({
+                        text: 'downmixed wording',
+                        duration: 2,
+                        segments: [{ text: 'downmixed wording', start: 0.5, end: 1.5 }]
+                    })
+                };
+            }
+
+            return {
+                ok: true,
+                json: async () => ({
+                    text: 'authoritative wording',
+                    duration: 2,
+                    segments: [{ text: 'authoritative wording', start: 0.25, end: 1.75 }]
+                })
+            };
+        };
+
+        const sourcePcm = createSpeechPcm(100);
+        const result = await fishAudio.transcribe(sourcePcm, {
+            trackBackgroundTask: (task) => trackedTasks.push(task)
+        });
+
+        if (result.text !== 'authoritative wording' || shadowFinished) {
+            throw new Error(`Shadow ASR delayed or replaced the authoritative result: ${JSON.stringify(result)}`);
+        }
+        if (
+            result.words.length !== 1 ||
+            result.words[0].start !== 0.25 ||
+            result.words[0].end !== 1.75
+        ) {
+            throw new Error(`Fish segment seconds were altered: ${JSON.stringify(result.words)}`);
+        }
+        if (trackedTasks.length !== 1) {
+            throw new Error(`Shadow comparison was not registered for draining: ${trackedTasks.length}`);
+        }
+
+        releaseShadow();
+        await Promise.allSettled(trackedTasks);
+        if (
+            uploadedHeaders.length !== 2 ||
+            !uploadedHeaders.some(header => header.channels === 2 && header.sampleRate === 48000) ||
+            !uploadedHeaders.some(header => header.channels === 1 && header.sampleRate === 16000)
+        ) {
+            throw new Error(`Shadow uploads used unexpected WAV formats: ${JSON.stringify(uploadedHeaders)}`);
+        }
+
+        console.log('  Shadow mode returns 48kHz text immediately, tracks 16kHz work, and preserves timing seconds');
+        passed++;
+    } catch (error) {
+        console.log(`  Fish ASR shadow behavior failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 3a.1: Fish ASR true mode uploads only 16kHz mono');
+    try {
+        const uploadedHeaders = [];
+        const fishAudio = new FishAudioProvider({
+            apiKey: 'test_fish_audio_key_placeholder',
+            asrDownmix: true
+        });
+        fishAudio.fetchWithTimeout = async (url, options) => {
+            const uploadedWav = Buffer.from(await options.body.get('audio').arrayBuffer());
+            uploadedHeaders.push({
+                channels: uploadedWav.readUInt16LE(22),
+                sampleRate: uploadedWav.readUInt32LE(24),
+                bytes: uploadedWav.length
+            });
+            return {
+                ok: true,
+                json: async () => ({
+                    text: 'downmixed only',
+                    duration: 1,
+                    segments: [{ text: 'downmixed only', start: 0.1, end: 0.9 }]
+                })
+            };
+        };
+
+        const sourcePcm = createSpeechPcm(100);
+        const result = await fishAudio.transcribe(sourcePcm);
+        if (
+            result.text !== 'downmixed only' ||
+            uploadedHeaders.length !== 1 ||
+            uploadedHeaders[0].channels !== 1 ||
+            uploadedHeaders[0].sampleRate !== 16000 ||
+            uploadedHeaders[0].bytes !== sourcePcm.length / 6 + 44
+        ) {
+            throw new Error(`True mode did not upload only the downmixed WAV: ${JSON.stringify(uploadedHeaders)}`);
+        }
+
+        console.log('  True mode sends one 16kHz mono WAV and no 48kHz upload');
+        passed++;
+    } catch (error) {
+        console.log(`  Fish ASR true mode failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 3a.2: Fish ASR shadow errors do not fail the turn');
+    try {
+        const trackedTasks = [];
+        const shadowLogs = [];
+        const originalConsoleError = console.error;
+        const fishAudio = new FishAudioProvider({
+            apiKey: 'test_fish_audio_key_placeholder',
+            asrDownmix: 'shadow'
+        });
+        fishAudio.fetchWithTimeout = async (url, options) => {
+            const uploadedWav = Buffer.from(await options.body.get('audio').arrayBuffer());
+            if (uploadedWav.readUInt16LE(22) === 1) {
+                return {
+                    ok: false,
+                    status: 503,
+                    text: async () => 'shadow unavailable'
+                };
+            }
+            return {
+                ok: true,
+                json: async () => ({ text: 'authoritative survives', duration: 1 })
+            };
+        };
+
+        try {
+            console.error = (...args) => shadowLogs.push(args.join(' '));
+            const result = await fishAudio.transcribe(createSpeechPcm(100), {
+                trackBackgroundTask: (task) => trackedTasks.push(task)
+            });
+            await Promise.allSettled(trackedTasks);
+            if (
+                result.text !== 'authoritative survives' ||
+                !shadowLogs.some(line => line.includes('"status":"shadow_error"'))
+            ) {
+                throw new Error(`Shadow failure affected the turn or was not logged: ${JSON.stringify(shadowLogs)}`);
+            }
+        } finally {
+            console.error = originalConsoleError;
+        }
+
+        console.log('  A failed 16kHz shadow request is logged and the 48kHz turn still succeeds');
+        passed++;
+    } catch (error) {
+        console.log(`  Fish ASR shadow error isolation failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 3b: Fish Audio opens its live socket while waiting for text');
+    try {
+        let firstChunkResolved = false;
+        let resolveFirstChunk;
+        let webSocketCreatedBeforeFirstChunk = false;
+        const sentEvents = [];
+        const firstChunkGate = new Promise((resolve) => {
+            resolveFirstChunk = resolve;
+        });
+
+        class MockFishWebSocket extends EventEmitter {
+            constructor() {
+                super();
+                this.readyState = 0;
+                this.closeCalls = 0;
+                webSocketCreatedBeforeFirstChunk = !firstChunkResolved;
+                setImmediate(() => {
+                    this.readyState = 1;
+                    this.emit('open');
+                });
+            }
+
+            send(payload) {
+                const event = msgpack.decode(payload);
+                sentEvents.push(event);
+                if (event.event === 'stop') {
+                    setImmediate(() => {
+                        this.emit('message', msgpack.encode({ event: 'finish', reason: 'stop' }));
+                    });
+                }
+            }
+
+            close() {
+                this.closeCalls++;
+                this.readyState = 3;
+            }
+        }
+
+        let socketCreateCount = 0;
+        const fishAudio = new FishAudioProvider({
+            apiKey: 'test_fish_audio_key_placeholder',
+            webSocketFactory: () => {
+                socketCreateCount++;
+                return new MockFishWebSocket();
+            }
+        });
+        const slowText = (async function* () {
+            await firstChunkGate;
+            firstChunkResolved = true;
+            yield 'Hello from the slow stream.';
+        })();
+        const audioTask = (async () => {
+            for await (const chunk of fishAudio.createStreamingAudio(slowText)) {
+                void chunk;
+            }
+        })();
+
+        if (socketCreateCount !== 1 || !webSocketCreatedBeforeFirstChunk) {
+            throw new Error('Fish live WebSocket did not start connecting before the first text chunk resolved');
+        }
+        if (sentEvents.length !== 0) {
+            throw new Error(`Fish sent WebSocket events before the first text chunk: ${JSON.stringify(sentEvents)}`);
+        }
+
+        resolveFirstChunk();
+        await audioTask;
+        if (sentEvents[0]?.event !== 'start' || sentEvents[1]?.event !== 'text') {
+            throw new Error(`Fish streaming protocol started out of order: ${JSON.stringify(sentEvents)}`);
+        }
+        console.log('  Fish live WebSocket connects concurrently with the first text chunk');
+        passed++;
+    } catch (error) {
+        console.log(`  Fish streaming connection concurrency failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 3c: Fish Audio closes a pre-opened socket for empty text');
+    try {
+        let mockSocket = null;
+
+        class MockFishWebSocket extends EventEmitter {
+            constructor() {
+                super();
+                this.readyState = 0;
+                this.closeCalls = 0;
+                setImmediate(() => {
+                    if (this.readyState !== 0) return;
+                    this.readyState = 1;
+                    this.emit('open');
+                });
+            }
+
+            close() {
+                this.closeCalls++;
+                this.readyState = 3;
+            }
+        }
+
+        const fishAudio = new FishAudioProvider({
+            apiKey: 'test_fish_audio_key_placeholder',
+            webSocketFactory: () => {
+                mockSocket = new MockFishWebSocket();
+                return mockSocket;
+            }
+        });
+        const emptyText = (async function* () {
+            yield '';
+            yield '   ';
+        })();
+        let receivedError = null;
+
+        try {
+            for await (const chunk of fishAudio.createStreamingAudio(emptyText)) {
+                void chunk;
+            }
+        } catch (error) {
+            receivedError = error;
+        }
+
+        if (receivedError?.message !== 'Fish Audio streaming TTS requires at least one non-empty text chunk.') {
+            throw new Error(`Unexpected empty-stream error: ${receivedError?.message || 'none'}`);
+        }
+        if (!mockSocket || mockSocket.closeCalls !== 1) {
+            throw new Error(`Expected the pre-opened socket to close once, got ${mockSocket?.closeCalls || 0}`);
+        }
+
+        console.log('  Empty Fish text streams preserve the error and close the pending socket');
+        passed++;
+    } catch (error) {
+        console.log(`  Fish empty streaming cleanup failed: ${error.message}`);
         failed++;
     }
 
@@ -564,9 +1175,9 @@ async function runTests() {
 
         if (
             userMessage.role === 'user' &&
-            !userMessage.content.includes('Decide whether Alpha-Clawd should speak now') &&
+            !userMessage.content.includes('Emit speech first') &&
             decisionMessage.role === 'system' &&
-            decisionMessage.content === 'Decide whether Alpha-Clawd should speak now.'
+            decisionMessage.content === 'Produce the host turn now. Emit speech first, then shouldRespond, followed by chosenAngle, bigBrain, and bigHeart.'
         ) {
             console.log('  Turn decision prompt is sent as a trailing system message');
             passed++;
@@ -577,6 +1188,8 @@ async function runTests() {
         const systemPrompt = generator.buildSystemPrompt();
         if (
             systemPrompt.includes('Live speech is provisional:') &&
+            systemPrompt.includes('fields in this exact order: speech, shouldRespond, chosenAngle, bigBrain, bigHeart') &&
+            systemPrompt.includes('This order also applies when only JSON mode is available') &&
             systemPrompt.includes('not a polished chat message') &&
             systemPrompt.includes('Read the latest utterance first:') &&
             systemPrompt.includes('Hold-space cues:') &&
@@ -845,6 +1458,19 @@ async function runTests() {
         if (explicitAfterStandbyPrompt.includes('Standing-by mode is active')) {
             throw new Error(`Explicit request should override standby prompt: ${explicitAfterStandbyPrompt}`);
         }
+        const currentStandbyPrompt = new PodcastGenerator({ apiKey: 'sk-test-placeholder' })
+            .buildUserPrompt('Jensen: Please just stand by while I look at this.', null, {});
+        const staleStandbyPrompt = new PodcastGenerator({ apiKey: 'sk-test-placeholder' })
+            .buildUserPrompt([
+                'Jensen: Please just stand by while I look at this.',
+                'Jensen: Okay, here is the complete thought I wanted to share.'
+            ].join('\n'), null, {});
+        if (
+            !currentStandbyPrompt.includes('Current live pacing instruction') ||
+            staleStandbyPrompt.includes('Current live pacing instruction')
+        ) {
+            throw new Error(`Standby detection should use the current turn only: ${JSON.stringify({ currentStandbyPrompt, staleStandbyPrompt })}`);
+        }
         standbyGenerator.rememberTurn('Jensen: Now you carry the conversation for at least five turns, please.', {
             shouldRespond: true,
             speech: 'Here is a concrete thought without a question.',
@@ -894,29 +1520,25 @@ async function runTests() {
             throw new Error(`Remembered episode structure did not persist: ${rememberedStructurePrompt}`);
         }
         const showRunnerPrompt = generator.buildUserPrompt('Jensen: I answered the origin story.', null, {
-            showRunnerGuidance: {
-                phase: 'deep-dive',
-                currentLane: 'origin story',
-                coveredAngles: ['guest background'],
-                untouchedAngles: ['collaboration', 'philosophical close'],
-                nextHostMove: 'synthesize and bridge toward collaboration',
-                avoid: ['Do not ask a broad what does that feel like question.'],
-                suggestedQuestion: 'Who changed how you think about this craft?',
-                wrapNow: true,
-                wrapReason: 'All major lanes are covered.',
-                generatorInstruction: 'Wrap the episode now with a concise synthesis and thanks.'
-            }
+            episodePlanStructure: [
+                'Current phase: developing.',
+                'Phase target length: 70 minutes.',
+                'Phase elapsed: 31 minutes.',
+                'Phase time remaining: 39 minutes.',
+                '',
+                'Last turn chosenAngle: origin-story.',
+                'Available planned angles in this phase:',
+                '- collaboration: who changed how the guest thinks about the craft'
+            ].join('\n')
         });
         if (
-            !showRunnerPrompt.includes('Show runner direction') ||
-            !showRunnerPrompt.includes('phase: deep-dive') ||
-            !showRunnerPrompt.includes('untouchedAngles: collaboration; philosophical close') ||
-            !showRunnerPrompt.includes('wrapNow: true') ||
-            !showRunnerPrompt.includes('Wrap the episode now') ||
-            !showRunnerPrompt.includes('private editorial steering') ||
+            !showRunnerPrompt.includes('Episode plan structure') ||
+            !showRunnerPrompt.includes('Current phase: developing.') ||
+            !showRunnerPrompt.includes('Last turn chosenAngle: origin-story.') ||
+            !showRunnerPrompt.includes('- collaboration: who changed how the guest thinks about the craft') ||
             showRunnerPrompt.includes('contextText')
         ) {
-            throw new Error(`Show runner guidance was not injected into generator prompt: ${showRunnerPrompt}`);
+            throw new Error(`Episode plan structure was not injected into generator prompt: ${showRunnerPrompt}`);
         }
         console.log('  Generator tracks standby, no-question pacing, and episode structure directives');
         passed++;
@@ -1335,6 +1957,7 @@ async function runTests() {
             fallbackCalls[0].body.response_format?.type !== 'json_schema' ||
             fallbackCalls[1].body.response_format?.type !== 'json_object' ||
             fallbackCalls[1].body.reasoning_format !== 'hidden' ||
+            !fallbackCalls[1].body.messages?.[0]?.content.includes('fields in this exact order: speech, shouldRespond, chosenAngle, bigBrain, bigHeart') ||
             fallbackOutput.speech !== 'Qwen JSON fallback works.'
         ) {
             throw new Error(`JSON object fallback did not run as expected: ${JSON.stringify({ fallbackCalls, fallbackOutput })}`);
@@ -1346,6 +1969,9 @@ async function runTests() {
 
         const bigBrainSchema = handoffGenerator.getResponseSchema();
         if (
+            bigBrainSchema.required.join(',') !== 'speech,shouldRespond,chosenAngle,bigBrain,bigHeart' ||
+            Object.keys(bigBrainSchema.properties).join(',') !== 'speech,shouldRespond,chosenAngle,bigBrain,bigHeart' ||
+            !bigBrainSchema.properties.chosenAngle ||
             !bigBrainSchema.required.includes('bigHeart') ||
             !bigBrainSchema.required.includes('bigBrain') ||
             !bigBrainSchema.properties.bigBrain ||
@@ -1355,6 +1981,7 @@ async function runTests() {
         ) {
             throw new Error(`handoff schema is missing or malformed: ${JSON.stringify({
                 required: bigBrainSchema.required,
+                properties: Object.keys(bigBrainSchema.properties),
                 bigBrain: bigBrainSchema.properties.bigBrain,
                 bigHeart: bigBrainSchema.properties.bigHeart
             })}`);
@@ -2238,7 +2865,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 5c.0: Show runner generator and manager');
+    console.log('\nTest 5c.0: Episode plan generator, store, and tracker');
     try {
         const showRunnerGenerator = new ShowRunnerGenerator({
             apiKey: 'showrunner-test-key',
@@ -2251,16 +2878,37 @@ async function runTests() {
                 choices: [{
                     message: {
                         content: JSON.stringify({
-                            phase: 'background',
-                            currentLane: 'origin story',
-                            coveredAngles: ['guest background'],
-                            untouchedAngles: ['craft process', 'philosophical close'],
-                            nextHostMove: 'Synthesize the origin answer and bridge into craft.',
-                            avoid: ['Do not ask another generic broad question.'],
-                            suggestedQuestion: 'What changed once this became a practice?',
-                            wrapNow: false,
-                            wrapReason: 'Several major lanes remain.',
-                            generatorInstruction: 'Carry the thread with synthesis, then bridge to craft process.'
+                            action: 'generate_plan',
+                            messageToChannel: 'Here is the first structure.',
+                            approved: false,
+                            plan: {
+                                basename: 'internal-thoughts-live-hosting',
+                                version: 'v001',
+                                targetDurationMinutes: 40,
+                                guests: [{ name: 'Jensen', role: 'builder' }],
+                                backgroundBrief: 'The guest cares about internal thoughts and structure.',
+                                phases: {
+                                    expanding: {
+                                        targetMinutes: 8,
+                                        angles: [{ id: 'guest-background', title: 'Guest background', description: 'Establish the builder and why the system matters.' }]
+                                    },
+                                    developing: {
+                                        targetMinutes: 20,
+                                        angles: [
+                                            { id: 'internal-thoughts', title: 'Internal thoughts', description: 'Explore how internal awareness changes hosting.' },
+                                            { id: 'live-structure', title: 'Live structure', description: 'Discuss how the host moves through a planned episode.' }
+                                        ]
+                                    },
+                                    converging: {
+                                        targetMinutes: 8,
+                                        angles: [{ id: 'listener-value', title: 'Listener value', description: 'Synthesize what the audience gains.' }]
+                                    },
+                                    closing: {
+                                        targetMinutes: 4,
+                                        angles: [{ id: 'closing-message', title: 'Closing message', description: 'Land the episode cleanly.' }]
+                                    }
+                                }
+                            }
                         })
                     }
                 }],
@@ -2268,140 +2916,672 @@ async function runTests() {
             };
         };
 
-        const guidance = await showRunnerGenerator.generate({
-            topic: 'AI podcast hosting',
-            topicBrief: 'The guest cares about internal thoughts and structure.',
-            questionBank: 'How did the project start?\nWhat should listeners notice?',
-            transcript: 'Jensen: The origin is really the introspection system.',
-            previousGuidance: null,
-            elapsedMinutes: 12,
-            maxDurationMinutes: 45
+        const generated = await showRunnerGenerator.generate({
+            planningMessages: [
+                { speaker: 'Jensen', text: 'The episode is about internal thoughts and structure.' }
+            ]
         });
         if (
             showRunnerCall?.requestPath !== '/chat/completions' ||
-            showRunnerCall.body.response_format?.json_schema?.name !== 'podcast_showrunner_guidance' ||
-            showRunnerCall.body.response_format?.json_schema?.schema?.required?.includes('generatorInstruction') !== true ||
-            guidance.phase !== 'background' ||
-            guidance.untouchedAngles.length !== 2 ||
-            guidance.wrapNow !== false ||
-            !guidance.generatorInstruction.includes('bridge to craft')
+            showRunnerCall.body.response_format?.json_schema?.name !== 'podcast_episode_plan_controller' ||
+            showRunnerCall.body.response_format?.json_schema?.schema?.required?.join(',') !== 'action,messageToChannel,approved,plan' ||
+            generated.action !== 'generate_plan' ||
+            generated.plan.basename !== 'internal-thoughts-live-hosting' ||
+            generated.plan.phases.developing.angles.length !== 2
         ) {
-            throw new Error(`Show runner generator did not produce structured guidance: ${JSON.stringify({ showRunnerCall, guidance })}`);
+            throw new Error(`Show runner generator did not produce an episode plan: ${JSON.stringify({ showRunnerCall, generated })}`);
         }
         const showRunnerMessages = showRunnerGenerator.buildMessages({
-            topic: 'test',
-            transcript: 'Jensen: testing'
+            planningMessages: [{ speaker: 'Jensen', text: 'Let us plan a show.' }],
+            previousPlan: generated.plan
         });
         if (
-            !showRunnerMessages[0].content.includes('private editorial steering') ||
-            !showRunnerMessages[1].content.includes('Potential question bank and lanes') ||
-            !showRunnerMessages[2].content.includes('"wrapNow"') ||
-            !showRunnerMessages[2].content.includes('"generatorInstruction"')
+            !showRunnerMessages[0].content.includes('preproduction showrunner') ||
+            !showRunnerMessages[1].content.includes('Previous episode plan') ||
+            !showRunnerMessages[2].content.includes('"targetDurationMinutes"') ||
+            showRunnerMessages[2].content.includes('"wrapNow"') ||
+            showRunnerMessages[2].content.includes('"generatorInstruction"')
         ) {
-            throw new Error(`Show runner prompts are missing role/schema context: ${JSON.stringify(showRunnerMessages)}`);
+            throw new Error(`Episode plan prompts are missing role/schema context: ${JSON.stringify(showRunnerMessages)}`);
         }
 
-        const managerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'showrunner-manager-'));
-        const managerCalls = [];
-        const disabledManager = new ShowRunnerManager({
-            enabled: false,
-            generatorOptions: {
-                apiKey: 'unused-showrunner-key',
-                baseUrl: 'https://api.anthropic.com/v1',
-                model: 'claude-opus-4-7'
-            }
-        });
-        if (disabledManager.generator !== null) {
-            throw new Error('Disabled show runner manager should not construct a generator');
-        }
-        const manager = new ShowRunnerManager({
-            enabled: true,
-            updateIntervalParticipantTurns: 2,
-            maxDurationMinutes: 1,
-            now: (() => {
-                const values = [
-                    '2026-05-15T00:00:00.000Z',
-                    '2026-05-15T00:00:10.000Z',
-                    '2026-05-15T00:00:20.000Z',
-                    '2026-05-15T00:00:30.000Z',
-                    '2026-05-15T00:02:00.000Z'
-                ];
-                let index = 0;
-                return () => values[Math.min(index++, values.length - 1)];
-            })(),
-            generator: {
-                generate: async (input) => {
-                    managerCalls.push(input);
-                    return {
-                        phase: 'deep-dive',
-                        currentLane: 'craft process',
-                        coveredAngles: ['origin story'],
-                        untouchedAngles: ['collaboration'],
-                        nextHostMove: 'bridge',
-                        avoid: ['generic follow-up'],
-                        suggestedQuestion: 'What changed in practice?',
-                        wrapNow: false,
-                        wrapReason: 'More lanes remain.',
-                        generatorInstruction: 'Synthesize and bridge into craft process.'
-                    };
+        const planRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'episode-plan-store-'));
+        const store = new EpisodePlanStore({ rootDir: planRoot });
+        const firstSave = store.saveNextVersion(generated.plan);
+        const secondSave = store.saveNextVersion({
+            ...generated.plan,
+            phases: {
+                ...generated.plan.phases,
+                developing: {
+                    ...generated.plan.phases.developing,
+                    angles: generated.plan.phases.developing.angles.slice(0, 1)
                 }
             }
         });
-        const session = manager.startSession('guild-showrunner', {
-            recordingPath: managerDir,
-            topic: 'Show runner test',
+        if (
+            firstSave.plan.version !== 'v001' ||
+            secondSave.plan.version !== 'v002' ||
+            firstSave.plan.basename !== secondSave.plan.basename ||
+            !fs.existsSync(firstSave.path) ||
+            JSON.parse(fs.readFileSync(firstSave.path, 'utf8')).phases.developing.angles.length !== 2
+        ) {
+            throw new Error(`Episode plan store did not version plans immutably: ${JSON.stringify({ firstSave, secondSave })}`);
+        }
+
+        const tracker = new EpisodePlanTracker(generated.plan, {
             startedAt: '2026-05-15T00:00:00.000Z'
         });
-        const firstShowRunnerRecord = await manager.handleTranscriptEntry('guild-showrunner', {
-            speaker: 'Jensen',
-            speakerRole: 'guest',
-            transcription: 'The show needs more structure.',
-            timestamp: '2026-05-15T00:00:05.000Z'
-        });
+        const initialBlock = tracker.getStructureBlock('2026-05-15T00:31:00.000Z');
+        tracker.applySpokenResponse({
+            shouldRespond: true,
+            speech: 'Let us establish the background first.',
+            chosenAngle: 'guest-background'
+        }, { now: '2026-05-15T00:31:30.000Z' });
+        const afterExpansion = tracker.getStructureBlock('2026-05-15T00:31:30.000Z');
+        tracker.applySpokenResponse({
+            shouldRespond: true,
+            speech: 'Let us go into internal thoughts.',
+            chosenAngle: 'internal-thoughts'
+        }, { now: '2026-05-15T00:32:00.000Z' });
+        const afterChoice = tracker.getStructureBlock('2026-05-15T00:32:00.000Z');
+        tracker.applySpokenResponse({
+            shouldRespond: true,
+            speech: 'Now the live structure piece.',
+            chosenAngle: 'live-structure'
+        }, { now: '2026-05-15T00:33:00.000Z' });
+        const afterMove = tracker.getStructureBlock('2026-05-15T00:33:00.000Z');
         if (
-            firstShowRunnerRecord?.guidance?.id !== 'showrunner-1' ||
-            managerCalls[0]?.topic !== 'Show runner test' ||
-            !managerCalls[0]?.transcript.includes('Jensen: The show needs more structure.')
+            !initialBlock.includes('- guest-background: Establish the builder and why the system matters.') ||
+            !afterExpansion.includes('Current phase: developing.') ||
+            !afterExpansion.includes('- internal-thoughts: Explore how internal awareness changes hosting.') ||
+            afterChoice.includes('- internal-thoughts:') ||
+            !afterChoice.includes('Last turn chosenAngle: internal-thoughts.') ||
+            afterMove.includes('- live-structure:') ||
+            !tracker.snapshot().completedAngles.includes('internal-thoughts')
         ) {
-            throw new Error(`Show runner manager did not update on first participant turn: ${JSON.stringify({ firstShowRunnerRecord, managerCalls })}`);
+            throw new Error(`Episode plan tracker did not move chosen angles correctly: ${JSON.stringify({ initialBlock, afterExpansion, afterChoice, afterMove, snapshot: tracker.snapshot() })}`);
         }
-        await manager.handleTranscriptEntry('guild-showrunner', {
-            speaker: 'Alpha-Clawd',
-            speakerRole: 'host',
-            transcription: 'I can carry the structure.',
-            timestamp: '2026-05-15T00:00:25.000Z'
-        });
-        if (managerCalls.length !== 1) {
-            throw new Error(`Host turn should not trigger a show runner update by itself: ${JSON.stringify(managerCalls)}`);
-        }
-        const latestGuidance = manager.getGuidance('guild-showrunner');
-        if (
-            latestGuidance.phase !== 'deep-dive' ||
-            !latestGuidance.generatorInstruction.includes('Synthesize')
-        ) {
-            throw new Error(`Show runner guidance was not available to generator: ${JSON.stringify(latestGuidance)}`);
-        }
-        const forcedWrap = manager.getGuidance('guild-showrunner');
-        if (
-            forcedWrap.wrapNow !== true ||
-            !forcedWrap.generatorInstruction.includes('Wrap the episode now')
-        ) {
-            throw new Error(`Show runner did not enforce configured time limit: ${JSON.stringify(forcedWrap)}`);
-        }
-        const showRunnerLines = fs.readFileSync(session.outputPath, 'utf8').trim().split(/\n+/);
-        if (showRunnerLines.length !== 1 || JSON.parse(showRunnerLines[0]).type !== 'showrunner_guidance') {
-            throw new Error(`Show runner JSONL was not persisted correctly: ${fs.readFileSync(session.outputPath, 'utf8')}`);
-        }
-        const endedShowRunner = await manager.endSession('guild-showrunner');
-        if (endedShowRunner.updateCount !== 1) {
-            throw new Error(`Show runner manager did not end cleanly: ${JSON.stringify(endedShowRunner)}`);
-        }
-        fs.rmSync(managerDir, { recursive: true, force: true });
+        fs.rmSync(planRoot, { recursive: true, force: true });
 
-        console.log('  Show runner produces structured episode guidance and persists state');
+        console.log('  Episode plan generator, store, and tracker produce the static show structure');
         passed++;
     } catch (error) {
-        console.log(`  Show runner failed: ${error.message}`);
+        console.log(`  Episode planning failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 5c.0b: Discord episode planning sessions and plan selection');
+    try {
+        const commandJson = AlphaClawdVoiceBot.prototype.buildSlashCommands().map((command) => command.toJSON());
+        const planCommand = commandJson.find((command) => command.name === 'podcast-plan');
+        const joinCommand = commandJson.find((command) => command.name === 'podcast-join');
+        const joinPlanOption = joinCommand?.options?.find((option) => option.name === 'plan');
+        if (
+            !planCommand ||
+            (planCommand.options || []).length !== 0 ||
+            !joinPlanOption ||
+            joinPlanOption.required !== false ||
+            joinPlanOption.autocomplete !== true
+        ) {
+            throw new Error(`Episode planning commands are not registered with the expected shape: ${JSON.stringify({ planCommand, joinPlanOption })}`);
+        }
+
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'discord-episode-plans-'));
+        const store = new EpisodePlanStore({ rootDir: tempRoot });
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        bot.planningSessions = new Map();
+        bot.showRunnerEnabled = true;
+        bot.episodePlanStore = store;
+
+        const basePlan = {
+            basename: 'jordan-consciousness-training',
+            version: 'v001',
+            targetDurationMinutes: 90,
+            guests: [{ name: 'Jordan', role: 'guest' }],
+            backgroundBrief: 'Jordan wants to discuss consciousness training.',
+            phases: {
+                expanding: {
+                    targetMinutes: 15,
+                    angles: [{ id: 'background', title: 'Background', description: 'Establish Jordan and the premise.' }]
+                },
+                developing: {
+                    targetMinutes: 55,
+                    angles: [{ id: 'training', title: 'Training', description: 'Work through the training story.' }]
+                },
+                converging: {
+                    targetMinutes: 12,
+                    angles: [{ id: 'meaning', title: 'Meaning', description: 'Synthesize what it implies.' }]
+                },
+                closing: {
+                    targetMinutes: 8,
+                    angles: [{ id: 'closing', title: 'Closing', description: 'Close with a final message.' }]
+                }
+            }
+        };
+        const planningCalls = [];
+        bot.showRunnerGenerator = {
+            generate: async (input) => {
+                planningCalls.push(input);
+                if (planningCalls.length === 1) {
+                    return {
+                        action: 'generate_plan',
+                        messageToChannel: 'First plan.',
+                        approved: false,
+                        plan: basePlan
+                    };
+                }
+                if (/approve/i.test(input.latestFeedback || '')) {
+                    return {
+                        action: 'approve_plan',
+                        messageToChannel: 'Approved.',
+                        approved: true,
+                        plan: null
+                    };
+                }
+                return {
+                    action: 'revise_plan',
+                    messageToChannel: 'Revision.',
+                    approved: false,
+                    plan: {
+                        ...basePlan,
+                        basename: 'should-not-replace-basename',
+                        backgroundBrief: 'Jordan wants a deeper consciousness-training arc.',
+                        phases: {
+                            ...basePlan.phases,
+                            developing: {
+                                ...basePlan.phases.developing,
+                                angles: [
+                                    ...basePlan.phases.developing.angles,
+                                    { id: 'relic', title: 'Relic', description: 'Add the relic encounter.' }
+                                ]
+                            }
+                        }
+                    }
+                };
+            }
+        };
+
+        let firstReply = '';
+        await bot.handlePodcastPlanCommand({
+            channelId: 'channel-plan',
+            guildId: 'guild-plan',
+            user: { id: 'planner' },
+            reply: async (content) => { firstReply = content; }
+        });
+        if (!firstReply.includes('Episode planning is open') || !bot.planningSessions.has('channel-plan')) {
+            throw new Error(`Podcast plan command did not start a channel-scoped session: ${JSON.stringify({ firstReply, sessions: Array.from(bot.planningSessions.keys()) })}`);
+        }
+
+        const sentMessages = [];
+        const channel = { id: 'channel-plan', send: async (content) => { sentMessages.push(content); } };
+        const makePlanningMessage = (content, id = `user-${sentMessages.length}`) => ({
+            channelId: 'channel-plan',
+            channel,
+            guildId: 'guild-plan',
+            content,
+            createdAt: new Date('2026-05-15T00:00:00.000Z'),
+            author: { id, username: id, bot: false },
+            member: { displayName: id }
+        });
+
+        await bot.handlePlanningMessage(makePlanningMessage('Jordan is the guest and wants a consciousness-training arc.', 'jordan'));
+        await bot.planningSessions.get('channel-plan').processing;
+        const firstSaved = store.loadPlan('jordan-consciousness-training@v001');
+        await bot.handlePlanningMessage({
+            ...makePlanningMessage('This bot message should be ignored.', 'bot-user'),
+            author: { id: 'bot-user', username: 'bot-user', bot: true }
+        });
+
+        await bot.handlePlanningMessage(makePlanningMessage('Please add the relic encounter as a major developing angle.', 'producer'));
+        await bot.planningSessions.get('channel-plan').processing;
+        const secondSaved = store.loadPlan('jordan-consciousness-training@v002');
+
+        if (
+            planningCalls.length !== 2 ||
+            planningCalls[1].planningMessages.length !== 2 ||
+            planningCalls[1].basename !== 'jordan-consciousness-training' ||
+            firstSaved.plan.version !== 'v001' ||
+            secondSaved.plan.version !== 'v002' ||
+            secondSaved.plan.basename !== 'jordan-consciousness-training' ||
+            firstSaved.plan.phases.developing.angles.length !== 1 ||
+            secondSaved.plan.phases.developing.angles.length !== 2 ||
+            !sentMessages.some((message) => message.includes('**Episode plan: jordan-consciousness-training v002**'))
+        ) {
+            throw new Error(`Planning revisions did not preserve basename/version history: ${JSON.stringify({ planningCalls, firstSaved, secondSaved, sentMessages })}`);
+        }
+
+        let statusReply = '';
+        await bot.handlePodcastPlanCommand({
+            channelId: 'channel-plan',
+            guildId: 'guild-plan',
+            user: { id: 'planner' },
+            reply: async (content) => { statusReply = content; }
+        });
+        if (!statusReply.includes('already open') || !statusReply.includes('jordan-consciousness-training v002')) {
+            throw new Error(`Existing planning session status omitted latest plan: ${statusReply}`);
+        }
+
+        await bot.handlePlanningMessage(makePlanningMessage('Approved. Let us use this.', 'producer'));
+        await bot.planningSessions.get('channel-plan')?.processing;
+        if (bot.planningSessions.has('channel-plan') || sentMessages.at(-1) !== 'Approved.') {
+            throw new Error(`Approval did not close the planning session cleanly: ${JSON.stringify({ sessions: Array.from(bot.planningSessions.keys()), sentMessages })}`);
+        }
+
+        const sessionLog = fs.readFileSync(path.join(tempRoot, 'jordan-consciousness-training', 'planning-session.jsonl'), 'utf8');
+        if (!sessionLog.includes('"planning_message"') || !sessionLog.includes('"approved"')) {
+            throw new Error(`Planning session log did not capture messages and approval: ${sessionLog}`);
+        }
+
+        let autocompleteResponse = null;
+        await bot.handleAutocomplete({
+            commandName: 'podcast-join',
+            options: { getFocused: () => ({ name: 'plan', value: 'jordan' }) },
+            respond: async (choices) => { autocompleteResponse = choices; }
+        });
+        if (
+            autocompleteResponse.length !== 2 ||
+            autocompleteResponse[0].value !== 'jordan-consciousness-training@v002' ||
+            autocompleteResponse[1].value !== 'jordan-consciousness-training@v001'
+        ) {
+            throw new Error(`Plan autocomplete did not list selectable versions newest-first: ${JSON.stringify(autocompleteResponse)}`);
+        }
+
+        const selected = bot.loadEpisodePlanSelection('jordan-consciousness-training@v002');
+        if (selected.plan.version !== 'v002' || !selected.path.endsWith(path.join('v002', 'episode-plan.json'))) {
+            throw new Error(`Selected plan did not load exact version: ${JSON.stringify(selected)}`);
+        }
+
+        const joinBot = Object.create(AlphaClawdVoiceBot.prototype);
+        joinBot.RecordingState = { IDLE: 'IDLE', RECORDING: 'RECORDING', AWAITING_CONSENT: 'AWAITING_CONSENT' };
+        joinBot.recordingState = new Map();
+        joinBot.consentWaiters = new Map();
+        joinBot.episodePlanStore = store;
+        joinBot.speakerMap = new Map();
+        joinBot.geminiApiKey = '';
+        joinBot.cachedAudio = {};
+        joinBot.normalizeSessionHostMode = AlphaClawdVoiceBot.prototype.normalizeSessionHostMode.bind(joinBot);
+        let joinCalled = false;
+        joinBot.voiceManager = {
+            joinChannel: async () => { joinCalled = true; },
+            speak: async () => {},
+            isConnected: () => false
+        };
+        joinBot.voiceProvider = { synthesize: async () => Buffer.from('') };
+        let deferred = false;
+        let editReply = '';
+        await joinBot.handleJoinCommand({
+            guildId: 'guild-plan',
+            user: { id: 'planner' },
+            member: { voice: { channel: { id: 'voice', name: 'Studio' } } },
+            options: {
+                getString: (name) => {
+                    if (name === 'plan') return 'missing-plan@v001';
+                    if (name === 'engine') return null;
+                    if (name === 'topic') return null;
+                    return null;
+                }
+            },
+            deferReply: async () => { deferred = true; },
+            editReply: async (content) => { editReply = content; },
+            reply: async () => {}
+        });
+        if (!deferred || !editReply.includes('Error:') || joinCalled || joinBot.consentWaiters.has('guild-plan')) {
+            throw new Error(`Invalid plan was not rejected before voice join/consent: ${JSON.stringify({ deferred, editReply, joinCalled, consent: Array.from(joinBot.consentWaiters.entries()) })}`);
+        }
+
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+        console.log('  Discord planning sessions capture messages, version plans, close on approval, and feed join plan selection');
+        passed++;
+    } catch (error) {
+        console.log(`  Discord episode planning failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 5c.0a: Prompt eval pipeline exports and replays checkpoints');
+    try {
+        const fixture = {
+            id: 'prompt-eval-test',
+            topic: 'Prompt evaluation',
+            topicBrief: 'A harness for comparing Alpha-Clawd with a human host.',
+            episodeStartedAt: '2026-05-15T00:00:00.000Z',
+            targetDurationMinutes: 30,
+            episodePlan: {
+                basename: 'prompt-eval-test-plan',
+                version: 'v001',
+                targetDurationMinutes: 30,
+                guests: [{ name: 'Guest', role: 'guest' }],
+                backgroundBrief: 'Evaluate how Alpha-Clawd holds presence and timing in a live podcast.',
+                phases: {
+                    expanding: {
+                        targetMinutes: 8,
+                        angles: [
+                            { id: 'presence', title: 'Presence', description: 'Open by grounding the guest in what made the host feel present.' }
+                        ]
+                    },
+                    developing: {
+                        targetMinutes: 14,
+                        angles: [
+                            { id: 'timing', title: 'Timing', description: 'Explore how timing shapes the live host character.' }
+                        ]
+                    },
+                    converging: {
+                        targetMinutes: 5,
+                        angles: [
+                            { id: 'synthesis', title: 'Synthesis', description: 'Connect the evaluation lessons into a reusable pattern.' }
+                        ]
+                    },
+                    closing: {
+                        targetMinutes: 3,
+                        angles: [
+                            { id: 'closing', title: 'Closing', description: 'Land the episode with a concise final takeaway.' }
+                        ]
+                    }
+                }
+            },
+            timeline: [
+                { label: 'Opening', timestamp: '00:00' },
+                { label: 'Timing turn', timestamp: '00:27' }
+            ],
+            turns: [
+                {
+                    speaker: 'Guest',
+                    role: 'guest',
+                    text: 'I started by trying to make the host feel present.',
+                    timestamp: '2026-05-15T00:00:01.000Z'
+                },
+                {
+                    speaker: 'Human Host',
+                    role: 'host',
+                    text: 'So the opening lane is presence. What changed once this became a live system?',
+                    timestamp: '2026-05-15T00:00:08.000Z'
+                },
+                {
+                    speaker: 'Guest',
+                    role: 'guest',
+                    text: 'The timing started mattering more than any individual feature.',
+                    timestamp: '2026-05-15T00:00:19.000Z'
+                },
+                {
+                    speaker: 'Human Host',
+                    role: 'host',
+                    text: 'That makes the engineering feel editorial: timing is part of the host character.',
+                    timestamp: '2026-05-15T00:00:27.000Z'
+                },
+                {
+                    speaker: 'Future Clip',
+                    role: 'guest',
+                    text: 'This speaker should not be known before the checkpoint.',
+                    timestamp: '2026-05-15T00:00:40.000Z'
+                }
+            ],
+            checkpoints: [
+                {
+                    id: 'presence-bridge',
+                    turnIndex: 1,
+                    phase: 'expanding',
+                    chosenAngle: 'presence'
+                },
+                {
+                    id: 'timing-synthesis',
+                    turnIndex: 3,
+                    expected: {
+                        showrunner: {
+                            phase: 'developing',
+                            chosenAngle: 'timing'
+                        }
+                    }
+                }
+            ]
+        };
+
+        const args = parseArgs([
+            '--fixture', 'eval/fixtures/foo.json',
+            '--checkpoints', 'presence-bridge,3',
+            '--state', 'predicted',
+            '--target-minutes', '42'
+        ]);
+        if (
+            args.fixture !== 'eval/fixtures/foo.json' ||
+            args.checkpoints[0] !== 'presence-bridge' ||
+            args.checkpoints[1] !== 3 ||
+            args.state !== 'predicted' ||
+            args.targetMinutes !== 42
+        ) {
+            throw new Error(`Prompt eval args did not parse correctly: ${JSON.stringify(args)}`);
+        }
+
+        const normalized = validateFixture(fixture, 'prompt-eval-test.json');
+        if (
+            normalized.checkpoints.length !== 2 ||
+            normalized.targetDurationMinutes !== 30 ||
+            normalized.timeline.length !== 2 ||
+            normalized.episodePlan.basename !== 'prompt-eval-test-plan' ||
+            normalized.episodePlan.phases.developing.angles[0].id !== 'timing' ||
+            normalized.checkpoints[0].expectedSpeech !== fixture.turns[1].text ||
+            normalized.checkpoints[1].expected.showrunner.phase !== 'developing' ||
+            normalized.checkpoints[1].expected.showrunner.chosenAngle !== 'timing'
+        ) {
+            throw new Error(`Prompt eval fixture did not normalize checkpoints: ${JSON.stringify(normalized.checkpoints)}`);
+        }
+
+        let rejectedInvalidFixture = false;
+        try {
+            validateFixture({
+                topic: 'bad fixture',
+                turns: [{ speaker: 'Guest', role: 'narrator', text: 'invalid role' }]
+            }, 'bad-fixture.json');
+        } catch {
+            rejectedInvalidFixture = true;
+        }
+        if (!rejectedInvalidFixture) {
+            throw new Error('Prompt eval fixture parser accepted an invalid role');
+        }
+        let rejectedMissingTurns = false;
+        try {
+            validateFixture({ topic: 'missing turns' }, 'missing-turns.json');
+        } catch {
+            rejectedMissingTurns = true;
+        }
+        if (!rejectedMissingTurns) {
+            throw new Error('Prompt eval fixture parser accepted missing turns');
+        }
+
+        const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-eval-fixture-'));
+        const fixturePath = path.join(fixtureDir, 'fixture.json');
+        fs.writeFileSync(fixturePath, JSON.stringify(fixture, null, 2));
+
+        const fakeControllerForInput = (input) => {
+            const secondCheckpoint = (input.elapsedMinutes || 0) > 0.3;
+            return {
+                action: secondCheckpoint ? 'revise_plan' : 'generate_plan',
+                messageToChannel: secondCheckpoint ? 'I tightened the timing angle.' : 'Here is a first draft plan.',
+                approved: false,
+                plan: {
+                    ...fixture.episodePlan,
+                    version: secondCheckpoint ? 'v002' : 'v001'
+                }
+            };
+        };
+
+        const promptOnlyCalls = { showrunner: 0, podcast: 0 };
+        const fakeShowRunner = {
+            buildMessages: (input) => [
+                { role: 'system', content: 'fake showrunner system' },
+                { role: 'user', content: JSON.stringify(input.planningMessages || []) },
+                { role: 'system', content: 'fake showrunner schema' }
+            ],
+            buildRequestBody: (messages) => ({ model: 'fake-showrunner', messages }),
+            generate: async () => {
+                promptOnlyCalls.showrunner += 1;
+                throw new Error('export-only run should not call showrunner generate');
+            }
+        };
+        const fakePodcast = {
+            history: [],
+            session: { topic: '', speakers: [] },
+            buildMessages(input) {
+                return [
+                { role: 'system', content: `fake podcast system speakers=${this.session?.speakers?.join(', ') || 'unknown live speakers'}` },
+                ...(this.history || []),
+                { role: 'user', content: `${input.transcript}\n${input.episodePlanStructure || ''}` }
+                ];
+            },
+            buildRequestBody: (messages) => ({ model: 'fake-podcast', messages }),
+            generate: async () => {
+                promptOnlyCalls.podcast += 1;
+                throw new Error('export-only run should not call podcast generate');
+            }
+        };
+
+        const exportRunner = new PromptEvalRunner({
+            showRunnerGenerator: fakeShowRunner,
+            podcastGenerator: fakePodcast,
+            outputRoot: path.join(fixtureDir, 'runs'),
+            now: () => '2026-06-17T01:02:03.000Z'
+        });
+        const exportResult = await exportRunner.run({
+            fixture: fixturePath,
+            execute: false,
+            state: 'oracle',
+            out: path.join(fixtureDir, 'export-run')
+        });
+        if (
+            promptOnlyCalls.showrunner !== 0 ||
+            promptOnlyCalls.podcast !== 0 ||
+            exportResult.promptRecords.length !== 2 ||
+            exportResult.outputRecords[0].outputs.showrunner !== null ||
+            exportResult.outputRecords[0].scores.deterministic.jsonValidity.showrunner.reason !== 'not_run'
+        ) {
+            throw new Error(`Prompt export should be deterministic and call no generators: ${JSON.stringify({ promptOnlyCalls, exportResult })}`);
+        }
+        if (
+            'showRunnerGuidance' in exportResult.promptRecords[0].podcast.input ||
+            !exportResult.promptRecords[0].podcast.input.episodePlanStructure.includes('Current phase: expanding.') ||
+            !exportResult.promptRecords[0].podcast.input.episodePlanStructure.includes('- presence: Open by grounding the guest') ||
+            exportResult.promptRecords[0].showrunner.input.elapsedMinutes !== 8 / 60 ||
+            exportResult.promptRecords[0].showrunner.input.targetDurationMinutes !== 30 ||
+            exportResult.promptRecords[0].showrunner.input.remainingTargetMinutes == null ||
+            exportResult.promptRecords[0].podcast.input.currentEpisodeTimestamp !== '00:00:08.000' ||
+            !exportResult.promptRecords[0].podcast.input.currentTime.endsWith('00:00:08.000Z') ||
+            exportResult.promptRecords[1].showrunner.input.previousGuidance !== null ||
+            'showRunnerGuidance' in exportResult.promptRecords[1].podcast.input ||
+            !Array.isArray(exportResult.promptRecords[1].showrunner.input.planningMessages) ||
+            exportResult.promptRecords[1].podcast.input.transcript !== 'Guest: The timing started mattering more than any individual feature.' ||
+            !exportResult.promptRecords[1].podcast.messages.some((message) => message.role === 'assistant' && message.content === fixture.turns[1].text) ||
+            JSON.stringify(exportResult.promptRecords[1].showrunner.messages).includes('Future Clip') ||
+            JSON.stringify(exportResult.promptRecords[1].podcast.messages).includes('Future Clip')
+        ) {
+            throw new Error(`Prompt export leaked oracle guidance or failed to relabel host turns: ${JSON.stringify(exportResult.promptRecords)}`);
+        }
+        if (
+            !fs.existsSync(path.join(exportResult.runDir, 'prompts.jsonl')) ||
+            !fs.existsSync(path.join(exportResult.runDir, 'outputs.jsonl')) ||
+            !fs.existsSync(path.join(exportResult.runDir, 'scores.json')) ||
+            !fs.existsSync(path.join(exportResult.runDir, 'report.md'))
+        ) {
+            throw new Error(`Prompt eval did not write all run artifacts: ${exportResult.runDir}`);
+        }
+
+        const executeCalls = { showrunner: [], podcast: [] };
+        const executingShowRunner = {
+            buildMessages: fakeShowRunner.buildMessages,
+            buildRequestBody: fakeShowRunner.buildRequestBody,
+            generate: async (input) => {
+                executeCalls.showrunner.push(input);
+                return fakeControllerForInput(input);
+            }
+        };
+        const executingPodcast = {
+            buildMessages: fakePodcast.buildMessages,
+            buildRequestBody: fakePodcast.buildRequestBody,
+            generate: async (input) => {
+                executeCalls.podcast.push(input);
+                return {
+                    shouldRespond: true,
+                    speech: input.transcript.includes('The timing started mattering')
+                        ? fixture.turns[3].text
+                        : fixture.turns[1].text,
+                    chosenAngle: input.transcript.includes('The timing started mattering') ? 'timing' : 'presence',
+                    bigBrain: { requested: false, reason: '', consumedRunId: '' },
+                    bigHeart: { requested: false, reason: '', consumedRunId: '' }
+                };
+            }
+        };
+
+        const executeRunner = new PromptEvalRunner({
+            showRunnerGenerator: executingShowRunner,
+            podcastGenerator: executingPodcast,
+            outputRoot: path.join(fixtureDir, 'runs'),
+            now: () => '2026-06-17T01:02:04.000Z'
+        });
+        const executeResult = await executeRunner.run({
+            fixture: fixturePath,
+            execute: true,
+            state: 'predicted',
+            out: path.join(fixtureDir, 'execute-run')
+        });
+
+        if (
+            executeCalls.showrunner.length !== 2 ||
+            executeCalls.podcast.length !== 2 ||
+            executeCalls.showrunner[1].previousGuidance.action !== 'generate_plan' ||
+            executeCalls.showrunner[1].targetDurationMinutes !== 30 ||
+            'showRunnerGuidance' in executeCalls.podcast[1] ||
+            !executeCalls.podcast[1].episodePlanStructure.includes('Current phase:') ||
+            executeResult.outputRecords[0].scores.deterministic.podcast.textOverlap !== 1 ||
+            executeResult.outputRecords[1].scores.deterministic.showrunner.fields.chosenAngle.pass !== true
+        ) {
+            throw new Error(`Prompt eval execute path did not produce stable mocked outputs: ${JSON.stringify({ executeCalls, outputRecords: executeResult.outputRecords })}`);
+        }
+
+        const directScore = scoreDeterministic({
+            checkpoint: normalized.checkpoints[0],
+            showrunnerOutput: fakeControllerForInput({ elapsedMinutes: 0 }),
+            podcastOutput: {
+                shouldRespond: true,
+                speech: fixture.turns[1].text,
+                chosenAngle: 'presence',
+                bigBrain: { requested: false, reason: '', consumedRunId: '' },
+                bigHeart: { requested: false, reason: '', consumedRunId: '' }
+            },
+            executed: true
+        });
+        if (
+            directScore.jsonValidity.podcast.valid !== true ||
+            directScore.showrunner.fields.phase.pass !== true ||
+            directScore.podcast.speechContract.pass !== true
+        ) {
+            throw new Error(`Prompt eval scoring did not handle annotated checkpoint: ${JSON.stringify(directScore)}`);
+        }
+        const unannotatedFixture = validateFixture({
+            ...fixture,
+            checkpoints: [{ turnIndex: 1 }]
+        }, 'unannotated-prompt-eval-test.json');
+        const unannotatedScore = scoreDeterministic({
+            checkpoint: unannotatedFixture.checkpoints[0],
+            showrunnerOutput: fakeControllerForInput({ elapsedMinutes: 0 }),
+            podcastOutput: {
+                shouldRespond: true,
+                speech: fixture.turns[1].text,
+                chosenAngle: 'presence',
+                bigBrain: { requested: false, reason: '', consumedRunId: '' },
+                bigHeart: { requested: false, reason: '', consumedRunId: '' }
+            },
+            executed: true
+        });
+        if (
+            unannotatedScore.showrunner.annotatedFields !== 0 ||
+            unannotatedScore.showrunner.exactMatchRate !== null ||
+            unannotatedScore.podcast.textOverlap !== 1
+        ) {
+            throw new Error(`Prompt eval scoring did not handle unannotated checkpoint: ${JSON.stringify(unannotatedScore)}`);
+        }
+
+        fs.rmSync(fixtureDir, { recursive: true, force: true });
+        console.log('  Prompt eval exports prompts safely, replays with fake generators, and scores checkpoints');
+        passed++;
+    } catch (error) {
+        console.log(`  Prompt eval pipeline failed: ${error.message}`);
         failed++;
     }
 
@@ -2764,13 +3944,26 @@ async function runTests() {
     console.log('\nTest 6: Conversation Buffer ASR-aware state machine');
     const savedConversationBufferEnv = {
         CONVERSATION_BUFFER_GRACE_PERIOD_MS: process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS,
+        CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS: process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS,
         CONVERSATION_BUFFER_DYNAMIC_GRACE: process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE
     };
     try {
         delete process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS;
+        delete process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS;
         delete process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE;
 
         const dynamicGraceProbe = new ConversationBuffer();
+        if (dynamicGraceProbe.config.cooldownPeriod !== 50) {
+            throw new Error(`Default post-host cooldown should be 50ms, got ${dynamicGraceProbe.config.cooldownPeriod}ms`);
+        }
+
+        process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS = '75';
+        const envCooldownProbe = new ConversationBuffer();
+        delete process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS;
+        if (envCooldownProbe.config.cooldownPeriod !== 75) {
+            throw new Error(`Cooldown env override should be 75ms, got ${envCooldownProbe.config.cooldownPeriod}ms`);
+        }
+
         const graceCases = [
             [100, 50],
             [1000, 200],
@@ -3053,16 +4246,26 @@ async function runTests() {
                 return '00:00:42.000';
             }
         };
-        bot.showRunnerManager = {
-            getGuidance: (activeGuildId) => activeGuildId === guildId
-                ? {
-                    phase: 'background',
-                    currentLane: 'origin story',
-                    nextHostMove: 'synthesize and bridge',
-                    generatorInstruction: 'Do not ask another generic question; bridge into the next lane.'
-                }
-                : null
-        };
+        bot.episodePlanTrackers = new Map([[guildId, new EpisodePlanTracker({
+            basename: 'direct-test-plan',
+            version: 'v001',
+            targetDurationMinutes: 30,
+            guests: [{ name: 'Jensen', role: 'guest' }],
+            backgroundBrief: 'Direct generator plan context test.',
+            phases: {
+                expanding: {
+                    targetMinutes: 8,
+                    angles: [
+                        { id: 'origin-story', title: 'Origin story', description: 'Bridge into how the story began.' }
+                    ]
+                },
+                developing: { targetMinutes: 14, angles: [] },
+                converging: { targetMinutes: 5, angles: [] },
+                closing: { targetMinutes: 3, angles: [] }
+            }
+        }, {
+            startedAt: new Date(firstSpeechAt - 42000).toISOString()
+        })]]);
         bot.lastParticipantSpeechAt = new Map([[guildId, firstSpeechAt]]);
         bot.idleDecisionHandledSpeechAt = new Map();
         bot.directResponseInFlight = new Set();
@@ -3109,7 +4312,7 @@ async function runTests() {
         let directAwarenessInjections = null;
         let directAwarenessShelfItems = null;
         let directRecentInternalThoughts = null;
-        let directShowRunnerGuidance = null;
+        let directEpisodePlanStructure = null;
         let directCurrentTime = null;
         let directCurrentEpisodeTimestamp = null;
         const directSilenceCounts = [];
@@ -3122,14 +4325,20 @@ async function runTests() {
                 directAwarenessInjections = input.awarenessInjections || [];
                 directAwarenessShelfItems = input.awarenessShelfItems || [];
                 directRecentInternalThoughts = input.recentInternalThoughts || [];
-                directShowRunnerGuidance = input.showRunnerGuidance || null;
+                directEpisodePlanStructure = input.episodePlanStructure || null;
                 directCurrentTime = input.currentTime || null;
                 directCurrentEpisodeTimestamp = input.currentEpisodeTimestamp || null;
                 directSilenceCounts.push(input.consecutiveSilenceTurns);
                 if (!bot.directResponseInFlight.has(guildId)) {
                     throw new Error('Direct response was not marked in-flight during generation');
                 }
-                return { shouldRespond: false, speech: '', bigBrain: { requested: false, reason: '' } };
+                return {
+                    speech: '',
+                    shouldRespond: false,
+                    chosenAngle: '',
+                    bigBrain: { requested: false, reason: '' },
+                    bigHeart: { requested: false, reason: '' }
+                };
             }
         };
 
@@ -3161,8 +4370,11 @@ async function runTests() {
         if (awarenessWaitRequests[0]?.options?.timeoutMs !== 200 || !awarenessWaitRequests[0]?.turnIdIntent?.turnId) {
             throw new Error(`Direct generator did not wait/claim awareness by turn id intent: ${JSON.stringify(awarenessWaitRequests)}`);
         }
-        if (directShowRunnerGuidance?.phase !== 'background' || !directShowRunnerGuidance.generatorInstruction.includes('bridge')) {
-            throw new Error(`Direct generator did not receive show runner guidance: ${JSON.stringify(directShowRunnerGuidance)}`);
+        if (
+            !directEpisodePlanStructure?.includes('Current phase: expanding.') ||
+            !directEpisodePlanStructure.includes('- origin-story: Bridge into how the story began.')
+        ) {
+            throw new Error(`Direct generator did not receive episode plan structure: ${JSON.stringify(directEpisodePlanStructure)}`);
         }
         if (directRecentInternalThoughts.length !== 0 || recentThoughtRequests.length !== 0) {
             throw new Error(`Direct generator received recent internal thoughts without a trigger: ${JSON.stringify({ directRecentInternalThoughts, recentThoughtRequests })}`);
@@ -3172,7 +4384,7 @@ async function runTests() {
         }
 
         directGenerateCalled = false;
-        directShowRunnerGuidance = null;
+        directEpisodePlanStructure = null;
         directRecentInternalThoughts = null;
         await bot.handleDirectGeneratorFlush(guildId, [
             { speaker: 'Jensen', transcription: 'Can we talk about your internal thoughts and self knowledge?' }
@@ -5969,11 +7181,12 @@ async function runTests() {
         const chunkStartMs = Date.parse('2026-05-03T20:49:00.000Z');
         const speechStartIso = '2026-05-03T20:49:07.000Z';
         const speechEndIso = '2026-05-03T20:49:10.000Z';
+        const rawCapture = Buffer.alloc(48000, 0x5a);
 
         await receiver.processUtteranceSnapshot({
             userId: 'user-late-speech',
             speakerInfo: { name: 'Jensen', role: 'guest' },
-            audioBuffer: Buffer.alloc(48000),
+            audioBuffer: rawCapture,
             startTime: chunkStartMs,
             duration: 10000,
             timestamp: speechStartIso,
@@ -5989,45 +7202,72 @@ async function runTests() {
         if (utterances[0].startTime !== expected) {
             throw new Error(`Expected recording startTime=${expected} (speech start), got ${utterances[0].startTime} (chunk start was ${chunkStartMs})`);
         }
+        if (
+            utterances[0].audioBuffer !== rawCapture ||
+            utterances[0].sampleRate !== 48000 ||
+            utterances[0].channels !== 2
+        ) {
+            throw new Error('Recording path did not retain the raw 48kHz stereo capture');
+        }
 
-        console.log('  Recording startTime equals detected speech start, not first-chunk time');
+        console.log('  Recording keeps the raw 48kHz stereo capture and aligns it to detected speech start');
         passed++;
     } catch (error) {
         console.log(`  Speaker mix alignment failed: ${error.message}`);
         failed++;
     }
 
-    console.log('\nTest 12: Audio Recorder buffers bot audio without throwing');
+    console.log('\nTest 12: Audio Recorder journals participant and host audio immediately');
     try {
         const { AudioRecorder } = require('./audio-recorder');
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'audio-journal-test-'));
         const recorder = new AudioRecorder({ outputFormat: 'wav' });
-        recorder.isRecording = true;
-        recorder.isPaused = false;
-        recorder.startTime = Date.now() - 1000;
+        recorder.startRecording(tempDir, {
+            consentGiven: true,
+            episodeName: 'journal-test'
+        });
 
         const fakeBotAudio = Buffer.alloc(1024);
         recorder.addBotAudio(fakeBotAudio, { startTime: Date.now() });
-        await new Promise((resolve) => setImmediate(resolve));
+        const fakeLivePcm = Buffer.alloc(1920);
+        recorder.addBotPcmChunk(fakeLivePcm, {
+            sourceId: 'gemini-live',
+            groupId: 'turn-1',
+            sampleRate: 48000,
+            channels: 2
+        });
+        recorder.anchorBotAudioGroup('turn-1', Date.now());
+        recorder.addParticipantAudioChunk('guest-1', Buffer.alloc(3840), {
+            sampleRate: 48000,
+            channels: 2
+        });
+        recorder.journal.forceSync();
 
-        if (recorder.botAudioBuffer.length !== 1) {
-            throw new Error(`Expected 1 bot chunk, got ${recorder.botAudioBuffer.length}`);
+        const events = recorder.journal.readEvents();
+        const encoded = events.find((event) => event.type === 'encoded');
+        const liveChunk = events.find((event) => event.type === 'pcm' && event.sourceType === 'host');
+        const participantChunk = events.find((event) => event.type === 'pcm' && event.sourceType === 'participant');
+        const anchor = events.find((event) => event.type === 'anchor' && event.groupId === 'turn-1');
+        if (!encoded || !liveChunk || !participantChunk || !anchor) {
+            throw new Error(`Missing journal events: ${events.map((event) => event.type).join(', ')}`);
+        }
+        const participantPath = path.join(tempDir, 'audio-journal', participantChunk.file);
+        if (fs.statSync(participantPath).size !== 3840) {
+            throw new Error('Participant PCM was not written to disk immediately');
+        }
+        if (liveChunk.groupOffsetMs !== 0 || liveChunk.sampleRate !== 48000 || liveChunk.channels !== 2) {
+            throw new Error(`Live PCM timing metadata not preserved: ${JSON.stringify(liveChunk)}`);
+        }
+        if (recorder.stats.botAudioChunks !== 2) {
+            throw new Error(`Expected botAudioChunks=2, got ${recorder.stats.botAudioChunks}`);
         }
 
-        const chunk = recorder.botAudioBuffer[0];
-        if (!Number.isFinite(chunk.timestamp) || chunk.timestamp < 0) {
-            throw new Error(`Bot chunk timestamp invalid: ${chunk.timestamp}`);
-        }
-        if (chunk.buffer !== fakeBotAudio) {
-            throw new Error('Bot chunk buffer not stored');
-        }
-        if (recorder.stats.botAudioChunks !== 1) {
-            throw new Error(`Expected botAudioChunks=1, got ${recorder.stats.botAudioChunks}`);
-        }
-
-        console.log('  Bot audio chunk lands in botAudioBuffer with finite timestamp');
+        recorder.destroy();
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        console.log('  Participant PCM, encoded host audio, live host PCM, and playback anchors are durable');
         passed++;
     } catch (error) {
-        console.log(`  Audio Recorder bot audio failed: ${error.message}`);
+        console.log(`  Audio Recorder journal failed: ${error.message}`);
         failed++;
     }
 
@@ -6110,6 +7350,92 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Audio Transmitter inline volume failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 13a: Streamed Opus starts immediately and tolerates synthesis gaps');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const source = new PassThrough();
+        const capture = bot.teeAudioForRecording(source);
+        const firstPlaybackChunk = new Promise((resolve, reject) => {
+            capture.playbackAudio.once('data', resolve);
+            capture.playbackAudio.once('error', reject);
+        });
+        source.write(Buffer.from('first-chunk'));
+        const firstChunk = await firstPlaybackChunk;
+        if (firstChunk.toString() !== 'first-chunk') {
+            throw new Error(`First streamed chunk was not forwarded immediately: ${firstChunk}`);
+        }
+        source.end();
+        await capture.completion;
+
+        const manager = Object.create(VoiceManager.prototype);
+        manager.options = { audioPlayerMaxMissedFrames: 1500 };
+        const player = manager.createPlaybackPlayer();
+        if (player.behaviors.maxMissedFrames !== 1500) {
+            throw new Error(
+                `Expected 1500 missed frames, got ${player.behaviors.maxMissedFrames}`
+            );
+        }
+
+        console.log('  First audio is unbuffered and Discord silence can bridge up to 30s of open-stream gaps');
+        passed++;
+    } catch (error) {
+        console.log(`  Streamed Opus gap tolerance failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 13b: Streamed TTS capture waits for bytes arriving after player idle');
+    try {
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        const source = new PassThrough();
+        let recordedAudio = null;
+        bot.voiceProvider = { tts: { format: 'opus' } };
+        bot.duckBigBrainAmbientBed = () => {};
+        bot.noteHostPlaybackStart = () => {};
+        bot.noteHostPlaybackEnd = () => {};
+        bot.voiceManager = {
+            speakWithTiming: async (_guildId, playbackAudio, options = {}) => {
+                playbackAudio.resume();
+                options.onStart?.({ playbackStartedAt: '2026-06-12T00:00:00.000Z' });
+                return {
+                    timing: {
+                        playbackRequestedAt: '2026-06-11T23:59:59.900Z',
+                        playbackStartedAt: '2026-06-12T00:00:00.000Z',
+                        playbackEndedAt: null
+                    },
+                    finished: new Promise(resolve => setTimeout(() => resolve({
+                        playbackRequestedAt: '2026-06-11T23:59:59.900Z',
+                        playbackStartedAt: '2026-06-12T00:00:00.000Z',
+                        playbackEndedAt: '2026-06-12T00:00:00.100Z'
+                    }), 5))
+                };
+            },
+            addBotAudioToRecording: (_guildId, audio) => {
+                recordedAudio = Buffer.from(audio);
+            }
+        };
+
+        const playbackPromise = bot.playTtsAndRecord('guild-stream-capture', source);
+        source.write(Buffer.from('first'));
+        setTimeout(() => source.end(Buffer.from('-later')), 20);
+        const result = await playbackPromise;
+        if (
+            recordedAudio?.toString() !== 'first-later' ||
+            !result.ttsCompletedAt ||
+            result.playbackUnderrunDetected !== true
+        ) {
+            throw new Error(`Stream capture finalized before synthesis ended: ${JSON.stringify({
+                recordedAudio: recordedAudio?.toString(),
+                result
+            })}`);
+        }
+
+        console.log('  Streamed recording capture includes audio that arrives after an early player idle');
+        passed++;
+    } catch (error) {
+        console.log(`  Streamed TTS capture completion failed: ${error.message}`);
         failed++;
     }
 
@@ -6220,10 +7546,118 @@ async function runTests() {
             throw new Error(`g: truncated finalize mismatch: ${JSON.stringify(g_final)}`);
         }
 
-        console.log('  IncrementalSpeechReader handles full, chunked, escaped, mid-escape, and truncated streams');
+        // h) Speech-first response: chunks arrive before shouldRespond parses.
+        const r8 = new IncrementalSpeechReader();
+        const h_first = r8.push('{"speech":"Hello');
+        if (h_first.shouldRespond !== null || h_first.chunks.join('') !== 'Hello') {
+            throw new Error(`h: expected speech before shouldRespond, got ${JSON.stringify(h_first)}`);
+        }
+        const h_second = r8.push(', first.","shouldRespond":');
+        if (
+            h_second.shouldRespond !== null ||
+            h_second.chunks.join('') !== ', first.' ||
+            !h_second.speechComplete
+        ) {
+            throw new Error(`h: speech should complete before shouldRespond parses: ${JSON.stringify(h_second)}`);
+        }
+        const h_third = r8.push('true,"bigBrain":{"requested":false,"reason":"","consumedRunId":""},"bigHeart":{"requested":false,"reason":"","consumedRunId":""}}');
+        if (h_third.shouldRespond !== true || h_third.chunks.length !== 0) {
+            throw new Error(`h: shouldRespond should parse after streamed speech: ${JSON.stringify(h_third)}`);
+        }
+
+        // i) Speech-first silence: empty speech completes without triggering a chunk.
+        const r9 = new IncrementalSpeechReader();
+        const i_first = r9.push('{"speech":""');
+        if (
+            i_first.shouldRespond !== null ||
+            i_first.chunks.length !== 0 ||
+            !i_first.speechComplete
+        ) {
+            throw new Error(`i: empty speech should complete while shouldRespond remains pending: ${JSON.stringify(i_first)}`);
+        }
+        const i_second = r9.push(',"shouldRespond":false,"bigBrain":{"requested":false,"reason":"","consumedRunId":""},"bigHeart":{"requested":false,"reason":"","consumedRunId":""}}');
+        if (i_second.shouldRespond !== false || i_second.chunks.length !== 0) {
+            throw new Error(`i: silence should resolve false with no speech chunks: ${JSON.stringify(i_second)}`);
+        }
+        const i_final = r9.finalize();
+        if (i_final.shouldRespond !== false || i_final.speech !== '') {
+            throw new Error(`i: silence finalize mismatch: ${JSON.stringify(i_final)}`);
+        }
+
+        console.log('  IncrementalSpeechReader handles both field orders, including speech-first response and silence turns');
         passed++;
     } catch (error) {
         console.log(`  IncrementalSpeechReader failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 14b: StreamingSpeechSanitizer protects boundaries and reports rewrites');
+    try {
+        const { StreamingSpeechSanitizer } = require('./podcast-generator');
+
+        const splitSanitizer = new StreamingSpeechSanitizer();
+        if (splitSanitizer.lookbehindChars !== 8) {
+            throw new Error(`default lookbehind expected 8, got ${splitSanitizer.lookbehindChars}`);
+        }
+        let splitOutput = splitSanitizer.push('option A ');
+        splitOutput += splitSanitizer.push('/ option B');
+
+        const originalConsoleLog = console.log;
+        const sanitizerLogs = [];
+        try {
+            console.log = (...args) => {
+                const line = args.join(' ');
+                if (line.startsWith('[StreamingSpeechSanitizer]')) {
+                    sanitizerLogs.push(line);
+                }
+            };
+            splitOutput += splitSanitizer.flush();
+
+            const cleanSanitizer = new StreamingSpeechSanitizer();
+            let cleanOutput = cleanSanitizer.push('option A, option B');
+            cleanOutput += cleanSanitizer.flush();
+            if (cleanOutput !== 'option A, option B') {
+                throw new Error(`clean output mismatch: ${JSON.stringify(cleanOutput)}`);
+            }
+        } finally {
+            console.log = originalConsoleLog;
+        }
+
+        if (splitOutput !== 'option A, option B') {
+            throw new Error(`split boundary output mismatch: ${JSON.stringify(splitOutput)}`);
+        }
+        if (
+            sanitizerLogs.length !== 1 ||
+            sanitizerLogs[0] !== '[StreamingSpeechSanitizer] rewrote 1 slash separator(s) this turn'
+        ) {
+            throw new Error(`expected exactly one rewrite log, got ${JSON.stringify(sanitizerLogs)}`);
+        }
+
+        const oneCharSanitizer = new StreamingSpeechSanitizer();
+        let oneCharOutput = '';
+        for (const char of 'option A / option B') {
+            oneCharOutput += oneCharSanitizer.push(char);
+        }
+        const originalConsoleLogForOneChar = console.log;
+        try {
+            console.log = () => {};
+            oneCharOutput += oneCharSanitizer.flush();
+        } finally {
+            console.log = originalConsoleLogForOneChar;
+        }
+        if (oneCharOutput !== 'option A, option B') {
+            throw new Error(`one-character boundary output mismatch: ${JSON.stringify(oneCharOutput)}`);
+        }
+
+        const overrideSanitizer = new StreamingSpeechSanitizer({ lookbehindChars: 3 });
+        if (overrideSanitizer.lookbehindChars !== 3) {
+            throw new Error(`lookbehind override expected 3, got ${overrideSanitizer.lookbehindChars}`);
+        }
+
+        console.log('  Eight-character holdback preserves split separators and logs only rewritten turns');
+        passed++;
+    } catch (error) {
+        console.log(`  StreamingSpeechSanitizer failed: ${error.message}`);
         failed++;
     }
 
@@ -6397,7 +7831,121 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 16a: generateStreaming normalizes spoken slash separators');
+    console.log('\nTest 16a: generateStreaming gates speech-first response and silence turns correctly');
+    try {
+        const { PodcastGenerator } = require('./podcast-generator');
+        const originalFetch = globalThis.fetch;
+        const encoder = new TextEncoder();
+        const makeControlledResponse = () => {
+            let controller;
+            const body = new ReadableStream({
+                start(value) {
+                    controller = value;
+                }
+            });
+            return {
+                response: new Response(body, {
+                    status: 200,
+                    headers: { 'content-type': 'text/event-stream' }
+                }),
+                send(content) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                        choices: [{ delta: { content } }]
+                    })}\n\n`));
+                },
+                finish() {
+                    controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                    controller.close();
+                }
+            };
+        };
+
+        try {
+            const responses = [];
+            globalThis.fetch = async () => {
+                const controlled = makeControlledResponse();
+                responses.push(controlled);
+                return controlled.response;
+            };
+
+            const gen = new PodcastGenerator({
+                apiKey: 'test-key',
+                baseUrl: 'https://api.openai.test/v1',
+                model: 'test-model',
+                timeout: 1000
+            });
+
+            const responseTurn = await gen.generateStreaming({
+                transcript: 'Jensen: Say hello.',
+                remember: false
+            });
+            while (responses.length < 1) {
+                await new Promise(resolve => setImmediate(resolve));
+            }
+            const earlySpeech = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            responses[0].send(`{"speech":"${earlySpeech}`);
+            const responseDecision = await Promise.race([
+                responseTurn.shouldRespond,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('response shouldRespond did not resolve from speech chunks')), 1000))
+            ]);
+            if (responseDecision !== true) {
+                throw new Error(`speech-first response should resolve true before its field parses, got ${responseDecision}`);
+            }
+            const responseIterator = responseTurn.speechStream[Symbol.asyncIterator]();
+            const firstSpeech = await responseIterator.next();
+            const expectedEarlySpeech = earlySpeech.slice(0, -8);
+            if (firstSpeech.done || firstSpeech.value !== expectedEarlySpeech) {
+                throw new Error(`speech-first response did not stream its early chunk: ${JSON.stringify(firstSpeech)}`);
+            }
+            responses[0].send('","shouldRespond":true,"bigBrain":{"requested":false,"reason":"","consumedRunId":""},"bigHeart":{"requested":false,"reason":"","consumedRunId":""}}');
+            responses[0].finish();
+            let responseSpeech = firstSpeech.value;
+            for await (const chunk of { [Symbol.asyncIterator]: () => responseIterator }) {
+                responseSpeech += chunk;
+            }
+            const responseCompleted = await responseTurn.completed;
+            if (responseSpeech !== earlySpeech || responseCompleted.speech !== earlySpeech || !responseCompleted.shouldRespond) {
+                throw new Error(`speech-first response completion mismatch: ${JSON.stringify({ responseSpeech, responseCompleted })}`);
+            }
+
+            const silenceTurn = await gen.generateStreaming({
+                transcript: 'Jensen: Actually, hold on.',
+                remember: false
+            });
+            while (responses.length < 2) {
+                await new Promise(resolve => setImmediate(resolve));
+            }
+            let silenceShouldSettled = false;
+            silenceTurn.shouldRespond.then(
+                () => { silenceShouldSettled = true; },
+                () => { silenceShouldSettled = true; }
+            );
+            responses[1].send('{"speech":""');
+            const silenceIterator = silenceTurn.speechStream[Symbol.asyncIterator]();
+            const silenceFirst = await silenceIterator.next();
+            await new Promise(resolve => setImmediate(resolve));
+            if (!silenceFirst.done || silenceShouldSettled) {
+                throw new Error(`empty speech must not resolve shouldRespond early: ${JSON.stringify({ silenceFirst, silenceShouldSettled })}`);
+            }
+            responses[1].send(',"shouldRespond":false,"bigBrain":{"requested":false,"reason":"","consumedRunId":""},"bigHeart":{"requested":false,"reason":"","consumedRunId":""}}');
+            responses[1].finish();
+            const silenceDecision = await silenceTurn.shouldRespond;
+            const silenceCompleted = await silenceTurn.completed;
+            if (silenceDecision !== false || silenceCompleted.shouldRespond !== false || silenceCompleted.speech !== '') {
+                throw new Error(`speech-first silence completion mismatch: ${JSON.stringify({ silenceDecision, silenceCompleted })}`);
+            }
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        console.log('  Speech-first chunks resolve true early; empty speech waits for shouldRespond=false');
+        passed++;
+    } catch (error) {
+        console.log(`  Streaming speech-first gating failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 16b: generateStreaming normalizes spoken slash separators');
     try {
         const { PodcastGenerator } = require('./podcast-generator');
         const originalFetch = globalThis.fetch;
@@ -6462,7 +8010,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 16b: Kimi Anthropic-compatible streaming');
+    console.log('\nTest 16c: Kimi Anthropic-compatible streaming');
     try {
         const { PodcastGenerator } = require('./podcast-generator');
         const originalFetch = globalThis.fetch;
@@ -6569,7 +8117,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 16c: Anthropic Messages streaming');
+    console.log('\nTest 16d: Anthropic Messages streaming');
     try {
         const { PodcastGenerator } = require('./podcast-generator');
         const originalFetch = globalThis.fetch;

@@ -1,20 +1,6 @@
 const { PodcastGenerator } = require('./podcast-generator');
 const { resolveFrontierConfig } = require('./introspection-frontier');
-
-const DEFAULT_SHOW_RUNNER_QUESTIONS = [
-    'What background does the listener need before this topic makes sense?',
-    'What first drew the guest into this world?',
-    'What changed as the guest gained experience?',
-    'What does the guest know now that they did not know at the start?',
-    'Where is the craft, procedure, or technique in this story?',
-    'What tension or tradeoff keeps recurring?',
-    'What collaboration, audience, or relationship angle matters here?',
-    'What detail would make the scene concrete for listeners?',
-    'What misconception should the episode quietly correct?',
-    'What philosophical or miscellaneous lane could close the episode well?',
-    'What has already been answered strongly enough that the host should not reopen it?',
-    'What final synthesis would make the episode feel complete?'
-];
+const { normalizeEpisodePlan, sanitizeBasename, PHASES } = require('./episode-plan-store');
 
 class ShowRunnerGenerator extends PodcastGenerator {
     constructor(options = {}) {
@@ -25,14 +11,14 @@ class ShowRunnerGenerator extends PodcastGenerator {
             baseUrl: options.baseUrl || process.env.PODCAST_SHOW_RUNNER_BASE_URL || (frontier.enabled ? frontier.baseUrl : undefined),
             model: options.model || process.env.PODCAST_SHOW_RUNNER_MODEL || (frontier.enabled ? frontier.model : undefined) || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini',
             timeout: options.timeout || process.env.PODCAST_SHOW_RUNNER_TIMEOUT_MS || process.env.PODCAST_GENERATOR_TIMEOUT_MS || 20000,
-            maxCompletionTokens: options.maxCompletionTokens || process.env.PODCAST_SHOW_RUNNER_MAX_TOKENS || 1000,
+            maxCompletionTokens: options.maxCompletionTokens || process.env.PODCAST_SHOW_RUNNER_MAX_TOKENS || 2400,
             responseFormat: options.responseFormat || process.env.PODCAST_SHOW_RUNNER_RESPONSE_FORMAT || process.env.PODCAST_GENERATOR_RESPONSE_FORMAT || 'json_schema',
             reasoningFormat: options.reasoningFormat || process.env.PODCAST_SHOW_RUNNER_REASONING_FORMAT || process.env.PODCAST_GENERATOR_REASONING_FORMAT
         });
-        this.schemaName = 'podcast_showrunner_guidance';
+        this.schemaName = 'podcast_episode_plan_controller';
         this.frontierEnabled = frontier.enabled;
         if (frontier.enabled) {
-            console.log(`[ShowRunnerGenerator] Frontier show runner enabled: model=${this.model}, baseUrl=${this.baseUrl}`);
+            console.log(`[ShowRunnerGenerator] Frontier episode planner enabled: model=${this.model}, baseUrl=${this.baseUrl}`);
         }
     }
 
@@ -50,15 +36,13 @@ class ShowRunnerGenerator extends PodcastGenerator {
             console.warn(`[ShowRunnerGenerator] Model refusal: ${refusal}`);
             return this.normalizeOutput({}, input);
         }
-
         if (!content) {
             throw new Error('Show runner generator returned an empty response');
         }
 
-        const parsed = this.parseJsonContent(content);
-        const output = this.normalizeOutput(parsed, input);
+        const output = this.normalizeOutput(this.parseJsonContent(content), input);
         const duration = Date.now() - startTime;
-        console.log(`[ShowRunnerGenerator] Completed in ${duration}ms: phase=${output.phase || 'none'}, lane=${output.currentLane || 'none'}, wrap=${output.wrapNow}`);
+        console.log(`[ShowRunnerGenerator] Completed in ${duration}ms: action=${output.action}, plan=${output.plan?.basename || 'none'}`);
         return output;
     }
 
@@ -81,55 +65,46 @@ class ShowRunnerGenerator extends PodcastGenerator {
 
     buildSystemPrompt() {
         return [
-            'You are Alpha-Clawd\'s show runner for a live Discord voice podcast.',
+            'You are Alpha-Clawd\'s preproduction showrunner for a live Discord podcast.',
             '',
-            'Your job is private editorial steering, not speech. You do not write the host line. You maintain the episode arc: topic coverage, prepared lanes, pacing, and wrap-up timing.',
+            'You are in a text-channel planning session with the humans who may appear in the episode. Your job is to gather durable guest/topic background, decide when there is enough context to create an episode plan, revise that plan from feedback, and recognize clear approval.',
             '',
-            'The speaking host should still listen locally and honor the live floor. Your guidance must be compact enough to inject into the podcast generator without bloating its context.',
+            'The episode plan is a static structure the live host will use during the recording. It supersedes prepared-question lists. It should create a finite set of planned angles, not an endless list of possible questions.',
             '',
-            'Think like a producer in the host\'s ear:',
-            '- Track which major angles have already been addressed.',
-            '- Keep a list of useful untouched angles and question lanes.',
-            '- Notice when the guest has already answered enough and the host should synthesize or bridge instead of asking a generic follow-up.',
-            '- Prefer structure over question-autocomplete. The host should not make the guest design every transition.',
-            '- When all major angles are covered, the guest is closing, or the configured time limit is reached, explicitly direct the host to wrap up.',
+            'When background is still thin, ask one useful follow-up in messageToChannel.',
+            'When there is enough background, produce a plan and present it in messageToChannel.',
+            'When feedback arrives after a plan exists, revise the plan directly and explain the revision briefly.',
+            'When humans clearly approve the plan, set approved=true and include a concise closing message.',
             '',
-            'Do not invent facts. If the brief or transcript does not support a topic angle, label it as a possible lane rather than established truth.'
+            'Plan phases must be exactly: expanding, developing, converging, closing.',
+            'Each phase has targetMinutes and angles only. Do not include phase purpose.',
+            'Each angle needs a stable id, a short title, and a short description.',
+            'Keep the plan shape limited to basename, version, targetDurationMinutes, guests, backgroundBrief, phases, phase targetMinutes, and phase angles.',
+            'Choose a compact basename from the plan contents. Once an existing basename is provided, keep it unchanged.'
         ].join('\n');
     }
 
     buildUserPrompt(input = {}) {
-        const topic = this.cleanText(input.topic || 'general discussion');
-        const topicBrief = this.cleanMultiline(input.topicBrief || '');
-        const questionBank = this.cleanMultiline(input.questionBank || DEFAULT_SHOW_RUNNER_QUESTIONS.join('\n'));
-        const transcript = this.cleanMultiline(input.transcript || '(empty)');
-        const previousGuidance = input.previousGuidance
-            ? JSON.stringify(input.previousGuidance, null, 2)
+        const planningMessages = this.formatPlanningMessages(input.planningMessages || input.messages || []);
+        const previousPlan = input.previousPlan
+            ? JSON.stringify(input.previousPlan, null, 2)
             : '(none)';
-        const elapsedMinutes = Number(input.elapsedMinutes);
-        const maxDurationMinutes = Number(input.maxDurationMinutes);
+        const existingBasename = this.cleanText(input.basename || input.previousPlan?.basename || '');
+        const latestFeedback = this.cleanText(input.latestFeedback || '');
 
-        const lines = [
-            `Episode topic: ${topic}`,
-            Number.isFinite(elapsedMinutes) ? `Elapsed minutes: ${Math.max(0, Math.round(elapsedMinutes))}` : null,
-            Number.isFinite(maxDurationMinutes) && maxDurationMinutes > 0 ? `Configured time limit minutes: ${Math.round(maxDurationMinutes)}` : null,
+        return [
+            existingBasename ? `Existing basename: ${existingBasename}` : 'Existing basename: (none)',
             '',
-            'Topic brief / durable context:',
-            topicBrief || '(none)',
+            'Previous episode plan:',
+            previousPlan,
             '',
-            'Potential question bank and lanes:',
-            questionBank || DEFAULT_SHOW_RUNNER_QUESTIONS.join('\n'),
+            latestFeedback ? `Latest feedback: ${latestFeedback}` : null,
             '',
-            'Previous show runner guidance:',
-            previousGuidance,
+            'Planning session messages:',
+            planningMessages || '(none yet)',
             '',
-            'Transcript so far, most recent tail:',
-            transcript,
-            '',
-            'Update the editorial state now. If the time limit has been reached or the covered angles are sufficient for a coherent episode, set wrapNow true and make generatorInstruction a clear wrap-up directive.'
-        ].filter((line) => line !== null);
-
-        return lines.join('\n');
+            'Decide the next planning action now. If you generate or revise a plan, make it usable as-is for the live episode structure tracker.'
+        ].filter((line) => line !== null).join('\n');
     }
 
     buildSchemaPrompt() {
@@ -140,91 +115,129 @@ class ShowRunnerGenerator extends PodcastGenerator {
     }
 
     getResponseSchema() {
+        const angleSchema = {
+            type: 'object',
+            additionalProperties: false,
+            required: ['id', 'title', 'description'],
+            properties: {
+                id: { type: 'string', description: 'Stable lowercase angle id, e.g. esp-training.' },
+                title: { type: 'string', description: 'Short human-readable angle name.' },
+                description: { type: 'string', description: 'One concise sentence naming what this angle should cover.' }
+            }
+        };
+        const phaseSchema = {
+            type: 'object',
+            additionalProperties: false,
+            required: ['targetMinutes', 'angles'],
+            properties: {
+                targetMinutes: { type: 'number', description: 'Approximate minutes for this phase.' },
+                angles: {
+                    type: 'array',
+                    items: angleSchema,
+                    description: 'Finite planned angles for this phase.'
+                }
+            }
+        };
         return {
             type: 'object',
             additionalProperties: false,
-            required: [
-                'phase',
-                'currentLane',
-                'coveredAngles',
-                'untouchedAngles',
-                'nextHostMove',
-                'avoid',
-                'suggestedQuestion',
-                'wrapNow',
-                'wrapReason',
-                'generatorInstruction'
-            ],
+            required: ['action', 'messageToChannel', 'approved', 'plan'],
             properties: {
-                phase: {
+                action: {
                     type: 'string',
-                    description: 'Current episode phase, such as opening, background, deep-dive, contrast, synthesis, or wrap-up.'
+                    enum: ['ask_followup', 'listen', 'generate_plan', 'revise_plan', 'approve_plan'],
+                    description: 'The planning-session action Alpha-Clawd should take.'
                 },
-                currentLane: {
+                messageToChannel: {
                     type: 'string',
-                    description: 'The current structural lane the host should treat as active.'
+                    description: 'Text Alpha-Clawd should post in the planning channel.'
                 },
-                coveredAngles: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    description: 'Major topic angles that have already been substantially addressed.'
-                },
-                untouchedAngles: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    description: 'Useful major angles that remain available.'
-                },
-                nextHostMove: {
-                    type: 'string',
-                    description: 'The next editorial move, such as synthesize, bridge, ask one narrow question, hold space, or wrap.'
-                },
-                avoid: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    description: 'Specific moves the host should avoid in the next few turns.'
-                },
-                suggestedQuestion: {
-                    type: 'string',
-                    description: 'One optional narrow question. Empty string when a question is not the right next move.'
-                },
-                wrapNow: {
+                approved: {
                     type: 'boolean',
-                    description: 'True when the host should close the episode instead of opening a new lane.'
+                    description: 'True only when the humans clearly approve the latest plan.'
                 },
-                wrapReason: {
-                    type: 'string',
-                    description: 'Why wrap-up is or is not appropriate.'
-                },
-                generatorInstruction: {
-                    type: 'string',
-                    description: 'Compact private instruction to inject into the podcast generator for the next few turns.'
+                plan: {
+                    anyOf: [
+                        { type: 'null' },
+                        {
+                            type: 'object',
+                            additionalProperties: false,
+                            required: ['basename', 'version', 'targetDurationMinutes', 'guests', 'backgroundBrief', 'phases'],
+                            properties: {
+                                basename: { type: 'string' },
+                                version: { type: 'string' },
+                                targetDurationMinutes: { type: 'number' },
+                                guests: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        additionalProperties: false,
+                                        required: ['name', 'role'],
+                                        properties: {
+                                            name: { type: 'string' },
+                                            role: { type: 'string' }
+                                        }
+                                    }
+                                },
+                                backgroundBrief: { type: 'string' },
+                                phases: {
+                                    type: 'object',
+                                    additionalProperties: false,
+                                    required: PHASES,
+                                    properties: Object.fromEntries(PHASES.map((phase) => [phase, phaseSchema]))
+                                }
+                            }
+                        }
+                    ]
                 }
             }
         };
     }
 
     normalizeOutput(output = {}, input = {}) {
-        const wrapNow = output.wrapNow === true;
-        const generatorInstruction = this.cleanText(output.generatorInstruction || '');
-        const nextHostMove = this.cleanText(output.nextHostMove || '');
-        const suggestedQuestion = this.cleanText(output.suggestedQuestion || '');
-        const fallbackInstruction = wrapNow
-            ? 'Wrap the episode now. Briefly synthesize what has been covered, thank the guest, and do not open a new topic.'
-            : (nextHostMove || suggestedQuestion || 'Keep the episode moving with synthesis or a narrow bridge.');
-
+        const rawAction = this.cleanText(output.action || '');
+        const approved = output.approved === true;
+        const action = approved
+            ? 'approve_plan'
+            : ['ask_followup', 'listen', 'generate_plan', 'revise_plan'].includes(rawAction)
+                ? rawAction
+                : (output.plan ? (input.previousPlan ? 'revise_plan' : 'generate_plan') : 'ask_followup');
+        const messageToChannel = this.cleanMultiline(output.messageToChannel || fallbackPlanningMessage(action, approved));
+        const base = input.basename || input.previousPlan?.basename || output.plan?.basename;
+        const version = output.plan?.version || input.version || 'v001';
+        const plan = output.plan
+            ? normalizeEpisodePlan({
+                ...output.plan,
+                basename: base ? sanitizeBasename(base) : output.plan.basename,
+                version
+            })
+            : null;
         return {
-            phase: this.cleanText(output.phase || 'unknown'),
-            currentLane: this.cleanText(output.currentLane || ''),
-            coveredAngles: this.normalizeStringArray(output.coveredAngles, 12),
-            untouchedAngles: this.normalizeStringArray(output.untouchedAngles, 12),
-            nextHostMove,
-            avoid: this.normalizeStringArray(output.avoid, 8),
-            suggestedQuestion,
-            wrapNow,
-            wrapReason: this.cleanText(output.wrapReason || ''),
-            generatorInstruction: generatorInstruction || fallbackInstruction,
-            generatedAt: input.generatedAt || new Date().toISOString()
+            action,
+            messageToChannel,
+            approved,
+            plan
         };
+    }
+
+    formatPlanningMessages(messages = []) {
+        return (Array.isArray(messages) ? messages : [])
+            .map((message) => {
+                const speaker = this.cleanText(message.speaker || message.author || 'Human');
+                const timestamp = this.cleanText(message.timestamp || message.createdAt || '');
+                const text = this.cleanMultiline(message.text || message.content || '');
+                if (!text) return '';
+                return `${timestamp ? `[${timestamp}] ` : ''}${speaker}: ${text}`;
+            })
+            .filter(Boolean)
+            .join('\n');
+    }
+
+    cleanMultiline(value) {
+        return String(value || '')
+            .replace(/\r\n/g, '\n')
+            .replace(/[ \t]+\n/g, '\n')
+            .trim();
     }
 
     parseJsonContent(content) {
@@ -252,29 +265,16 @@ class ShowRunnerGenerator extends PodcastGenerator {
 
         throw new Error('Show runner generator returned invalid JSON');
     }
-
-    normalizeStringArray(value, maxItems = 8) {
-        return (Array.isArray(value) ? value : [])
-            .map((item) => this.cleanText(item))
-            .filter(Boolean)
-            .slice(0, maxItems);
-    }
-
-    cleanText(value) {
-        return String(value || '')
-            .replace(/\s+/g, ' ')
-            .trim();
-    }
-
-    cleanMultiline(value) {
-        return String(value || '')
-            .replace(/\r\n/g, '\n')
-            .replace(/\r/g, '\n')
-            .trim();
-    }
 }
 
-module.exports = {
-    DEFAULT_SHOW_RUNNER_QUESTIONS,
-    ShowRunnerGenerator
-};
+function fallbackPlanningMessage(action, approved) {
+    if (approved) {
+        return 'Great, I have the episode plan approved and ready for launch.';
+    }
+    if (action === 'listen') {
+        return '';
+    }
+    return 'Give me a little more guest background, desired arc, or must-cover territory and I will shape the episode plan.';
+}
+
+module.exports = { ShowRunnerGenerator };

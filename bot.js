@@ -10,7 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { PassThrough } = require('stream');
+const { PassThrough, Transform } = require('stream');
 const { spawn } = require('child_process');
 const { StreamType } = require('@discordjs/voice');
 
@@ -77,11 +77,14 @@ const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { getPodcastRoot, getRecordingDir } = require('./paths');
 const { PodcastGenerator } = require('./podcast-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
-const { ShowRunnerManager } = require('./showrunner-manager');
+const { ShowRunnerGenerator } = require('./showrunner-generator');
+const { EpisodePlanStore } = require('./episode-plan-store');
+const { EpisodePlanTracker } = require('./episode-plan-tracker');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
 const { BigHeartGenerator } = require('./bigheart-generator');
 const { buildTurnIdIntent } = require('./turn-intent');
 const { ParticipantSignalProfile } = require('./participant-signal-profile');
+const { GeminiLiveHost } = require('./gemini-live-host');
 
 // Map a Fish TTS format string to the @discordjs/voice StreamType that lets
 // Discord play the bytes without an FFmpeg transcode. Returning undefined
@@ -127,6 +130,17 @@ class AlphaClawdVoiceBot {
         this.participantSignalStates = new Map(); // guildId -> Map<userId, raw VAD/evidence state>
         this.consecutiveGeneratorSilences = new Map(); // guildId -> consecutive shouldRespond=false decisions
         this.hostPlaybackState = new Map(); // guildId -> { active, startedAt, endedAt }
+        this.sessionHostModes = new Map(); // guildId -> current | gemini-live
+        this.geminiLiveHosts = new Map(); // guildId -> GeminiLiveHost
+        this.geminiLiveTurnStates = new Map(); // guildId -> Map<turnId, playback state>
+        this.geminiLiveInputTranscripts = new Map(); // guildId -> Gemini input transcript fragments
+        this.geminiLiveActivityStates = new Map(); // guildId -> explicit Gemini participant activity state
+        this.geminiLiveActivityReleaseMs = Number(
+            process.env.PODCAST_GEMINI_LIVE_ACTIVITY_RELEASE_MS || 1500
+        );
+        this.geminiApiKey = options.geminiApiKey || process.env.GEMINI_API_KEY;
+        this.geminiLiveHostFactory = options.geminiLiveHostFactory ||
+            ((hostOptions) => new GeminiLiveHost(hostOptions));
         this.latestParticipantTurnIdIntent = new Map(); // guildId -> deterministic turn intent for latest participant utterance
         this.awarenessTurnWaitMs = Number(process.env.PODCAST_AWARENESS_TURN_WAIT_MS ?? 200);
         this.bigBrainEnabled = options.bigBrainEnabled !== undefined
@@ -177,10 +191,11 @@ class AlphaClawdVoiceBot {
         });
         this.showRunnerEnabled = options.showRunnerEnabled !== undefined
             ? Boolean(options.showRunnerEnabled)
-            : process.env.PODCAST_SHOW_RUNNER_ENABLED === 'true';
-        this.showRunnerManager = options.showRunnerManager || new ShowRunnerManager({
-            enabled: this.showRunnerEnabled
-        });
+            : process.env.PODCAST_SHOW_RUNNER_ENABLED !== 'false';
+        this.showRunnerGenerator = options.showRunnerGenerator || new ShowRunnerGenerator(options.showRunnerOptions || {});
+        this.episodePlanStore = options.episodePlanStore || new EpisodePlanStore(options.episodePlanStoreOptions || {});
+        this.planningSessions = new Map(); // channelId -> planning session
+        this.episodePlanTrackers = new Map(); // guildId -> EpisodePlanTracker
         this.bigBrainAwarenessSelectionEnabled = options.bigBrainAwarenessSelectionEnabled !== undefined
             ? Boolean(options.bigBrainAwarenessSelectionEnabled)
             : process.env.PODCAST_BIG_BRAIN_AWARENESS_SELECTION_ENABLED === 'true';
@@ -253,6 +268,9 @@ class AlphaClawdVoiceBot {
             elevenLabs: this.voiceProvider.mode === 'elevenlabs' ? this.voiceProvider.tts : null,
             enableTranscription: true
         });
+        this.voiceManager.setAudioChunkHandler((guildId, userId, chunk) => {
+            this.geminiLiveHosts.get(guildId)?.pushAudio(userId, chunk);
+        });
 
         // Initialize Gateway bridge (HTTP server stub for future use)
         this.gatewayBridge = new GatewayBridge({
@@ -291,9 +309,16 @@ class AlphaClawdVoiceBot {
         this.voiceManager.setUtteranceHandler(async (guildId, utterance) => {
             const transcription = (utterance.transcription || '').trim();
             const recordingActive = this.isRecordingActive(guildId);
+            const geminiLive = this.isGeminiLiveSession(guildId);
 
             // Debug: inject individual utterance for Gateway UI visibility
-            if (this.debugInject && transcription && this.wsClient.isAuthenticated && this.wsClient.canInjectMessages?.()) {
+            if (
+                !geminiLive &&
+                this.debugInject &&
+                transcription &&
+                this.wsClient.isAuthenticated &&
+                this.wsClient.canInjectMessages?.()
+            ) {
                 try {
                     await this.wsClient.injectMessage(
                         `[Podcast Voice] ${utterance.speaker}: ${transcription}`,
@@ -310,20 +335,27 @@ class AlphaClawdVoiceBot {
                 this.lastParticipantSpeechAt.set(guildId, Date.now());
                 this.recordParticipantSignal(guildId, utterance.userId, 'real_transcript', utterance);
                 this.confirmParticipantActivity(guildId, utterance.userId, 'transcript');
-                const participantTurnIdIntent = this.buildGeneratorTurnIdIntent('participant', [utterance]);
-                if (participantTurnIdIntent) {
-                    this.latestParticipantTurnIdIntent.set(guildId, participantTurnIdIntent);
+                if (!geminiLive) {
+                    const participantTurnIdIntent = this.buildGeneratorTurnIdIntent('participant', [utterance]);
+                    if (participantTurnIdIntent) {
+                        this.latestParticipantTurnIdIntent.set(guildId, participantTurnIdIntent);
+                    }
+                    this.observeInternalThoughtTranscriptEntry(guildId, {
+                        ...utterance,
+                        speakerRole: utterance.speakerRole || 'guest',
+                        source: 'participant'
+                    });
+                    this.observeShowRunnerTranscriptEntry(guildId, {
+                        ...utterance,
+                        speakerRole: utterance.speakerRole || 'guest',
+                        source: 'participant'
+                    });
+                } else {
+                    console.log(
+                        `[GeminiLive] Fish shadow transcript retained for forensics only: ` +
+                        `${utterance.speaker}: ${transcription}`
+                    );
                 }
-                this.observeInternalThoughtTranscriptEntry(guildId, {
-                    ...utterance,
-                    speakerRole: utterance.speakerRole || 'guest',
-                    source: 'participant'
-                });
-                this.observeShowRunnerTranscriptEntry(guildId, {
-                    ...utterance,
-                    speakerRole: utterance.speakerRole || 'guest',
-                    source: 'participant'
-                });
             } else if (transcription) {
                 const state = this.recordingState?.get?.(guildId) || this.getRecordingStateValue('IDLE');
                 console.log(`[Bot] Ignoring participant utterance for generator while recording state is ${state}`);
@@ -429,6 +461,356 @@ class AlphaClawdVoiceBot {
         return this.useGatewayGenerator() || this.gatewayMirror || this.bigBrainEnabled;
     }
 
+    normalizeSessionHostMode(mode) {
+        return String(mode || '').toLowerCase() === 'gemini-live'
+            ? 'gemini-live'
+            : 'current';
+    }
+
+    isGeminiLiveSession(guildId) {
+        return this.sessionHostModes?.get?.(guildId) === 'gemini-live';
+    }
+
+    getGeminiLiveActivityReleaseMs() {
+        return Number.isFinite(this.geminiLiveActivityReleaseMs)
+            ? Math.max(0, this.geminiLiveActivityReleaseMs)
+            : 1500;
+    }
+
+    getGeminiLiveActivityState(guildId, create = false) {
+        if (!this.geminiLiveActivityStates) {
+            this.geminiLiveActivityStates = new Map();
+        }
+
+        let state = this.geminiLiveActivityStates.get(guildId);
+        if (!state && create) {
+            state = {
+                active: false,
+                releaseTimer: null,
+                lastEvidenceAt: null,
+                lastUserId: null
+            };
+            this.geminiLiveActivityStates.set(guildId, state);
+        }
+        return state || null;
+    }
+
+    clearGeminiLiveActivityReleaseTimer(state) {
+        if (!state?.releaseTimer) return;
+        clearTimeout(state.releaseTimer);
+        state.releaseTimer = null;
+    }
+
+    beginGeminiLiveParticipantActivity(guildId, userId, reason = 'confirmed speech evidence') {
+        if (!this.isGeminiLiveSession(guildId)) return false;
+
+        const participantState = this.getParticipantSignalState(guildId, userId, false);
+        if (!participantState?.rawActive || !participantState.floorHasFreshSpeechEvidence) {
+            return false;
+        }
+
+        const host = this.geminiLiveHosts.get(guildId);
+        if (!host) return false;
+
+        const state = this.getGeminiLiveActivityState(guildId, true);
+        this.clearGeminiLiveActivityReleaseTimer(state);
+        state.lastEvidenceAt = Date.now();
+        state.lastUserId = userId;
+
+        if (state.active && host.activityActive !== false) {
+            return true;
+        }
+
+        if (host.startActivity?.() === false) {
+            return false;
+        }
+
+        state.active = true;
+        console.log(`[GeminiLive] Participant activity started for ${userId} (${reason})`);
+        return true;
+    }
+
+    holdGeminiLiveParticipantActivity(guildId, userId, reason = 'same-utterance continuation') {
+        const state = this.getGeminiLiveActivityState(guildId, false);
+        if (!this.isGeminiLiveSession(guildId) || !state?.active) {
+            return false;
+        }
+
+        this.clearGeminiLiveActivityReleaseTimer(state);
+        state.lastUserId = userId;
+        console.log(`[GeminiLive] Participant activity release deferred for ${userId} (${reason})`);
+        return true;
+    }
+
+    scheduleGeminiLiveParticipantActivityEnd(guildId, reason = 'participant floor released') {
+        const state = this.getGeminiLiveActivityState(guildId, false);
+        if (!this.isGeminiLiveSession(guildId) || !state?.active) {
+            return false;
+        }
+        if (this.hasCurrentParticipantFloor(guildId)) {
+            return false;
+        }
+
+        this.clearGeminiLiveActivityReleaseTimer(state);
+        const releaseMs = this.getGeminiLiveActivityReleaseMs();
+        state.releaseTimer = setTimeout(() => {
+            state.releaseTimer = null;
+            if (this.hasCurrentParticipantFloor(guildId)) {
+                return;
+            }
+
+            const host = this.geminiLiveHosts.get(guildId);
+            if (!host) {
+                this.geminiLiveActivityStates.delete(guildId);
+                return;
+            }
+
+            if (host.endActivity?.() === false) {
+                return;
+            }
+
+            state.active = false;
+            console.log(`[GeminiLive] Participant activity ended after ${releaseMs}ms (${reason})`);
+        }, releaseMs);
+        if (typeof state.releaseTimer.unref === 'function') {
+            state.releaseTimer.unref();
+        }
+
+        console.log(`[GeminiLive] Participant floor released; holding activity for ${releaseMs}ms`);
+        return true;
+    }
+
+    clearGeminiLiveActivityState(guildId) {
+        const state = this.getGeminiLiveActivityState(guildId, false);
+        this.clearGeminiLiveActivityReleaseTimer(state);
+        this.geminiLiveActivityStates?.delete?.(guildId);
+    }
+
+    buildGeminiLiveSystemPrompt() {
+        const structuredPrompt = this.podcastGenerator.buildSystemPrompt();
+        const structuredContractMarker = '\nYour job is to decide whether to speak.';
+        const hostPrompt = structuredPrompt.includes(structuredContractMarker)
+            ? structuredPrompt.split(structuredContractMarker)[0]
+            : structuredPrompt;
+
+        return [
+            hostPrompt,
+            '',
+            'Gemini Live execution mode:',
+            '- You hear the live room continuously and speak directly as Alpha-Clawd. Respond with natural spoken audio, never JSON.',
+            '- Speak with a natural Australian accent.',
+            '- Do not emit schemas, shouldRespond fields, markdown, Fish Audio controls, stage directions, or tool-call placeholders.',
+            '- You may remain silent when the humans are thinking aloud, speaking to one another, or still developing a thought.',
+            '- Once you begin a response, finish it cleanly. Participant audio does not interrupt Alpha-Clawd.',
+            '- The bigBrain and bigHeart tools are not connected in this experimental path. Do not claim to call or consult them.',
+            '- Keep ordinary host contributions concise. Let the conversation breathe and use the richer podcast-hosting guidance above.'
+        ].join('\n');
+    }
+
+    getGeminiLiveTurnStateMap(guildId) {
+        let states = this.geminiLiveTurnStates.get(guildId);
+        if (!states) {
+            states = new Map();
+            this.geminiLiveTurnStates.set(guildId, states);
+        }
+        return states;
+    }
+
+    async startGeminiLiveSession(guildId) {
+        if (!this.geminiApiKey) {
+            throw new Error('GEMINI_API_KEY is not configured');
+        }
+
+        const host = this.geminiLiveHostFactory({
+            apiKey: this.geminiApiKey,
+            model: process.env.PODCAST_GEMINI_LIVE_MODEL,
+            voice: process.env.PODCAST_GEMINI_LIVE_VOICE,
+            systemInstruction: this.buildGeminiLiveSystemPrompt(),
+            onAudioStream: (turn) => {
+                this.flushGeminiLiveInputTranscript(guildId, turn.generatedAt);
+                this.startGeminiLivePlayback(guildId, turn).catch((error) => {
+                    console.error(`[GeminiLive] Playback setup failed: ${error.message}`);
+                });
+            },
+            onTurnComplete: (turn) => {
+                this.finishGeminiLiveTurn(guildId, turn).catch((error) => {
+                    console.error(`[GeminiLive] Turn finalization failed: ${error.message}`);
+                });
+            },
+            onInputTranscription: (transcription) => {
+                console.log(`[GeminiLive] Input transcript: ${transcription.text}`);
+                const state = this.geminiLiveInputTranscripts.get(guildId) || {
+                    text: '',
+                    startedAt: new Date().toISOString()
+                };
+                state.text += transcription.text || '';
+                this.geminiLiveInputTranscripts.set(guildId, state);
+            },
+            onOutputTranscription: (transcription) => {
+                console.log(`[GeminiLive] Output transcript: ${transcription.text}`);
+            },
+            onError: (error) => {
+                console.error(`[GeminiLive] ${error.message}`);
+            },
+            onClose: (event) => {
+                console.log(`[GeminiLive] Socket closed code=${event?.code ?? 'unknown'} reason=${event?.reason || ''}`);
+            },
+            onLog: (message) => {
+                console.log(`[GeminiLive] ${message}`);
+            }
+        });
+
+        await host.start();
+        this.geminiLiveHosts.set(guildId, host);
+        console.log(`[GeminiLive] Live host active for guild ${guildId}`);
+    }
+
+    flushGeminiLiveInputTranscript(guildId, completedAt = new Date().toISOString()) {
+        const state = this.geminiLiveInputTranscripts.get(guildId);
+        this.geminiLiveInputTranscripts.delete(guildId);
+        const transcription = (state?.text || '').trim();
+        if (!transcription) return;
+
+        const entry = {
+            speaker: 'Participants',
+            speakerRole: 'guest',
+            transcription,
+            timestamp: state.startedAt,
+            speechStartedAt: state.startedAt,
+            speechEndedAt: completedAt,
+            source: 'gemini-live-input'
+        };
+        this.observeInternalThoughtTranscriptEntry(guildId, entry);
+        this.observeShowRunnerTranscriptEntry(guildId, entry);
+    }
+
+    async startGeminiLivePlayback(guildId, turn) {
+        if (!this.isGeminiLiveSession(guildId)) {
+            turn.stream.destroy();
+            return;
+        }
+
+        const states = this.getGeminiLiveTurnStateMap(guildId);
+        const state = {
+            ...turn,
+            playback: null,
+            playbackTiming: null,
+            setup: null,
+            finished: null
+        };
+        states.set(turn.id, state);
+
+        const journaledStream = new Transform({
+            transform: (chunk, encoding, callback) => {
+                this.voiceManager.addBotPcmChunkToRecording(guildId, chunk, {
+                    sourceId: 'gemini-live',
+                    groupId: turn.id,
+                    capturedAt: Date.now(),
+                    sampleRate: 48000,
+                    channels: 2,
+                    volume: 1
+                });
+                callback(null, chunk);
+            }
+        });
+        turn.stream.pipe(journaledStream);
+
+        this.duckBigBrainAmbientBed(guildId, 'Gemini Live response starting');
+        state.setup = this.voiceManager.speakWithTiming(guildId, journaledStream, {
+                inputType: StreamType.Raw,
+                volume: 1,
+                onStart: (timing) => {
+                    this.voiceManager.anchorBotAudioRecordingGroup(
+                        guildId,
+                        turn.id,
+                        timing.playbackStartedAt
+                    );
+                    this.noteHostPlaybackStart(guildId, timing);
+                },
+                onFinish: (timing) => this.noteHostPlaybackEnd(guildId, timing),
+                onError: () => this.noteHostPlaybackEnd(guildId)
+            })
+            .then((playback) => {
+                state.playback = playback;
+                state.finished = playback.finished
+                    .then((timing) => {
+                        state.playbackTiming = timing;
+                        return timing;
+                    })
+                    .catch((error) => {
+                        console.error(`[GeminiLive] Playback failed for ${turn.id}: ${error.message}`);
+                        return state.playbackTiming || {};
+                    });
+                return playback;
+            });
+        await state.setup;
+    }
+
+    async finishGeminiLiveTurn(guildId, turn) {
+        const states = this.getGeminiLiveTurnStateMap(guildId);
+        const state = states.get(turn.id);
+        if (state?.setup) {
+            await state.setup.catch((error) => {
+                console.error(`[GeminiLive] Playback setup failed for ${turn.id}: ${error.message}`);
+            });
+        }
+        const playbackTiming = state?.finished
+            ? await state.finished
+            : (state?.playbackTiming || {});
+
+        const playbackStartedAt = playbackTiming?.playbackStartedAt || null;
+        const playbackEndedAt = playbackTiming?.playbackEndedAt || null;
+        const playbackStartedMs = Date.parse(playbackStartedAt || '');
+        const playbackEndedMs = Date.parse(playbackEndedAt || '');
+        const duration = !Number.isNaN(playbackStartedMs) && !Number.isNaN(playbackEndedMs)
+            ? Math.max(0, playbackEndedMs - playbackStartedMs)
+            : 0;
+
+        const transcriptEntry = {
+            speaker: 'Alpha-Clawd',
+            speakerRole: 'host',
+            transcription: turn.transcription || '',
+            timestamp: turn.generatedAt,
+            generatedAt: turn.generatedAt,
+            playbackRequestedAt: state?.playback?.timing?.playbackRequestedAt || null,
+            playbackStartedAt,
+            playbackEndedAt,
+            duration,
+            source: 'gemini-live',
+            audioEvents: turn.interrupted ? ['gemini_live_interrupted'] : []
+        };
+        this.voiceManager.saveTranscriptEntry(guildId, transcriptEntry);
+        this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);
+        this.observeShowRunnerTranscriptEntry(guildId, transcriptEntry);
+        states.delete(turn.id);
+    }
+
+    async stopGeminiLiveSession(guildId) {
+        const host = this.geminiLiveHosts.get(guildId);
+        this.clearGeminiLiveActivityState(guildId);
+        if (host) {
+            host.stop();
+            this.geminiLiveHosts.delete(guildId);
+        }
+        this.flushGeminiLiveInputTranscript(guildId);
+
+        const states = this.geminiLiveTurnStates.get(guildId);
+        if (states) {
+            await Promise.allSettled(
+                Array.from(states.values()).map(async (state) => {
+                    if (state.setup) {
+                        await state.setup;
+                    }
+                    if (state.finished) {
+                        await state.finished;
+                    }
+                })
+            );
+            states.clear();
+            this.geminiLiveTurnStates.delete(guildId);
+        }
+    }
+
     startInternalThoughtSession(guildId, recordingInfo = {}) {
         if (!this.internalThoughtsEnabled || !this.internalThoughtManager?.startSession) {
             return null;
@@ -441,24 +823,6 @@ class AlphaClawdVoiceBot {
             });
         } catch (error) {
             console.warn(`[Bot] Failed to start internal thought session: ${error.message}`);
-            return null;
-        }
-    }
-
-    startShowRunnerSession(guildId, recordingInfo = {}, topic = '') {
-        if (!this.showRunnerEnabled || !this.showRunnerManager?.startSession) {
-            return null;
-        }
-
-        try {
-            return this.showRunnerManager.startSession(guildId, {
-                recordingPath: recordingInfo.recordingPath,
-                startedAt: recordingInfo.startedAt,
-                topic: topic || 'general discussion',
-                speakers: Object.values(this.speakerMap || {}).map(s => `${s.name} (${s.role || 'speaker'})`)
-            });
-        } catch (error) {
-            console.warn(`[Bot] Failed to start show runner session: ${error.message}`);
             return null;
         }
     }
@@ -476,17 +840,28 @@ class AlphaClawdVoiceBot {
         }
     }
 
-    async endShowRunnerSession(guildId) {
-        if (!this.showRunnerEnabled || !this.showRunnerManager?.endSession) {
+    startEpisodePlanTracker(guildId, episodePlanSelection = null, recordingInfo = {}) {
+        this.episodePlanTrackers.delete(guildId);
+        if (!episodePlanSelection?.plan) {
             return null;
         }
-
         try {
-            return await this.showRunnerManager.endSession(guildId);
+            const tracker = new EpisodePlanTracker(episodePlanSelection.plan, {
+                startedAt: recordingInfo.startedAt || new Date().toISOString()
+            });
+            this.episodePlanTrackers.set(guildId, tracker);
+            console.log(`[Bot] Episode plan tracker started: ${episodePlanSelection.plan.basename}@${episodePlanSelection.plan.version}`);
+            return tracker;
         } catch (error) {
-            console.warn(`[Bot] Failed to end show runner session: ${error.message}`);
+            console.warn(`[Bot] Failed to start episode plan tracker: ${error.message}`);
             return null;
         }
+    }
+
+    endEpisodePlanTracker(guildId) {
+        const tracker = this.episodePlanTrackers.get(guildId);
+        this.episodePlanTrackers.delete(guildId);
+        return tracker ? tracker.snapshot() : null;
     }
 
     observeInternalThoughtTranscriptEntry(guildId, entry = {}) {
@@ -513,24 +888,18 @@ class AlphaClawdVoiceBot {
     }
 
     observeShowRunnerTranscriptEntry(guildId, entry = {}) {
-        if (
-            !this.showRunnerEnabled ||
-            this.recordingState?.get?.(guildId) !== this.RecordingState?.RECORDING ||
-            !this.showRunnerManager?.handleTranscriptEntry
-        ) {
+        if (this.recordingState?.get?.(guildId) !== this.RecordingState?.RECORDING) {
             return null;
         }
-
+        const tracker = this.episodePlanTrackers?.get?.(guildId);
+        if (!tracker) {
+            return null;
+        }
         try {
-            const result = this.showRunnerManager.handleTranscriptEntry(guildId, entry);
-            if (result && typeof result.catch === 'function') {
-                result.catch((error) => {
-                    console.warn(`[Bot] Show runner transcript entry failed: ${error.message}`);
-                });
-            }
-            return result;
+            tracker.observeTranscriptEntry(entry);
+            return tracker.snapshot();
         } catch (error) {
-            console.warn(`[Bot] Show runner transcript entry failed: ${error.message}`);
+            console.warn(`[Bot] Episode plan tracker transcript entry failed: ${error.message}`);
             return null;
         }
     }
@@ -630,16 +999,16 @@ class AlphaClawdVoiceBot {
         }
     }
 
-    getShowRunnerGuidanceForGenerator(guildId) {
-        if (!this.showRunnerEnabled || !this.showRunnerManager?.getGuidance) {
-            return null;
+    getEpisodePlanStructureForGenerator(guildId, options = {}) {
+        const tracker = this.episodePlanTrackers?.get?.(guildId);
+        if (!tracker) {
+            return '';
         }
-
         try {
-            return this.showRunnerManager.getGuidance(guildId);
+            return tracker.getStructureBlock(options.currentTime || new Date().toISOString());
         } catch (error) {
-            console.warn(`[Bot] Failed to read show runner guidance: ${error.message}`);
-            return null;
+            console.warn(`[Bot] Failed to build episode plan structure: ${error.message}`);
+            return '';
         }
     }
 
@@ -1090,6 +1459,7 @@ class AlphaClawdVoiceBot {
             console.log(`[Bot] User ${userId} raw VAD continued within debounce window; restoring floor authority`);
             this.setInternalThoughtUserSpeaking(guildId, userId, true);
             this.conversationBuffer?.setUserSpeaking?.(userId, true);
+            this.holdGeminiLiveParticipantActivity(guildId, userId);
             return;
         }
 
@@ -1125,6 +1495,7 @@ class AlphaClawdVoiceBot {
                     ? state.floorReleasedAt + this.getParticipantFloorContinuationMs()
                     : null;
             }
+            this.scheduleGeminiLiveParticipantActivityEnd(guildId);
             return;
         }
 
@@ -1179,6 +1550,11 @@ class AlphaClawdVoiceBot {
         state.floorHasFreshSpeechEvidence = true;
         state.continuationUsed = false;
         state.continuationUntil = null;
+        this.beginGeminiLiveParticipantActivity(
+            guildId,
+            userId,
+            metadata.source || 'speech evidence'
+        );
 
         this.recordParticipantSignal(guildId, userId, 'speech_evidence', {
             ...metadata,
@@ -1460,7 +1836,7 @@ class AlphaClawdVoiceBot {
                 ...generatorTiming,
                 turnIdIntent
             });
-            const showRunnerGuidance = this.getShowRunnerGuidanceForGenerator(guildId);
+            const episodePlanStructure = this.getEpisodePlanStructureForGenerator(guildId, generatorTiming);
 
             console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s without participant speech`);
             const response = await this.podcastGenerator.generate({
@@ -1473,7 +1849,7 @@ class AlphaClawdVoiceBot {
                 pendingBigHeart: this.getPendingBigHeartForGenerator(guildId),
                 awarenessInjections,
                 awarenessShelfItems,
-                showRunnerGuidance,
+                episodePlanStructure,
                 consecutiveSilenceTurns: this.getConsecutiveGeneratorSilences(guildId),
                 ...generatorTiming,
                 remember: false
@@ -1678,13 +2054,18 @@ class AlphaClawdVoiceBot {
         return audio && typeof audio.pipe === 'function' && !Buffer.isBuffer(audio);
     }
 
+    getLiveTtsFormat() {
+        return this.voiceProvider?.format || this.voiceProvider?.tts?.format || null;
+    }
+
     teeAudioForRecording(audio) {
         const capture = {
             playbackAudio: audio,
             isStream: false,
             chunks: [],
             byteLength: 0,
-            completedAt: null
+            completedAt: null,
+            completion: Promise.resolve()
         };
 
         if (!this.isReadableAudio(audio)) {
@@ -1693,6 +2074,17 @@ class AlphaClawdVoiceBot {
 
         const playbackAudio = new PassThrough();
         const recordingAudio = new PassThrough();
+        let resolveCompletion;
+        let completionSettled = false;
+        capture.completion = new Promise((resolve) => {
+            resolveCompletion = resolve;
+        });
+        const settleCompletion = () => {
+            if (completionSettled) return;
+            completionSettled = true;
+            capture.completedAt = capture.completedAt || new Date().toISOString();
+            resolveCompletion();
+        };
 
         capture.playbackAudio = playbackAudio;
         capture.isStream = true;
@@ -1709,12 +2101,14 @@ class AlphaClawdVoiceBot {
         });
 
         recordingAudio.once('end', () => {
-            capture.completedAt = new Date().toISOString();
+            settleCompletion();
         });
 
         recordingAudio.once('error', (error) => {
             console.error('[Bot] Error capturing streamed TTS for recording:', error);
+            settleCompletion();
         });
+        recordingAudio.once('close', settleCompletion);
 
         audio.pipe(playbackAudio);
         audio.pipe(recordingAudio);
@@ -1735,9 +2129,10 @@ class AlphaClawdVoiceBot {
         let botAudioRecorded = false;
         let playbackStartMs;
         let playbackStartAborted = false;
+        let playbackUnderrunDetected = false;
 
         const inputType = options.inputType
-            ?? (capture.isStream ? streamTypeForLiveFormat(this.voiceProvider?.format) : undefined);
+            ?? (capture.isStream ? streamTypeForLiveFormat(this.getLiveTtsFormat()) : undefined);
 
         this.duckBigBrainAmbientBed(guildId, 'foreground TTS starting');
         const playback = await this.voiceManager.speakWithTiming(guildId, capture.playbackAudio, {
@@ -1795,6 +2190,8 @@ class AlphaClawdVoiceBot {
         this.noteHostPlaybackEnd(guildId, playbackTiming);
 
         if (capture.isStream) {
+            const bytesAtPlaybackEnd = capture.byteLength;
+            await capture.completion;
             const recordedAudio = this.getCapturedAudioBuffer(capture);
             if (recordedAudio) {
                 this.voiceManager.addBotAudioToRecording(guildId, recordedAudio, {
@@ -1803,6 +2200,13 @@ class AlphaClawdVoiceBot {
                 botAudioRecorded = true;
             } else {
                 console.warn('[Bot] Streamed TTS produced no captured audio for recording');
+            }
+            if (capture.byteLength > bytesAtPlaybackEnd) {
+                playbackUnderrunDetected = true;
+                console.warn(
+                    `[Bot] Playback ended before streamed TTS completed: ` +
+                    `${capture.byteLength - bytesAtPlaybackEnd} byte(s) arrived after player idle`
+                );
             }
         } else if (!botAudioRecorded && Buffer.isBuffer(audio)) {
             this.voiceManager.addBotAudioToRecording(guildId, audio);
@@ -1813,7 +2217,8 @@ class AlphaClawdVoiceBot {
             playback,
             playbackTiming,
             botAudioRecorded,
-            ttsCompletedAt: capture.completedAt
+            ttsCompletedAt: capture.completedAt,
+            playbackUnderrunDetected
         };
     }
 
@@ -1856,15 +2261,31 @@ class AlphaClawdVoiceBot {
     /**
      * Register slash commands
      */
-    async registerCommands() {
-        const commands = [
+    buildSlashCommands() {
+        return [
             new SlashCommandBuilder()
                 .setName('podcast-join')
                 .setDescription('Join voice channel and start recording')
                 .addStringOption(option =>
                     option.setName('topic')
                         .setDescription('Topic for the podcast')
-                        .setRequired(false)),
+                        .setRequired(false))
+                .addStringOption(option =>
+                    option.setName('engine')
+                        .setDescription('Host engine for this episode')
+                        .setRequired(false)
+                        .addChoices(
+                            { name: 'Claude + Fish', value: 'current' },
+                            { name: 'Gemini Live (experimental)', value: 'gemini-live' }
+                        ))
+                .addStringOption(option =>
+                    option.setName('plan')
+                        .setDescription('Episode plan version to use')
+                        .setRequired(false)
+                        .setAutocomplete(true)),
+            new SlashCommandBuilder()
+                .setName('podcast-plan')
+                .setDescription('Start or inspect a text-channel episode planning session'),
             new SlashCommandBuilder()
                 .setName('podcast-leave')
                 .setDescription('Stop recording and leave voice channel'),
@@ -1924,6 +2345,10 @@ class AlphaClawdVoiceBot {
                         .setDescription('Preview the feed update without publishing')
                         .setRequired(false))
         ];
+    }
+
+    async registerCommands() {
+        const commands = this.buildSlashCommands();
 
         const rest = new REST({ version: '10' }).setToken(this.token);
 
@@ -1961,6 +2386,9 @@ class AlphaClawdVoiceBot {
                 case 'podcast-join':
                     await this.handleJoinCommand(interaction);
                     break;
+                case 'podcast-plan':
+                    await this.handlePodcastPlanCommand(interaction);
+                    break;
                 case 'podcast-leave':
                     await this.handleLeaveCommand(interaction);
                     break;
@@ -1983,14 +2411,205 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    async handlePodcastPlanCommand(interaction) {
+        const channelId = interaction.channelId;
+        let session = this.planningSessions.get(channelId);
+        if (!session) {
+            session = {
+                channelId,
+                guildId: interaction.guildId,
+                startedAt: new Date().toISOString(),
+                startedBy: interaction.user?.id || null,
+                messages: [],
+                basename: '',
+                latestPlan: null,
+                latestPlanPath: '',
+                latestVersion: '',
+                loggedMessageCount: 0,
+                processing: Promise.resolve()
+            };
+            this.planningSessions.set(channelId, session);
+            await interaction.reply(
+                "Episode planning is open in this channel. Drop the guest background, desired arc, constraints, and anything Alpha-Clawd should know. I'll shape it into a versioned episode plan when there's enough signal."
+            );
+            return;
+        }
+
+        const latest = session.latestPlan
+            ? `\n\nLatest plan: **${session.latestPlan.basename} ${session.latestPlan.version}**`
+            : '';
+        await interaction.reply(
+            `Episode planning is already open here. Messages captured: **${session.messages.length}**.${latest}`
+        );
+    }
+
+    async handlePlanningMessage(message) {
+        const channelId = message.channelId || message.channel?.id;
+        const session = channelId ? this.planningSessions.get(channelId) : null;
+        if (!session) {
+            return false;
+        }
+        if (message.author?.bot) {
+            return true;
+        }
+
+        const record = this.buildPlanningMessageRecord(message);
+        if (!record.text) {
+            return true;
+        }
+        session.messages.push(record);
+        this.persistPlanningSessionMessages(session);
+
+        session.processing = (session.processing || Promise.resolve())
+            .then(() => this.processPlanningSession(session, record, message.channel))
+            .catch((error) => {
+                console.warn(`[Bot] Podcast planning failed: ${error.message}`);
+                return message.channel?.send?.(`I hit a planning error: ${error.message}`).catch(() => {});
+            });
+        return true;
+    }
+
+    buildPlanningMessageRecord(message) {
+        const memberName = message.member?.displayName || message.author?.globalName || message.author?.username || 'Human';
+        return {
+            speaker: memberName,
+            userId: message.author?.id || null,
+            timestamp: message.createdAt instanceof Date ? message.createdAt.toISOString() : new Date().toISOString(),
+            text: String(message.content || '').trim()
+        };
+    }
+
+    async processPlanningSession(session, latestMessage, channel) {
+        if (!this.showRunnerEnabled) {
+            return;
+        }
+        if (!this.showRunnerGenerator?.generate) {
+            await channel?.send?.('I can collect planning context, but the showrunner generator is not configured.');
+            return;
+        }
+
+        const output = await this.showRunnerGenerator.generate({
+            planningMessages: session.messages,
+            previousPlan: session.latestPlan,
+            basename: session.basename,
+            latestFeedback: latestMessage?.text || ''
+        });
+
+        if (output.plan) {
+            const saved = this.savePlanningOutput(session, output);
+            await this.sendLongMessage(channel, this.formatEpisodePlanForDiscord(saved.plan, output));
+        } else if (output.messageToChannel) {
+            await channel?.send?.(output.messageToChannel);
+        }
+
+        if (output.approved) {
+            if (session.basename) {
+                this.episodePlanStore.appendSessionRecord(session.basename, {
+                    type: 'approved',
+                    latestVersion: session.latestVersion,
+                    message: output.messageToChannel || ''
+                });
+            }
+            this.planningSessions.delete(session.channelId);
+            if (output.messageToChannel && !output.plan) {
+                await channel?.send?.(output.messageToChannel);
+            } else {
+                await channel?.send?.('Episode plan approved. Planning session closed.');
+            }
+        }
+    }
+
+    savePlanningOutput(session, output) {
+        const basename = session.basename || output.plan.basename;
+        const saved = this.episodePlanStore.saveNextVersion(output.plan, { basename });
+        session.basename = saved.plan.basename;
+        session.latestPlan = saved.plan;
+        session.latestPlanPath = saved.path;
+        session.latestVersion = saved.plan.version;
+        this.persistPlanningSessionMessages(session);
+        this.episodePlanStore.appendSessionRecord(session.basename, {
+            type: output.action === 'revise_plan' ? 'revision' : 'plan',
+            version: saved.plan.version,
+            path: saved.path,
+            messageToChannel: output.messageToChannel || ''
+        });
+        return saved;
+    }
+
+    persistPlanningSessionMessages(session) {
+        if (!session?.basename) {
+            return;
+        }
+        while (session.loggedMessageCount < session.messages.length) {
+            const message = session.messages[session.loggedMessageCount];
+            this.episodePlanStore.appendSessionRecord(session.basename, {
+                type: 'planning_message',
+                message
+            });
+            session.loggedMessageCount += 1;
+        }
+    }
+
+    formatEpisodePlanForDiscord(plan, output = {}) {
+        const lines = [
+            output.messageToChannel || 'Here is the episode plan.',
+            '',
+            `**Episode plan: ${plan.basename} ${plan.version}**`,
+            `Target duration: ${plan.targetDurationMinutes} minutes`
+        ];
+        if (plan.guests.length > 0) {
+            lines.push('', '**Guests**');
+            for (const guest of plan.guests) {
+                lines.push(`- ${guest.name}${guest.role ? `: ${guest.role}` : ''}`);
+            }
+        }
+        if (plan.backgroundBrief) {
+            lines.push('', '**Background Brief**', plan.backgroundBrief);
+        }
+        lines.push('', '**Structure**');
+        for (const phase of ['expanding', 'developing', 'converging', 'closing']) {
+            const phasePlan = plan.phases?.[phase] || { targetMinutes: 0, angles: [] };
+            lines.push('', `**${phase}** (${phasePlan.targetMinutes} min)`);
+            for (const angle of phasePlan.angles || []) {
+                lines.push(`- \`${angle.id}\`: ${angle.description || angle.title}`);
+            }
+        }
+        lines.push('', 'Reply with feedback to revise it, or clearly approve it to close planning.');
+        return lines.join('\n');
+    }
+
+    async sendLongMessage(channel, text) {
+        if (!channel?.send) {
+            return;
+        }
+        const chunks = [];
+        let remaining = String(text || '').trim();
+        while (remaining.length > 1900) {
+            let splitAt = remaining.lastIndexOf('\n', 1900);
+            if (splitAt < 500) splitAt = 1900;
+            chunks.push(remaining.slice(0, splitAt).trim());
+            remaining = remaining.slice(splitAt).trim();
+        }
+        if (remaining) chunks.push(remaining);
+        for (const chunk of chunks) {
+            await channel.send(chunk);
+        }
+    }
+
     /**
      * Handle autocomplete interactions for podcast production/publish options
      */
     async handleAutocomplete(interaction) {
-        if (!['podcast-production', 'podcast-publish'].includes(interaction.commandName)) return;
+        if (!['podcast-production', 'podcast-publish', 'podcast-join'].includes(interaction.commandName)) return;
         const focused = interaction.options.getFocused(true);
 
         try {
+            if (interaction.commandName === 'podcast-join' && focused.name === 'plan') {
+                const choices = this.listEpisodePlanAutocompleteChoices(focused.value);
+                await interaction.respond(choices.length ? choices : [{ name: 'No episode plans found', value: '' }]);
+                return;
+            }
+
             if (focused.name === 'episode') {
                 const includeNext = interaction.commandName === 'podcast-production';
                 await interaction.respond(this.getPodcastEpisodeAutocompleteChoices(focused.value, includeNext));
@@ -2064,6 +2683,33 @@ class AlphaClawdVoiceBot {
         return suggestions
             .filter(choice => !query || String(choice.value).startsWith(query) || choice.name.toLowerCase().includes(query))
             .slice(0, 25);
+    }
+
+    listEpisodePlanAutocompleteChoices(focusedValue = '') {
+        try {
+            return this.episodePlanStore
+                .listPlanVersions(focusedValue)
+                .slice(0, 25)
+                .map((plan) => ({
+                    name: plan.label.slice(0, 100),
+                    value: plan.value
+                }));
+        } catch (error) {
+            console.error(`[Bot] Failed to list episode plans for autocomplete: ${error.message}`);
+            return [];
+        }
+    }
+
+    loadEpisodePlanSelection(planRef = '') {
+        const ref = String(planRef || '').trim();
+        if (!ref) {
+            return null;
+        }
+        const loaded = this.episodePlanStore.loadPlan(ref);
+        return {
+            ...loaded,
+            ref
+        };
     }
 
     getProductionEpisodeAutocompleteChoices(focusedValue = '') {
@@ -2619,11 +3265,21 @@ class AlphaClawdVoiceBot {
             });
         }
 
+        const engine = this.normalizeSessionHostMode(interaction.options.getString('engine'));
+        if (engine === 'gemini-live' && !this.geminiApiKey) {
+            return interaction.reply({
+                content: 'Gemini Live is not configured. Add GEMINI_API_KEY before selecting the experimental engine.',
+                ephemeral: true
+            });
+        }
+
         await interaction.deferReply();
 
         try {
             // Get topic FIRST (before joining)
             const topic = interaction.options.getString('topic') || 'the topic at hand';
+            const planRef = interaction.options.getString('plan') || '';
+            const episodePlanSelection = this.loadEpisodePlanSelection(planRef);
 
             // Speaker names auto-resolve from Discord member info inside the
             // receiver (see AudioReceiver.getSpeakerInfo).
@@ -2634,6 +3290,8 @@ class AlphaClawdVoiceBot {
             this.consentWaiters.set(guildId, {
                 userId: interaction.user.id,
                 topic: topic,
+                engine,
+                episodePlanSelection,
                 timestamp: Date.now()
             });
 
@@ -2655,6 +3313,8 @@ class AlphaClawdVoiceBot {
                 `🎙️ **Consent Request Sent**\n` +
                 `I've asked participants for recording consent in voice.\n` +
                 `Please type **YES** to proceed or **NO** to cancel.\n\n` +
+                `Host engine: **${engine === 'gemini-live' ? 'Gemini Live (experimental)' : 'Claude + Fish'}**\n\n` +
+                (episodePlanSelection ? `Episode plan: **${episodePlanSelection.plan.basename} ${episodePlanSelection.plan.version}**\n\n` : '') +
                 `(Waiting 60 seconds for response...)`
             );
 
@@ -2689,6 +3349,7 @@ class AlphaClawdVoiceBot {
 
         // Check if we're awaiting consent
         if (this.recordingState.get(guildId) !== this.RecordingState.AWAITING_CONSENT) {
+            await this.handlePlanningMessage(message);
             return;
         }
 
@@ -2699,7 +3360,7 @@ class AlphaClawdVoiceBot {
         if (waiter.userId !== userId) return;
 
         if (content === 'yes') {
-            await this.grantConsent(guildId, waiter.topic);
+            await this.grantConsent(guildId, waiter.topic, waiter.engine, waiter.episodePlanSelection);
         } else if (content === 'no') {
             await this.denyConsent(guildId);
         }
@@ -2708,9 +3369,11 @@ class AlphaClawdVoiceBot {
     /**
      * Grant consent and start recording
      */
-    async grantConsent(guildId, topic) {
+    async grantConsent(guildId, topic, engine = 'current', episodePlanSelection = null) {
+        const sessionHostMode = this.normalizeSessionHostMode(engine);
         this.conversationBuffer?.clear?.();
         this.recordingState.set(guildId, this.RecordingState.RECORDING);
+        this.sessionHostModes.set(guildId, sessionHostMode);
         this.resetConsecutiveGeneratorSilences(guildId);
         const consentTimestamp = new Date().toISOString();
 
@@ -2725,17 +3388,27 @@ class AlphaClawdVoiceBot {
         // Start recording with consent metadata
         const recordingInfo = this.voiceManager.startRecording(guildId, 'episode', {
             consentGiven: true,
-            consentTimestamp: consentTimestamp
+            consentTimestamp: consentTimestamp,
+            episodePlan: episodePlanSelection ? {
+                basename: episodePlanSelection.plan.basename,
+                version: episodePlanSelection.plan.version,
+                path: episodePlanSelection.path
+            } : null
         });
         this.startInternalThoughtSession(guildId, recordingInfo);
-        this.startShowRunnerSession(guildId, recordingInfo, topic);
+        this.startEpisodePlanTracker(guildId, episodePlanSelection, recordingInfo);
 
         // Announce start (use cached audio to save API credits)
         try {
             const audioBuffer = this.cachedAudio.recordingStarted;
             if (audioBuffer) {
                 this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
-                await this.voiceManager.speak(guildId, audioBuffer);
+                if (sessionHostMode === 'gemini-live') {
+                    const announcement = await this.voiceManager.speakWithTiming(guildId, audioBuffer);
+                    await announcement.finished;
+                } else {
+                    await this.voiceManager.speak(guildId, audioBuffer);
+                }
             } else {
                 // Fallback to synthesis if cached audio not available
                 const startText = `Recording started! Episode is now live. Speak naturally and I'll join the conversation.`;
@@ -2743,15 +3416,43 @@ class AlphaClawdVoiceBot {
                     voiceId: this.voiceId
                 });
                 this.voiceManager.addBotAudioToRecording(guildId, synthesizedBuffer);
-                await this.voiceManager.speak(guildId, synthesizedBuffer);
+                if (sessionHostMode === 'gemini-live') {
+                    const announcement = await this.voiceManager.speakWithTiming(guildId, synthesizedBuffer);
+                    await announcement.finished;
+                } else {
+                    await this.voiceManager.speak(guildId, synthesizedBuffer);
+                }
             }
 
             this.podcastGenerator.startSession({
                 topic: topic || 'general discussion',
                 recording: true,
-                speakers: Object.values(this.speakerMap).map(s => `${s.name} (${s.role || 'speaker'})`)
+                speakers: Object.values(this.speakerMap).map(s => `${s.name} (${s.role || 'speaker'})`),
+                episodePlan: episodePlanSelection?.plan
             });
-            this.startIdleDecisionLoop(guildId);
+            if (sessionHostMode === 'gemini-live') {
+                try {
+                    await this.startGeminiLiveSession(guildId);
+                } catch (error) {
+                    console.error(`[GeminiLive] Startup failed; falling back to current host: ${error.message}`);
+                    this.sessionHostModes.set(guildId, 'current');
+                    this.startIdleDecisionLoop(guildId);
+                    await this.speakServiceNotice(
+                        guildId,
+                        "Gemini Live couldn't start, so I'm continuing with the regular host.",
+                        {
+                            fallbackReason: 'gemini_live_start_failed',
+                            providerError: {
+                                provider: 'google-gemini-live',
+                                message: error.message
+                            },
+                            audioEvents: ['gemini_live_fallback']
+                        }
+                    );
+                }
+            } else {
+                this.startIdleDecisionLoop(guildId);
+            }
 
             // Notify Gateway/OpenClaw when it is driving responses, mirroring is enabled,
             // or bigBrain handoff may need session context.
@@ -2778,7 +3479,12 @@ class AlphaClawdVoiceBot {
                         event: 'session_start',
                         recording: true,
                         guidelines: PODCAST_GUIDELINES,
-                        topic: topic || 'general discussion'
+                        topic: topic || 'general discussion',
+                        episodePlan: episodePlanSelection ? {
+                            basename: episodePlanSelection.plan.basename,
+                            version: episodePlanSelection.plan.version,
+                            path: episodePlanSelection.path
+                        } : null
                     });
                     console.log('[Bot] Injected podcast session_start event');
                 } catch (err) {
@@ -2844,6 +3550,7 @@ class AlphaClawdVoiceBot {
                 this.recordingState.set(guildId, this.RecordingState.STOPPING);
                 this.conversationBuffer?.clear?.();
                 this.stopIdleDecisionLoop(guildId);
+                await this.stopGeminiLiveSession(guildId);
                 this.podcastGenerator.endSession();
                 this.consecutiveGeneratorSilences?.delete?.(guildId);
             }
@@ -2880,7 +3587,7 @@ class AlphaClawdVoiceBot {
                     result = await this.voiceManager.stopRecording(guildId);
                     recordingPath = result?.recordingPath;
                 } finally {
-                    await this.endShowRunnerSession(guildId);
+                    this.endEpisodePlanTracker(guildId);
                     await this.endInternalThoughtSession(guildId);
                 }
             }
@@ -2888,6 +3595,7 @@ class AlphaClawdVoiceBot {
             // Clean up recording state
             this.recordingState.delete(guildId);
             this.consentWaiters.delete(guildId);
+            this.sessionHostModes.delete(guildId);
 
             // Leave voice channel
             await this.voiceManager.leaveChannel(guildId);
@@ -2929,6 +3637,7 @@ class AlphaClawdVoiceBot {
 
         const voiceMode = this.voiceProvider?.getMode() || 'unknown';
         const info = this.voiceProvider?.getInfo();
+        const sessionHostMode = this.sessionHostModes.get(guildId) || 'current';
         const generatorInfo = this.useGatewayGenerator()
             ? { provider: 'gateway-openclaw', model: this.wsClient.sessionKey }
             : this.podcastGenerator.getInfo();
@@ -2937,7 +3646,9 @@ class AlphaClawdVoiceBot {
         message += `Connected: ${status.connected ? '✅' : '❌'}\n`;
         message += `State: ${state}\n`;
         message += `Voice Mode: **${voiceMode}** (${info?.tts.provider}/${info?.stt.provider})\n`;
-        message += `Generator: **${this.generatorMode}** (${generatorInfo.provider}/${generatorInfo.model})\n`;
+        message += sessionHostMode === 'gemini-live'
+            ? `Generator: **gemini-live** (google/${process.env.PODCAST_GEMINI_LIVE_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025'})\n`
+            : `Generator: **${this.generatorMode}** (${generatorInfo.provider}/${generatorInfo.model})\n`;
         message += `Buffer: ${bufferCount} utterance(s) | Ready: ${bufferReady ? '✅' : '⏳'}\n`;
         
         if (recordingInfo) {
@@ -2958,10 +3669,12 @@ class AlphaClawdVoiceBot {
         this.consentWaiters.delete(guildId);
         this.isProcessing.set(guildId, false);
         this.stopIdleDecisionLoop(guildId);
+        await this.stopGeminiLiveSession(guildId);
+        this.sessionHostModes.delete(guildId);
         this.consecutiveGeneratorSilences?.delete?.(guildId);
         this.clearParticipantActivityTimers(guildId);
         this.podcastGenerator.endSession();
-        await this.endShowRunnerSession(guildId);
+        this.endEpisodePlanTracker(guildId);
         await this.endInternalThoughtSession(guildId);
 
         await interaction.reply({
@@ -2983,14 +3696,22 @@ class AlphaClawdVoiceBot {
      * @param {Array} utterances - Array of {speaker, transcription, timestamp, words}
      */
     async handleBufferFlush(utterances) {
-        if (this.useGatewayGenerator() && !this.wsClient.isAuthenticated) {
-            console.warn('[Bot] Cannot flush buffer: WebSocket not authenticated');
-            return;
-        }
-
         const guildId = this.getActiveGuildId();
         if (!guildId) {
             console.warn('[Bot] Cannot flush buffer: No active recording session');
+            return;
+        }
+
+        if (this.isGeminiLiveSession(guildId)) {
+            console.log(
+                `[GeminiLive] Fish ASR shadow flush observed (${utterances.length} utterance(s)); ` +
+                'buffered podcast generation bypassed'
+            );
+            return;
+        }
+
+        if (this.useGatewayGenerator() && !this.wsClient.isAuthenticated) {
+            console.warn('[Bot] Cannot flush buffer: WebSocket not authenticated');
             return;
         }
 
@@ -3111,7 +3832,7 @@ class AlphaClawdVoiceBot {
             ...generatorTiming,
             turnIdIntent
         });
-        const showRunnerGuidance = this.getShowRunnerGuidanceForGenerator(guildId);
+        const episodePlanStructure = this.getEpisodePlanStructureForGenerator(guildId, generatorTiming);
         let bigBrainDispatch = null;
         let bigHeartDispatch = null;
 
@@ -3126,7 +3847,7 @@ class AlphaClawdVoiceBot {
                 pendingBigHeart: this.getPendingBigHeartForGenerator(guildId),
                 awarenessInjections,
                 awarenessShelfItems,
-                showRunnerGuidance,
+                episodePlanStructure,
                 recentInternalThoughts: this.getRecentInternalThoughtsForGenerator(guildId, transcript, utterances),
                 consecutiveSilenceTurns: this.getConsecutiveGeneratorSilences(guildId),
                 ...generatorTiming,
@@ -3141,6 +3862,7 @@ class AlphaClawdVoiceBot {
                 this.podcastGenerator.rememberTurn?.(transcript, {
                     shouldRespond: false,
                     speech: '',
+                    chosenAngle: '',
                     bigBrain: { requested: false, reason: '', consumedRunId: '' },
                     bigHeart: { requested: false, reason: '', consumedRunId: '' }
                 });
@@ -3152,6 +3874,7 @@ class AlphaClawdVoiceBot {
                 this.podcastGenerator.rememberTurn?.(transcript, {
                     shouldRespond: false,
                     speech: '',
+                    chosenAngle: '',
                     bigBrain: { requested: false, reason: '', consumedRunId: '' },
                     bigHeart: { requested: false, reason: '', consumedRunId: '' }
                 });
@@ -4584,6 +5307,7 @@ class AlphaClawdVoiceBot {
                 shouldRespond: response.shouldRespond,
                 speech: '',
                 text: '',
+                chosenAngle: '',
                 bigBrain: { requested: false, reason: '', consumedRunId: '' },
                 bigHeart: { requested: false, reason: '', consumedRunId: '' }
             };
@@ -4823,10 +5547,13 @@ class AlphaClawdVoiceBot {
             // history use the authoritative text and bigBrain values.
             let finalResponse = await this.settleGeneratorResponse(response, 'playback');
 
+            const playbackUnderrunDetected = playbackResult.playbackUnderrunDetected === true;
             const transcriptEntry = {
                 speaker: 'Alpha-Clawd',
                 speakerRole: 'host',
-                transcription: finalResponse.speech,
+                transcription: playbackUnderrunDetected
+                    ? '[Playback underrun: generated host response was not fully audible.]'
+                    : finalResponse.speech,
                 timestamp: generatedAt,
                 generatedAt,
                 ttsStartedAt,
@@ -4836,6 +5563,11 @@ class AlphaClawdVoiceBot {
                 playbackEndedAt,
                 duration: playbackDuration
             };
+            if (playbackUnderrunDetected) {
+                transcriptEntry.generatedTranscription = finalResponse.speech;
+                transcriptEntry.playbackUnderrunDetected = true;
+                transcriptEntry.audioEvents = ['playback_underrun'];
+            }
             if (source) {
                 transcriptEntry.source = source;
             }
@@ -4858,9 +5590,15 @@ class AlphaClawdVoiceBot {
             this.voiceManager.saveTranscriptEntry(guildId, transcriptEntry);
             this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);
             this.observeShowRunnerTranscriptEntry(guildId, transcriptEntry);
+            this.applyEpisodePlanResponse(guildId, finalResponse, {
+                playbackStartedAt,
+                playbackEndedAt
+            });
             this.resetConsecutiveGeneratorSilences(guildId);
 
-            if (typeof options.rememberTranscript === 'string') {
+            if (playbackUnderrunDetected) {
+                console.warn('[Bot] Skipping generator history write for truncated host playback');
+            } else if (typeof options.rememberTranscript === 'string') {
                 this.podcastGenerator.rememberTurn?.(options.rememberTranscript, finalResponse);
             } else if (options.rememberAssistant) {
                 this.podcastGenerator.rememberAssistantResponse?.(finalResponse);
@@ -4874,6 +5612,23 @@ class AlphaClawdVoiceBot {
                 this.directResponseInFlight.delete(guildId);
                 this.conversationBuffer?.setFlushHold?.('direct-response', false);
             }
+        }
+    }
+
+    applyEpisodePlanResponse(guildId, response = {}, timing = {}) {
+        const tracker = this.episodePlanTrackers?.get?.(guildId);
+        if (!tracker) {
+            return null;
+        }
+        try {
+            tracker.applySpokenResponse(response, {
+                ...timing,
+                now: timing.playbackEndedAt || new Date().toISOString()
+            });
+            return tracker.snapshot();
+        } catch (error) {
+            console.warn(`[Bot] Episode plan tracker response update failed: ${error.message}`);
+            return null;
         }
     }
 
@@ -5192,6 +5947,10 @@ class AlphaClawdVoiceBot {
      * Stop the bot
      */
     async stop() {
+        for (const guildId of this.geminiLiveHosts.keys()) {
+            await this.stopGeminiLiveSession(guildId);
+        }
+
         // Leave all voice channels
         for (const guildId of this.voiceManager.connections.keys()) {
             await this.voiceManager.leaveChannel(guildId);

@@ -17,6 +17,7 @@ temp/
 recordings/
 production/
 episodes/
+eval/runs/
 
 # OS/editor
 .DS_Store
