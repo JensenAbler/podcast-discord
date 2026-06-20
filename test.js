@@ -3113,7 +3113,12 @@ async function runTests() {
         }
 
         const sentMessages = [];
-        const channel = { id: 'channel-plan', send: async (content) => { sentMessages.push(content); } };
+        let typingCount = 0;
+        const channel = {
+            id: 'channel-plan',
+            send: async (content) => { sentMessages.push(content); },
+            sendTyping: async () => { typingCount += 1; }
+        };
         const makePlanningMessage = (content, id = `user-${sentMessages.length}`) => ({
             channelId: 'channel-plan',
             channel,
@@ -3140,6 +3145,7 @@ async function runTests() {
             planningCalls.length !== 2 ||
             planningCalls[1].planningMessages.length !== 2 ||
             planningCalls[1].basename !== 'jordan-consciousness-training' ||
+            typingCount !== 2 ||
             firstSaved.plan.version !== 'v001' ||
             secondSaved.plan.version !== 'v002' ||
             secondSaved.plan.basename !== 'jordan-consciousness-training' ||
@@ -3189,6 +3195,34 @@ async function runTests() {
         const selected = bot.loadEpisodePlanSelection('jordan-consciousness-training@v002');
         if (selected.plan.version !== 'v002' || !selected.path.endsWith(path.join('v002', 'episode-plan.json'))) {
             throw new Error(`Selected plan did not load exact version: ${JSON.stringify(selected)}`);
+        }
+
+        let closeReply = '';
+        const callsBeforeClose = planningCalls.length;
+        await bot.handlePodcastPlanCommand({
+            channelId: 'channel-close',
+            guildId: 'guild-plan',
+            user: { id: 'planner' },
+            reply: async (content) => { closeReply = content; }
+        });
+        const closeMessages = [];
+        const closeChannel = { id: 'channel-close', send: async (content) => { closeMessages.push(content); } };
+        await bot.handlePlanningMessage({
+            channelId: 'channel-close',
+            channel: closeChannel,
+            guildId: 'guild-plan',
+            content: 'lets end this session',
+            createdAt: new Date('2026-05-15T00:01:00.000Z'),
+            author: { id: 'producer', username: 'producer', bot: false },
+            member: { displayName: 'producer' }
+        });
+        if (
+            !closeReply.includes('Episode planning is open') ||
+            bot.planningSessions.has('channel-close') ||
+            planningCalls.length !== callsBeforeClose ||
+            closeMessages.at(-1) !== 'Planning session closed. No episode plan was approved.'
+        ) {
+            throw new Error(`Explicit planning-session close was not immediate and local: ${JSON.stringify({ closeReply, sessions: Array.from(bot.planningSessions.keys()), planningCalls, closeMessages })}`);
         }
 
         const joinBot = Object.create(AlphaClawdVoiceBot.prototype);

@@ -2457,6 +2457,13 @@ class AlphaClawdVoiceBot {
         if (!record.text) {
             return true;
         }
+
+        if (this.isPlanningSessionCloseRequest(record.text)) {
+            await this.closePlanningSession(session, record, message.channel, 'human_requested');
+            return true;
+        }
+
+        console.log(`[Bot] Podcast planning message captured in channel ${channelId} from ${record.speaker}: ${this.truncateForLog(record.text, 120)}`);
         session.messages.push(record);
         this.persistPlanningSessionMessages(session);
 
@@ -2479,7 +2486,47 @@ class AlphaClawdVoiceBot {
         };
     }
 
+    isPlanningSessionCloseRequest(text = '') {
+        const normalized = String(text || '')
+            .toLowerCase()
+            .replace(/<@!?\d+>/g, '')
+            .replace(/[^\w\s']/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        return (
+            /^(?:let'?s\s+)?(?:end|close|cancel|stop|abort)\s+(?:this\s+|the\s+)?(?:episode\s+)?(?:planning\s+)?session\b/.test(normalized) ||
+            /^(?:end|close|cancel|stop|abort)\s+(?:episode\s+)?planning\b/.test(normalized)
+        );
+    }
+
+    async closePlanningSession(session, record = null, channel = null, reason = 'closed') {
+        if (!session || session.closed) {
+            return;
+        }
+        session.closed = true;
+        if (record?.text) {
+            session.messages.push(record);
+            this.persistPlanningSessionMessages(session);
+        }
+        if (session.basename) {
+            this.episodePlanStore.appendSessionRecord(session.basename, {
+                type: 'closed',
+                reason,
+                latestVersion: session.latestVersion || '',
+                message: record || null
+            });
+        }
+        this.planningSessions.delete(session.channelId);
+        const latest = session.latestPlan
+            ? ` Latest saved plan remains **${session.latestPlan.basename} ${session.latestPlan.version}**.`
+            : ' No episode plan was approved.';
+        await channel?.send?.(`Planning session closed.${latest}`);
+    }
+
     async processPlanningSession(session, latestMessage, channel) {
+        if (session.closed || this.planningSessions.get(session.channelId) !== session) {
+            return;
+        }
         if (!this.showRunnerEnabled) {
             return;
         }
@@ -2488,12 +2535,18 @@ class AlphaClawdVoiceBot {
             return;
         }
 
+        try {
+            await channel?.sendTyping?.();
+        } catch {}
         const output = await this.showRunnerGenerator.generate({
             planningMessages: session.messages,
             previousPlan: session.latestPlan,
             basename: session.basename,
             latestFeedback: latestMessage?.text || ''
         });
+        if (session.closed || this.planningSessions.get(session.channelId) !== session) {
+            return;
+        }
 
         if (output.plan) {
             const saved = this.savePlanningOutput(session, output);
@@ -2594,6 +2647,11 @@ class AlphaClawdVoiceBot {
         for (const chunk of chunks) {
             await channel.send(chunk);
         }
+    }
+
+    truncateForLog(text = '', maxChars = 160) {
+        const clean = String(text || '').replace(/\s+/g, ' ').trim();
+        return clean.length > maxChars ? `${clean.slice(0, maxChars - 1)}...` : clean;
     }
 
     /**
