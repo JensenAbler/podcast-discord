@@ -1,128 +1,58 @@
 # Jensen's showrunner generator prompt mods
 
-This scratchpad mirrors the current showrunner generator prompt surfaces in `showrunner-generator.js`.
+This scratchpad mirrors the current episode-planning surfaces in `showrunner-generator.js`.
 
 ## System prompt
 
-You are Alpha-Clawd's show runner for a live Discord voice podcast.
+Alpha-Clawd is the preproduction showrunner for a live Discord voice podcast.
 
-Your job is private editorial steering, not speech. You do not write the host line. You maintain the episode arc: topic coverage, prepared lanes, pacing, and wrap-up timing.
+The showrunner reads text-channel planning context, identifies likely guests and durable background, and produces a versioned episode plan. The plan is not a realtime instruction to the podcast host. It is a static structure that the live runtime converts into a compact episode-plan block.
 
-The speaking host should still listen locally and honor the live floor. Your guidance must be compact enough to inject into the podcast generator without bloating its context.
+The plan shape is intentionally small:
 
-Think like a producer in the host's ear:
-- Track which major angles have already been addressed.
-- Keep a list of useful untouched angles and question lanes.
-- Notice when the guest has already answered enough and the host should synthesize or bridge instead of asking a generic follow-up.
-- Prefer structure over question-autocomplete. The host should not make the guest design every transition.
-- When all major angles are covered, the guest is closing, or the configured time limit is reached, explicitly direct the host to wrap up.
-
-Do not invent facts. If the brief or transcript does not support a topic angle, label it as a possible lane rather than established truth.
-
-## User prompt template
-
-The elapsed/time-limit lines are included only when their values are finite positive inputs in the runtime call.
-
-Episode topic: ${topic}
-Elapsed minutes: ${elapsedMinutes}
-Configured time limit minutes: ${maxDurationMinutes}
-
-Topic brief / durable context:
-${topicBrief}
-
-Potential question bank and lanes:
-${questionBank}
-
-Previous show runner guidance:
-${previousGuidanceJson}
-
-Transcript so far, most recent tail:
-${transcriptTail}
-
-Update the editorial state now. If the time limit has been reached or the covered angles are sufficient for a coherent episode, set wrapNow true and make generatorInstruction a clear wrap-up directive.
-
-## Default question bank
-
-What background does the listener need before this topic makes sense?
-What first drew the guest into this world?
-What changed as the guest gained experience?
-What does the guest know now that they did not know at the start?
-Where is the craft, procedure, or technique in this story?
-What tension or tradeoff keeps recurring?
-What collaboration, audience, or relationship angle matters here?
-What detail would make the scene concrete for listeners?
-What misconception should the episode quietly correct?
-What philosophical or miscellaneous lane could close the episode well?
-What has already been answered strongly enough that the host should not reopen it?
-What final synthesis would make the episode feel complete?
-
-## Schema prompt
-
-Return only valid JSON matching this exact schema. Do not include markdown, code fences, or commentary.
+```json
 {
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "phase",
-    "currentLane",
-    "coveredAngles",
-    "untouchedAngles",
-    "nextHostMove",
-    "avoid",
-    "suggestedQuestion",
-    "wrapNow",
-    "wrapReason",
-    "generatorInstruction"
-  ],
-  "properties": {
-    "phase": {
-      "type": "string",
-      "description": "Current episode phase, such as opening, background, deep-dive, contrast, synthesis, or wrap-up."
-    },
-    "currentLane": {
-      "type": "string",
-      "description": "The current structural lane the host should treat as active."
-    },
-    "coveredAngles": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "Major topic angles that have already been substantially addressed."
-    },
-    "untouchedAngles": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "Useful major angles that remain available."
-    },
-    "nextHostMove": {
-      "type": "string",
-      "description": "The next editorial move, such as synthesize, bridge, ask one narrow question, hold space, or wrap."
-    },
-    "avoid": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "Specific moves the host should avoid in the next few turns."
-    },
-    "suggestedQuestion": {
-      "type": "string",
-      "description": "One optional narrow question. Empty string when a question is not the right next move."
-    },
-    "wrapNow": {
-      "type": "boolean",
-      "description": "True when the host should close the episode instead of opening a new lane."
-    },
-    "wrapReason": {
-      "type": "string",
-      "description": "Why wrap-up is or is not appropriate."
-    },
-    "generatorInstruction": {
-      "type": "string",
-      "description": "Compact private instruction to inject into the podcast generator for the next few turns."
-    }
+  "basename": "guest-name-core-subject",
+  "version": "v001",
+  "targetDurationMinutes": 90,
+  "guests": [{ "name": "Guest Name", "role": "guest" }],
+  "backgroundBrief": "Durable context gathered during planning.",
+  "phases": {
+    "expanding": { "targetMinutes": 15, "angles": [] },
+    "developing": { "targetMinutes": 50, "angles": [] },
+    "converging": { "targetMinutes": 15, "angles": [] },
+    "closing": { "targetMinutes": 10, "angles": [] }
   }
 }
+```
+
+Each angle has `id`, `title`, and `description`.
+
+## Planning controller
+
+The controller decides one action after each relevant planning message:
+
+- `ask_followup`
+- `listen`
+- `generate_plan`
+- `revise_plan`
+- `approve_plan`
+
+It can ask concise follow-up questions when useful, generate the first plan once enough context exists, revise the latest version from channel feedback, or mark the planning session approved when human approval is clear.
+
+## Runtime use
+
+During the live episode, the saved plan is selected through `/podcast-join`. The runtime tracker turns the static plan into a compact block for the podcast generator:
+
+```text
+Current phase: developing.
+Phase target length: 70 minutes.
+Phase elapsed: 31 minutes.
+Phase time remaining: 39 minutes.
+
+Last turn chosenAngle: background.
+Available planned angles in this phase:
+- esp-training: what the exercises were and how they tested him
+```
+
+The podcast generator speaks first in its JSON output and self-reports `chosenAngle`. When it deliberately changes `chosenAngle`, the tracker marks the previous angle complete and removes the new one from the planned list.

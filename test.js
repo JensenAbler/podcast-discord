@@ -19,6 +19,8 @@ const {
     InternalThoughtManager,
     ShowRunnerGenerator,
     ShowRunnerManager,
+    EpisodePlanStore,
+    EpisodePlanTracker,
     PacketizationBuffer,
     BigBrainAwarenessSelector,
     ParticipantSignalProfile,
@@ -1175,7 +1177,7 @@ async function runTests() {
             userMessage.role === 'user' &&
             !userMessage.content.includes('Emit speech first') &&
             decisionMessage.role === 'system' &&
-            decisionMessage.content === 'Produce the host turn now. Emit speech first, then shouldRespond, followed by bigBrain and bigHeart.'
+            decisionMessage.content === 'Produce the host turn now. Emit speech first, then shouldRespond, followed by chosenAngle, bigBrain, and bigHeart.'
         ) {
             console.log('  Turn decision prompt is sent as a trailing system message');
             passed++;
@@ -1186,7 +1188,7 @@ async function runTests() {
         const systemPrompt = generator.buildSystemPrompt();
         if (
             systemPrompt.includes('Live speech is provisional:') &&
-            systemPrompt.includes('fields in this exact order: speech, shouldRespond, bigBrain, bigHeart') &&
+            systemPrompt.includes('fields in this exact order: speech, shouldRespond, chosenAngle, bigBrain, bigHeart') &&
             systemPrompt.includes('This order also applies when only JSON mode is available') &&
             systemPrompt.includes('not a polished chat message') &&
             systemPrompt.includes('Read the latest utterance first:') &&
@@ -1518,30 +1520,25 @@ async function runTests() {
             throw new Error(`Remembered episode structure did not persist: ${rememberedStructurePrompt}`);
         }
         const showRunnerPrompt = generator.buildUserPrompt('Jensen: I answered the origin story.', null, {
-            showRunnerGuidance: {
-                phase: 'deep-dive',
-                currentLane: 'origin story',
-                coveredAngles: ['guest background'],
-                untouchedAngles: ['collaboration', 'philosophical close'],
-                nextHostMove: 'synthesize and bridge toward collaboration',
-                avoid: ['Do not ask a broad what does that feel like question.'],
-                suggestedQuestion: 'Who changed how you think about this craft?',
-                wrapNow: true,
-                wrapReason: 'All major lanes are covered.',
-                generatorInstruction: 'Wrap the episode now with a concise synthesis and thanks.'
-            }
+            episodePlanStructure: [
+                'Current phase: developing.',
+                'Phase target length: 70 minutes.',
+                'Phase elapsed: 31 minutes.',
+                'Phase time remaining: 39 minutes.',
+                '',
+                'Last turn chosenAngle: origin-story.',
+                'Available planned angles in this phase:',
+                '- collaboration: who changed how the guest thinks about the craft'
+            ].join('\n')
         });
         if (
-            !showRunnerPrompt.includes('Show runner direction') ||
-            !showRunnerPrompt.includes('phase: deep-dive') ||
-            !showRunnerPrompt.includes('untouchedAngles: collaboration; philosophical close') ||
-            !showRunnerPrompt.includes('wrapNow: true') ||
-            !showRunnerPrompt.includes('Wrap the episode now') ||
-            !showRunnerPrompt.includes('private editorial steering') ||
-            !showRunnerPrompt.includes('usually speak') ||
+            !showRunnerPrompt.includes('Episode plan structure') ||
+            !showRunnerPrompt.includes('Current phase: developing.') ||
+            !showRunnerPrompt.includes('Last turn chosenAngle: origin-story.') ||
+            !showRunnerPrompt.includes('- collaboration: who changed how the guest thinks about the craft') ||
             showRunnerPrompt.includes('contextText')
         ) {
-            throw new Error(`Show runner guidance was not injected into generator prompt: ${showRunnerPrompt}`);
+            throw new Error(`Episode plan structure was not injected into generator prompt: ${showRunnerPrompt}`);
         }
         console.log('  Generator tracks standby, no-question pacing, and episode structure directives');
         passed++;
@@ -1960,7 +1957,7 @@ async function runTests() {
             fallbackCalls[0].body.response_format?.type !== 'json_schema' ||
             fallbackCalls[1].body.response_format?.type !== 'json_object' ||
             fallbackCalls[1].body.reasoning_format !== 'hidden' ||
-            !fallbackCalls[1].body.messages?.[0]?.content.includes('fields in this exact order: speech, shouldRespond, bigBrain, bigHeart') ||
+            !fallbackCalls[1].body.messages?.[0]?.content.includes('fields in this exact order: speech, shouldRespond, chosenAngle, bigBrain, bigHeart') ||
             fallbackOutput.speech !== 'Qwen JSON fallback works.'
         ) {
             throw new Error(`JSON object fallback did not run as expected: ${JSON.stringify({ fallbackCalls, fallbackOutput })}`);
@@ -1972,8 +1969,9 @@ async function runTests() {
 
         const bigBrainSchema = handoffGenerator.getResponseSchema();
         if (
-            bigBrainSchema.required.join(',') !== 'speech,shouldRespond,bigBrain,bigHeart' ||
-            Object.keys(bigBrainSchema.properties).join(',') !== 'speech,shouldRespond,bigBrain,bigHeart' ||
+            bigBrainSchema.required.join(',') !== 'speech,shouldRespond,chosenAngle,bigBrain,bigHeart' ||
+            Object.keys(bigBrainSchema.properties).join(',') !== 'speech,shouldRespond,chosenAngle,bigBrain,bigHeart' ||
+            !bigBrainSchema.properties.chosenAngle ||
             !bigBrainSchema.required.includes('bigHeart') ||
             !bigBrainSchema.required.includes('bigBrain') ||
             !bigBrainSchema.properties.bigBrain ||
@@ -2867,7 +2865,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 5c.0: Show runner generator and manager');
+    console.log('\nTest 5c.0: Episode plan generator, store, and tracker');
     try {
         const showRunnerGenerator = new ShowRunnerGenerator({
             apiKey: 'showrunner-test-key',
@@ -2880,16 +2878,37 @@ async function runTests() {
                 choices: [{
                     message: {
                         content: JSON.stringify({
-                            phase: 'background',
-                            currentLane: 'origin story',
-                            coveredAngles: ['guest background'],
-                            untouchedAngles: ['craft process', 'philosophical close'],
-                            nextHostMove: 'Synthesize the origin answer and bridge into craft.',
-                            avoid: ['Do not ask another generic broad question.'],
-                            suggestedQuestion: 'What changed once this became a practice?',
-                            wrapNow: false,
-                            wrapReason: 'Several major lanes remain.',
-                            generatorInstruction: 'Carry the thread with synthesis, then bridge to craft process.'
+                            action: 'generate_plan',
+                            messageToChannel: 'Here is the first structure.',
+                            approved: false,
+                            plan: {
+                                basename: 'internal-thoughts-live-hosting',
+                                version: 'v001',
+                                targetDurationMinutes: 40,
+                                guests: [{ name: 'Jensen', role: 'builder' }],
+                                backgroundBrief: 'The guest cares about internal thoughts and structure.',
+                                phases: {
+                                    expanding: {
+                                        targetMinutes: 8,
+                                        angles: [{ id: 'guest-background', title: 'Guest background', description: 'Establish the builder and why the system matters.' }]
+                                    },
+                                    developing: {
+                                        targetMinutes: 20,
+                                        angles: [
+                                            { id: 'internal-thoughts', title: 'Internal thoughts', description: 'Explore how internal awareness changes hosting.' },
+                                            { id: 'live-structure', title: 'Live structure', description: 'Discuss how the host moves through a planned episode.' }
+                                        ]
+                                    },
+                                    converging: {
+                                        targetMinutes: 8,
+                                        angles: [{ id: 'listener-value', title: 'Listener value', description: 'Synthesize what the audience gains.' }]
+                                    },
+                                    closing: {
+                                        targetMinutes: 4,
+                                        angles: [{ id: 'closing-message', title: 'Closing message', description: 'Land the episode cleanly.' }]
+                                    }
+                                }
+                            }
                         })
                     }
                 }],
@@ -2897,140 +2916,324 @@ async function runTests() {
             };
         };
 
-        const guidance = await showRunnerGenerator.generate({
-            topic: 'AI podcast hosting',
-            topicBrief: 'The guest cares about internal thoughts and structure.',
-            questionBank: 'How did the project start?\nWhat should listeners notice?',
-            transcript: 'Jensen: The origin is really the introspection system.',
-            previousGuidance: null,
-            elapsedMinutes: 12,
-            maxDurationMinutes: 45
+        const generated = await showRunnerGenerator.generate({
+            planningMessages: [
+                { speaker: 'Jensen', text: 'The episode is about internal thoughts and structure.' }
+            ]
         });
         if (
             showRunnerCall?.requestPath !== '/chat/completions' ||
-            showRunnerCall.body.response_format?.json_schema?.name !== 'podcast_showrunner_guidance' ||
-            showRunnerCall.body.response_format?.json_schema?.schema?.required?.includes('generatorInstruction') !== true ||
-            guidance.phase !== 'background' ||
-            guidance.untouchedAngles.length !== 2 ||
-            guidance.wrapNow !== false ||
-            !guidance.generatorInstruction.includes('bridge to craft')
+            showRunnerCall.body.response_format?.json_schema?.name !== 'podcast_episode_plan_controller' ||
+            showRunnerCall.body.response_format?.json_schema?.schema?.required?.join(',') !== 'action,messageToChannel,approved,plan' ||
+            generated.action !== 'generate_plan' ||
+            generated.plan.basename !== 'internal-thoughts-live-hosting' ||
+            generated.plan.phases.developing.angles.length !== 2
         ) {
-            throw new Error(`Show runner generator did not produce structured guidance: ${JSON.stringify({ showRunnerCall, guidance })}`);
+            throw new Error(`Show runner generator did not produce an episode plan: ${JSON.stringify({ showRunnerCall, generated })}`);
         }
         const showRunnerMessages = showRunnerGenerator.buildMessages({
-            topic: 'test',
-            transcript: 'Jensen: testing'
+            planningMessages: [{ speaker: 'Jensen', text: 'Let us plan a show.' }],
+            previousPlan: generated.plan
         });
         if (
-            !showRunnerMessages[0].content.includes('private editorial steering') ||
-            !showRunnerMessages[1].content.includes('Potential question bank and lanes') ||
-            !showRunnerMessages[2].content.includes('"wrapNow"') ||
-            !showRunnerMessages[2].content.includes('"generatorInstruction"')
+            !showRunnerMessages[0].content.includes('preproduction showrunner') ||
+            !showRunnerMessages[1].content.includes('Previous episode plan') ||
+            !showRunnerMessages[2].content.includes('"targetDurationMinutes"') ||
+            showRunnerMessages[2].content.includes('"wrapNow"') ||
+            showRunnerMessages[2].content.includes('"generatorInstruction"')
         ) {
-            throw new Error(`Show runner prompts are missing role/schema context: ${JSON.stringify(showRunnerMessages)}`);
+            throw new Error(`Episode plan prompts are missing role/schema context: ${JSON.stringify(showRunnerMessages)}`);
         }
 
-        const managerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'showrunner-manager-'));
-        const managerCalls = [];
-        const disabledManager = new ShowRunnerManager({
-            enabled: false,
-            generatorOptions: {
-                apiKey: 'unused-showrunner-key',
-                baseUrl: 'https://api.anthropic.com/v1',
-                model: 'claude-opus-4-7'
-            }
-        });
-        if (disabledManager.generator !== null) {
-            throw new Error('Disabled show runner manager should not construct a generator');
-        }
-        const manager = new ShowRunnerManager({
-            enabled: true,
-            updateIntervalParticipantTurns: 2,
-            maxDurationMinutes: 1,
-            now: (() => {
-                const values = [
-                    '2026-05-15T00:00:00.000Z',
-                    '2026-05-15T00:00:10.000Z',
-                    '2026-05-15T00:00:20.000Z',
-                    '2026-05-15T00:00:30.000Z',
-                    '2026-05-15T00:02:00.000Z'
-                ];
-                let index = 0;
-                return () => values[Math.min(index++, values.length - 1)];
-            })(),
-            generator: {
-                generate: async (input) => {
-                    managerCalls.push(input);
-                    return {
-                        phase: 'deep-dive',
-                        currentLane: 'craft process',
-                        coveredAngles: ['origin story'],
-                        untouchedAngles: ['collaboration'],
-                        nextHostMove: 'bridge',
-                        avoid: ['generic follow-up'],
-                        suggestedQuestion: 'What changed in practice?',
-                        wrapNow: false,
-                        wrapReason: 'More lanes remain.',
-                        generatorInstruction: 'Synthesize and bridge into craft process.'
-                    };
+        const planRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'episode-plan-store-'));
+        const store = new EpisodePlanStore({ rootDir: planRoot });
+        const firstSave = store.saveNextVersion(generated.plan);
+        const secondSave = store.saveNextVersion({
+            ...generated.plan,
+            phases: {
+                ...generated.plan.phases,
+                developing: {
+                    ...generated.plan.phases.developing,
+                    angles: generated.plan.phases.developing.angles.slice(0, 1)
                 }
             }
         });
-        const session = manager.startSession('guild-showrunner', {
-            recordingPath: managerDir,
-            topic: 'Show runner test',
+        if (
+            firstSave.plan.version !== 'v001' ||
+            secondSave.plan.version !== 'v002' ||
+            firstSave.plan.basename !== secondSave.plan.basename ||
+            !fs.existsSync(firstSave.path) ||
+            JSON.parse(fs.readFileSync(firstSave.path, 'utf8')).phases.developing.angles.length !== 2
+        ) {
+            throw new Error(`Episode plan store did not version plans immutably: ${JSON.stringify({ firstSave, secondSave })}`);
+        }
+
+        const tracker = new EpisodePlanTracker(generated.plan, {
             startedAt: '2026-05-15T00:00:00.000Z'
         });
-        const firstShowRunnerRecord = await manager.handleTranscriptEntry('guild-showrunner', {
-            speaker: 'Jensen',
-            speakerRole: 'guest',
-            transcription: 'The show needs more structure.',
-            timestamp: '2026-05-15T00:00:05.000Z'
-        });
+        const initialBlock = tracker.getStructureBlock('2026-05-15T00:31:00.000Z');
+        tracker.applySpokenResponse({
+            shouldRespond: true,
+            speech: 'Let us establish the background first.',
+            chosenAngle: 'guest-background'
+        }, { now: '2026-05-15T00:31:30.000Z' });
+        const afterExpansion = tracker.getStructureBlock('2026-05-15T00:31:30.000Z');
+        tracker.applySpokenResponse({
+            shouldRespond: true,
+            speech: 'Let us go into internal thoughts.',
+            chosenAngle: 'internal-thoughts'
+        }, { now: '2026-05-15T00:32:00.000Z' });
+        const afterChoice = tracker.getStructureBlock('2026-05-15T00:32:00.000Z');
+        tracker.applySpokenResponse({
+            shouldRespond: true,
+            speech: 'Now the live structure piece.',
+            chosenAngle: 'live-structure'
+        }, { now: '2026-05-15T00:33:00.000Z' });
+        const afterMove = tracker.getStructureBlock('2026-05-15T00:33:00.000Z');
         if (
-            firstShowRunnerRecord?.guidance?.id !== 'showrunner-1' ||
-            managerCalls[0]?.topic !== 'Show runner test' ||
-            !managerCalls[0]?.transcript.includes('Jensen: The show needs more structure.')
+            !initialBlock.includes('- guest-background: Establish the builder and why the system matters.') ||
+            !afterExpansion.includes('Current phase: developing.') ||
+            !afterExpansion.includes('- internal-thoughts: Explore how internal awareness changes hosting.') ||
+            afterChoice.includes('- internal-thoughts:') ||
+            !afterChoice.includes('Last turn chosenAngle: internal-thoughts.') ||
+            afterMove.includes('- live-structure:') ||
+            !tracker.snapshot().completedAngles.includes('internal-thoughts')
         ) {
-            throw new Error(`Show runner manager did not update on first participant turn: ${JSON.stringify({ firstShowRunnerRecord, managerCalls })}`);
+            throw new Error(`Episode plan tracker did not move chosen angles correctly: ${JSON.stringify({ initialBlock, afterExpansion, afterChoice, afterMove, snapshot: tracker.snapshot() })}`);
         }
-        await manager.handleTranscriptEntry('guild-showrunner', {
-            speaker: 'Alpha-Clawd',
-            speakerRole: 'host',
-            transcription: 'I can carry the structure.',
-            timestamp: '2026-05-15T00:00:25.000Z'
-        });
-        if (managerCalls.length !== 1) {
-            throw new Error(`Host turn should not trigger a show runner update by itself: ${JSON.stringify(managerCalls)}`);
-        }
-        const latestGuidance = manager.getGuidance('guild-showrunner');
-        if (
-            latestGuidance.phase !== 'deep-dive' ||
-            !latestGuidance.generatorInstruction.includes('Synthesize')
-        ) {
-            throw new Error(`Show runner guidance was not available to generator: ${JSON.stringify(latestGuidance)}`);
-        }
-        const forcedWrap = manager.getGuidance('guild-showrunner');
-        if (
-            forcedWrap.wrapNow !== true ||
-            !forcedWrap.generatorInstruction.includes('Wrap the episode now')
-        ) {
-            throw new Error(`Show runner did not enforce configured time limit: ${JSON.stringify(forcedWrap)}`);
-        }
-        const showRunnerLines = fs.readFileSync(session.outputPath, 'utf8').trim().split(/\n+/);
-        if (showRunnerLines.length !== 1 || JSON.parse(showRunnerLines[0]).type !== 'showrunner_guidance') {
-            throw new Error(`Show runner JSONL was not persisted correctly: ${fs.readFileSync(session.outputPath, 'utf8')}`);
-        }
-        const endedShowRunner = await manager.endSession('guild-showrunner');
-        if (endedShowRunner.updateCount !== 1) {
-            throw new Error(`Show runner manager did not end cleanly: ${JSON.stringify(endedShowRunner)}`);
-        }
-        fs.rmSync(managerDir, { recursive: true, force: true });
+        fs.rmSync(planRoot, { recursive: true, force: true });
 
-        console.log('  Show runner produces structured episode guidance and persists state');
+        console.log('  Episode plan generator, store, and tracker produce the static show structure');
         passed++;
     } catch (error) {
-        console.log(`  Show runner failed: ${error.message}`);
+        console.log(`  Episode planning failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 5c.0b: Discord episode planning sessions and plan selection');
+    try {
+        const commandJson = AlphaClawdVoiceBot.prototype.buildSlashCommands().map((command) => command.toJSON());
+        const planCommand = commandJson.find((command) => command.name === 'podcast-plan');
+        const joinCommand = commandJson.find((command) => command.name === 'podcast-join');
+        const joinPlanOption = joinCommand?.options?.find((option) => option.name === 'plan');
+        if (
+            !planCommand ||
+            (planCommand.options || []).length !== 0 ||
+            !joinPlanOption ||
+            joinPlanOption.required !== false ||
+            joinPlanOption.autocomplete !== true
+        ) {
+            throw new Error(`Episode planning commands are not registered with the expected shape: ${JSON.stringify({ planCommand, joinPlanOption })}`);
+        }
+
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'discord-episode-plans-'));
+        const store = new EpisodePlanStore({ rootDir: tempRoot });
+        const bot = Object.create(AlphaClawdVoiceBot.prototype);
+        bot.planningSessions = new Map();
+        bot.showRunnerEnabled = true;
+        bot.episodePlanStore = store;
+
+        const basePlan = {
+            basename: 'jordan-consciousness-training',
+            version: 'v001',
+            targetDurationMinutes: 90,
+            guests: [{ name: 'Jordan', role: 'guest' }],
+            backgroundBrief: 'Jordan wants to discuss consciousness training.',
+            phases: {
+                expanding: {
+                    targetMinutes: 15,
+                    angles: [{ id: 'background', title: 'Background', description: 'Establish Jordan and the premise.' }]
+                },
+                developing: {
+                    targetMinutes: 55,
+                    angles: [{ id: 'training', title: 'Training', description: 'Work through the training story.' }]
+                },
+                converging: {
+                    targetMinutes: 12,
+                    angles: [{ id: 'meaning', title: 'Meaning', description: 'Synthesize what it implies.' }]
+                },
+                closing: {
+                    targetMinutes: 8,
+                    angles: [{ id: 'closing', title: 'Closing', description: 'Close with a final message.' }]
+                }
+            }
+        };
+        const planningCalls = [];
+        bot.showRunnerGenerator = {
+            generate: async (input) => {
+                planningCalls.push(input);
+                if (planningCalls.length === 1) {
+                    return {
+                        action: 'generate_plan',
+                        messageToChannel: 'First plan.',
+                        approved: false,
+                        plan: basePlan
+                    };
+                }
+                if (/approve/i.test(input.latestFeedback || '')) {
+                    return {
+                        action: 'approve_plan',
+                        messageToChannel: 'Approved.',
+                        approved: true,
+                        plan: null
+                    };
+                }
+                return {
+                    action: 'revise_plan',
+                    messageToChannel: 'Revision.',
+                    approved: false,
+                    plan: {
+                        ...basePlan,
+                        basename: 'should-not-replace-basename',
+                        backgroundBrief: 'Jordan wants a deeper consciousness-training arc.',
+                        phases: {
+                            ...basePlan.phases,
+                            developing: {
+                                ...basePlan.phases.developing,
+                                angles: [
+                                    ...basePlan.phases.developing.angles,
+                                    { id: 'relic', title: 'Relic', description: 'Add the relic encounter.' }
+                                ]
+                            }
+                        }
+                    }
+                };
+            }
+        };
+
+        let firstReply = '';
+        await bot.handlePodcastPlanCommand({
+            channelId: 'channel-plan',
+            guildId: 'guild-plan',
+            user: { id: 'planner' },
+            reply: async (content) => { firstReply = content; }
+        });
+        if (!firstReply.includes('Episode planning is open') || !bot.planningSessions.has('channel-plan')) {
+            throw new Error(`Podcast plan command did not start a channel-scoped session: ${JSON.stringify({ firstReply, sessions: Array.from(bot.planningSessions.keys()) })}`);
+        }
+
+        const sentMessages = [];
+        const channel = { id: 'channel-plan', send: async (content) => { sentMessages.push(content); } };
+        const makePlanningMessage = (content, id = `user-${sentMessages.length}`) => ({
+            channelId: 'channel-plan',
+            channel,
+            guildId: 'guild-plan',
+            content,
+            createdAt: new Date('2026-05-15T00:00:00.000Z'),
+            author: { id, username: id, bot: false },
+            member: { displayName: id }
+        });
+
+        await bot.handlePlanningMessage(makePlanningMessage('Jordan is the guest and wants a consciousness-training arc.', 'jordan'));
+        await bot.planningSessions.get('channel-plan').processing;
+        const firstSaved = store.loadPlan('jordan-consciousness-training@v001');
+        await bot.handlePlanningMessage({
+            ...makePlanningMessage('This bot message should be ignored.', 'bot-user'),
+            author: { id: 'bot-user', username: 'bot-user', bot: true }
+        });
+
+        await bot.handlePlanningMessage(makePlanningMessage('Please add the relic encounter as a major developing angle.', 'producer'));
+        await bot.planningSessions.get('channel-plan').processing;
+        const secondSaved = store.loadPlan('jordan-consciousness-training@v002');
+
+        if (
+            planningCalls.length !== 2 ||
+            planningCalls[1].planningMessages.length !== 2 ||
+            planningCalls[1].basename !== 'jordan-consciousness-training' ||
+            firstSaved.plan.version !== 'v001' ||
+            secondSaved.plan.version !== 'v002' ||
+            secondSaved.plan.basename !== 'jordan-consciousness-training' ||
+            firstSaved.plan.phases.developing.angles.length !== 1 ||
+            secondSaved.plan.phases.developing.angles.length !== 2 ||
+            !sentMessages.some((message) => message.includes('**Episode plan: jordan-consciousness-training v002**'))
+        ) {
+            throw new Error(`Planning revisions did not preserve basename/version history: ${JSON.stringify({ planningCalls, firstSaved, secondSaved, sentMessages })}`);
+        }
+
+        let statusReply = '';
+        await bot.handlePodcastPlanCommand({
+            channelId: 'channel-plan',
+            guildId: 'guild-plan',
+            user: { id: 'planner' },
+            reply: async (content) => { statusReply = content; }
+        });
+        if (!statusReply.includes('already open') || !statusReply.includes('jordan-consciousness-training v002')) {
+            throw new Error(`Existing planning session status omitted latest plan: ${statusReply}`);
+        }
+
+        await bot.handlePlanningMessage(makePlanningMessage('Approved. Let us use this.', 'producer'));
+        await bot.planningSessions.get('channel-plan')?.processing;
+        if (bot.planningSessions.has('channel-plan') || sentMessages.at(-1) !== 'Approved.') {
+            throw new Error(`Approval did not close the planning session cleanly: ${JSON.stringify({ sessions: Array.from(bot.planningSessions.keys()), sentMessages })}`);
+        }
+
+        const sessionLog = fs.readFileSync(path.join(tempRoot, 'jordan-consciousness-training', 'planning-session.jsonl'), 'utf8');
+        if (!sessionLog.includes('"planning_message"') || !sessionLog.includes('"approved"')) {
+            throw new Error(`Planning session log did not capture messages and approval: ${sessionLog}`);
+        }
+
+        let autocompleteResponse = null;
+        await bot.handleAutocomplete({
+            commandName: 'podcast-join',
+            options: { getFocused: () => ({ name: 'plan', value: 'jordan' }) },
+            respond: async (choices) => { autocompleteResponse = choices; }
+        });
+        if (
+            autocompleteResponse.length !== 2 ||
+            autocompleteResponse[0].value !== 'jordan-consciousness-training@v002' ||
+            autocompleteResponse[1].value !== 'jordan-consciousness-training@v001'
+        ) {
+            throw new Error(`Plan autocomplete did not list selectable versions newest-first: ${JSON.stringify(autocompleteResponse)}`);
+        }
+
+        const selected = bot.loadEpisodePlanSelection('jordan-consciousness-training@v002');
+        if (selected.plan.version !== 'v002' || !selected.path.endsWith(path.join('v002', 'episode-plan.json'))) {
+            throw new Error(`Selected plan did not load exact version: ${JSON.stringify(selected)}`);
+        }
+
+        const joinBot = Object.create(AlphaClawdVoiceBot.prototype);
+        joinBot.RecordingState = { IDLE: 'IDLE', RECORDING: 'RECORDING', AWAITING_CONSENT: 'AWAITING_CONSENT' };
+        joinBot.recordingState = new Map();
+        joinBot.consentWaiters = new Map();
+        joinBot.episodePlanStore = store;
+        joinBot.speakerMap = new Map();
+        joinBot.geminiApiKey = '';
+        joinBot.cachedAudio = {};
+        joinBot.normalizeSessionHostMode = AlphaClawdVoiceBot.prototype.normalizeSessionHostMode.bind(joinBot);
+        let joinCalled = false;
+        joinBot.voiceManager = {
+            joinChannel: async () => { joinCalled = true; },
+            speak: async () => {},
+            isConnected: () => false
+        };
+        joinBot.voiceProvider = { synthesize: async () => Buffer.from('') };
+        let deferred = false;
+        let editReply = '';
+        await joinBot.handleJoinCommand({
+            guildId: 'guild-plan',
+            user: { id: 'planner' },
+            member: { voice: { channel: { id: 'voice', name: 'Studio' } } },
+            options: {
+                getString: (name) => {
+                    if (name === 'plan') return 'missing-plan@v001';
+                    if (name === 'engine') return null;
+                    if (name === 'topic') return null;
+                    return null;
+                }
+            },
+            deferReply: async () => { deferred = true; },
+            editReply: async (content) => { editReply = content; },
+            reply: async () => {}
+        });
+        if (!deferred || !editReply.includes('Error:') || joinCalled || joinBot.consentWaiters.has('guild-plan')) {
+            throw new Error(`Invalid plan was not rejected before voice join/consent: ${JSON.stringify({ deferred, editReply, joinCalled, consent: Array.from(joinBot.consentWaiters.entries()) })}`);
+        }
+
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+        console.log('  Discord planning sessions capture messages, version plans, close on approval, and feed join plan selection');
+        passed++;
+    } catch (error) {
+        console.log(`  Discord episode planning failed: ${error.message}`);
         failed++;
     }
 
@@ -3040,7 +3243,45 @@ async function runTests() {
             id: 'prompt-eval-test',
             topic: 'Prompt evaluation',
             topicBrief: 'A harness for comparing Alpha-Clawd with a human host.',
-            questionBank: ['How should the episode open?', 'What lane should the host bridge into next?'],
+            episodeStartedAt: '2026-05-15T00:00:00.000Z',
+            targetDurationMinutes: 30,
+            episodePlan: {
+                basename: 'prompt-eval-test-plan',
+                version: 'v001',
+                targetDurationMinutes: 30,
+                guests: [{ name: 'Guest', role: 'guest' }],
+                backgroundBrief: 'Evaluate how Alpha-Clawd holds presence and timing in a live podcast.',
+                phases: {
+                    expanding: {
+                        targetMinutes: 8,
+                        angles: [
+                            { id: 'presence', title: 'Presence', description: 'Open by grounding the guest in what made the host feel present.' }
+                        ]
+                    },
+                    developing: {
+                        targetMinutes: 14,
+                        angles: [
+                            { id: 'timing', title: 'Timing', description: 'Explore how timing shapes the live host character.' }
+                        ]
+                    },
+                    converging: {
+                        targetMinutes: 5,
+                        angles: [
+                            { id: 'synthesis', title: 'Synthesis', description: 'Connect the evaluation lessons into a reusable pattern.' }
+                        ]
+                    },
+                    closing: {
+                        targetMinutes: 3,
+                        angles: [
+                            { id: 'closing', title: 'Closing', description: 'Land the episode with a concise final takeaway.' }
+                        ]
+                    }
+                }
+            },
+            timeline: [
+                { label: 'Opening', timestamp: '00:00' },
+                { label: 'Timing turn', timestamp: '00:27' }
+            ],
             turns: [
                 {
                     speaker: 'Guest',
@@ -3065,26 +3306,28 @@ async function runTests() {
                     role: 'host',
                     text: 'That makes the engineering feel editorial: timing is part of the host character.',
                     timestamp: '2026-05-15T00:00:27.000Z'
+                },
+                {
+                    speaker: 'Future Clip',
+                    role: 'guest',
+                    text: 'This speaker should not be known before the checkpoint.',
+                    timestamp: '2026-05-15T00:00:40.000Z'
                 }
             ],
             checkpoints: [
                 {
                     id: 'presence-bridge',
                     turnIndex: 1,
-                    phase: 'opening',
-                    currentLane: 'presence',
-                    nextHostMove: 'bridge',
-                    wrapNow: false
+                    phase: 'expanding',
+                    chosenAngle: 'presence'
                 },
                 {
                     id: 'timing-synthesis',
                     turnIndex: 3,
                     expected: {
                         showrunner: {
-                            phase: 'background',
-                            currentLane: 'timing',
-                            nextHostMove: 'synthesize',
-                            wrapNow: false
+                            phase: 'developing',
+                            chosenAngle: 'timing'
                         }
                     }
                 }
@@ -3094,13 +3337,15 @@ async function runTests() {
         const args = parseArgs([
             '--fixture', 'eval/fixtures/foo.json',
             '--checkpoints', 'presence-bridge,3',
-            '--state', 'predicted'
+            '--state', 'predicted',
+            '--target-minutes', '42'
         ]);
         if (
             args.fixture !== 'eval/fixtures/foo.json' ||
             args.checkpoints[0] !== 'presence-bridge' ||
             args.checkpoints[1] !== 3 ||
-            args.state !== 'predicted'
+            args.state !== 'predicted' ||
+            args.targetMinutes !== 42
         ) {
             throw new Error(`Prompt eval args did not parse correctly: ${JSON.stringify(args)}`);
         }
@@ -3108,8 +3353,13 @@ async function runTests() {
         const normalized = validateFixture(fixture, 'prompt-eval-test.json');
         if (
             normalized.checkpoints.length !== 2 ||
+            normalized.targetDurationMinutes !== 30 ||
+            normalized.timeline.length !== 2 ||
+            normalized.episodePlan.basename !== 'prompt-eval-test-plan' ||
+            normalized.episodePlan.phases.developing.angles[0].id !== 'timing' ||
             normalized.checkpoints[0].expectedSpeech !== fixture.turns[1].text ||
-            normalized.checkpoints[1].expected.showrunner.phase !== 'background'
+            normalized.checkpoints[1].expected.showrunner.phase !== 'developing' ||
+            normalized.checkpoints[1].expected.showrunner.chosenAngle !== 'timing'
         ) {
             throw new Error(`Prompt eval fixture did not normalize checkpoints: ${JSON.stringify(normalized.checkpoints)}`);
         }
@@ -3140,40 +3390,24 @@ async function runTests() {
         const fixturePath = path.join(fixtureDir, 'fixture.json');
         fs.writeFileSync(fixturePath, JSON.stringify(fixture, null, 2));
 
-        const fakeGuidanceForInput = (input) => {
-            const secondCheckpoint = input.transcript.includes('The timing started mattering');
-            return secondCheckpoint
-                ? {
-                    phase: 'background',
-                    currentLane: 'timing',
-                    coveredAngles: ['presence'],
-                    untouchedAngles: ['implementation'],
-                    nextHostMove: 'synthesize',
-                    avoid: ['generic question'],
-                    suggestedQuestion: '',
-                    wrapNow: false,
-                    wrapReason: 'More evaluation lanes remain.',
-                    generatorInstruction: 'Synthesize timing as part of host character.'
+        const fakeControllerForInput = (input) => {
+            const secondCheckpoint = (input.elapsedMinutes || 0) > 0.3;
+            return {
+                action: secondCheckpoint ? 'revise_plan' : 'generate_plan',
+                messageToChannel: secondCheckpoint ? 'I tightened the timing angle.' : 'Here is a first draft plan.',
+                approved: false,
+                plan: {
+                    ...fixture.episodePlan,
+                    version: secondCheckpoint ? 'v002' : 'v001'
                 }
-                : {
-                    phase: 'opening',
-                    currentLane: 'presence',
-                    coveredAngles: [],
-                    untouchedAngles: ['timing'],
-                    nextHostMove: 'bridge',
-                    avoid: ['premature wrap'],
-                    suggestedQuestion: 'What changed once this became live?',
-                    wrapNow: false,
-                    wrapReason: 'The episode is still opening.',
-                    generatorInstruction: 'Bridge from presence into live-system constraints.'
-                };
+            };
         };
 
         const promptOnlyCalls = { showrunner: 0, podcast: 0 };
         const fakeShowRunner = {
             buildMessages: (input) => [
                 { role: 'system', content: 'fake showrunner system' },
-                { role: 'user', content: input.transcript },
+                { role: 'user', content: JSON.stringify(input.planningMessages || []) },
                 { role: 'system', content: 'fake showrunner schema' }
             ],
             buildRequestBody: (messages) => ({ model: 'fake-showrunner', messages }),
@@ -3183,10 +3417,15 @@ async function runTests() {
             }
         };
         const fakePodcast = {
-            buildMessages: (input) => [
-                { role: 'system', content: 'fake podcast system' },
-                { role: 'user', content: `${input.transcript}\n${JSON.stringify(input.showRunnerGuidance || null)}` }
-            ],
+            history: [],
+            session: { topic: '', speakers: [] },
+            buildMessages(input) {
+                return [
+                { role: 'system', content: `fake podcast system speakers=${this.session?.speakers?.join(', ') || 'unknown live speakers'}` },
+                ...(this.history || []),
+                { role: 'user', content: `${input.transcript}\n${input.episodePlanStructure || ''}` }
+                ];
+            },
             buildRequestBody: (messages) => ({ model: 'fake-podcast', messages }),
             generate: async () => {
                 promptOnlyCalls.podcast += 1;
@@ -3216,10 +3455,21 @@ async function runTests() {
             throw new Error(`Prompt export should be deterministic and call no generators: ${JSON.stringify({ promptOnlyCalls, exportResult })}`);
         }
         if (
-            exportResult.promptRecords[0].podcast.input.showRunnerGuidance !== null ||
+            'showRunnerGuidance' in exportResult.promptRecords[0].podcast.input ||
+            !exportResult.promptRecords[0].podcast.input.episodePlanStructure.includes('Current phase: expanding.') ||
+            !exportResult.promptRecords[0].podcast.input.episodePlanStructure.includes('- presence: Open by grounding the guest') ||
+            exportResult.promptRecords[0].showrunner.input.elapsedMinutes !== 8 / 60 ||
+            exportResult.promptRecords[0].showrunner.input.targetDurationMinutes !== 30 ||
+            exportResult.promptRecords[0].showrunner.input.remainingTargetMinutes == null ||
+            exportResult.promptRecords[0].podcast.input.currentEpisodeTimestamp !== '00:00:08.000' ||
+            !exportResult.promptRecords[0].podcast.input.currentTime.endsWith('00:00:08.000Z') ||
             exportResult.promptRecords[1].showrunner.input.previousGuidance !== null ||
-            exportResult.promptRecords[1].podcast.input.showRunnerGuidance !== null ||
-            !exportResult.promptRecords[1].showrunner.input.transcript.includes('Alpha-Clawd: So the opening lane is presence')
+            'showRunnerGuidance' in exportResult.promptRecords[1].podcast.input ||
+            !Array.isArray(exportResult.promptRecords[1].showrunner.input.planningMessages) ||
+            exportResult.promptRecords[1].podcast.input.transcript !== 'Guest: The timing started mattering more than any individual feature.' ||
+            !exportResult.promptRecords[1].podcast.messages.some((message) => message.role === 'assistant' && message.content === fixture.turns[1].text) ||
+            JSON.stringify(exportResult.promptRecords[1].showrunner.messages).includes('Future Clip') ||
+            JSON.stringify(exportResult.promptRecords[1].podcast.messages).includes('Future Clip')
         ) {
             throw new Error(`Prompt export leaked oracle guidance or failed to relabel host turns: ${JSON.stringify(exportResult.promptRecords)}`);
         }
@@ -3238,7 +3488,7 @@ async function runTests() {
             buildRequestBody: fakeShowRunner.buildRequestBody,
             generate: async (input) => {
                 executeCalls.showrunner.push(input);
-                return fakeGuidanceForInput(input);
+                return fakeControllerForInput(input);
             }
         };
         const executingPodcast = {
@@ -3251,6 +3501,7 @@ async function runTests() {
                     speech: input.transcript.includes('The timing started mattering')
                         ? fixture.turns[3].text
                         : fixture.turns[1].text,
+                    chosenAngle: input.transcript.includes('The timing started mattering') ? 'timing' : 'presence',
                     bigBrain: { requested: false, reason: '', consumedRunId: '' },
                     bigHeart: { requested: false, reason: '', consumedRunId: '' }
                 };
@@ -3273,20 +3524,23 @@ async function runTests() {
         if (
             executeCalls.showrunner.length !== 2 ||
             executeCalls.podcast.length !== 2 ||
-            executeCalls.showrunner[1].previousGuidance.phase !== 'opening' ||
-            executeCalls.podcast[1].showRunnerGuidance.phase !== 'background' ||
+            executeCalls.showrunner[1].previousGuidance.action !== 'generate_plan' ||
+            executeCalls.showrunner[1].targetDurationMinutes !== 30 ||
+            'showRunnerGuidance' in executeCalls.podcast[1] ||
+            !executeCalls.podcast[1].episodePlanStructure.includes('Current phase:') ||
             executeResult.outputRecords[0].scores.deterministic.podcast.textOverlap !== 1 ||
-            executeResult.outputRecords[1].scores.deterministic.showrunner.fields.currentLane.pass !== true
+            executeResult.outputRecords[1].scores.deterministic.showrunner.fields.chosenAngle.pass !== true
         ) {
             throw new Error(`Prompt eval execute path did not produce stable mocked outputs: ${JSON.stringify({ executeCalls, outputRecords: executeResult.outputRecords })}`);
         }
 
         const directScore = scoreDeterministic({
             checkpoint: normalized.checkpoints[0],
-            showrunnerOutput: fakeGuidanceForInput({ transcript: '' }),
+            showrunnerOutput: fakeControllerForInput({ elapsedMinutes: 0 }),
             podcastOutput: {
                 shouldRespond: true,
                 speech: fixture.turns[1].text,
+                chosenAngle: 'presence',
                 bigBrain: { requested: false, reason: '', consumedRunId: '' },
                 bigHeart: { requested: false, reason: '', consumedRunId: '' }
             },
@@ -3305,10 +3559,11 @@ async function runTests() {
         }, 'unannotated-prompt-eval-test.json');
         const unannotatedScore = scoreDeterministic({
             checkpoint: unannotatedFixture.checkpoints[0],
-            showrunnerOutput: fakeGuidanceForInput({ transcript: '' }),
+            showrunnerOutput: fakeControllerForInput({ elapsedMinutes: 0 }),
             podcastOutput: {
                 shouldRespond: true,
                 speech: fixture.turns[1].text,
+                chosenAngle: 'presence',
                 bigBrain: { requested: false, reason: '', consumedRunId: '' },
                 bigHeart: { requested: false, reason: '', consumedRunId: '' }
             },
@@ -3991,16 +4246,26 @@ async function runTests() {
                 return '00:00:42.000';
             }
         };
-        bot.showRunnerManager = {
-            getGuidance: (activeGuildId) => activeGuildId === guildId
-                ? {
-                    phase: 'background',
-                    currentLane: 'origin story',
-                    nextHostMove: 'synthesize and bridge',
-                    generatorInstruction: 'Do not ask another generic question; bridge into the next lane.'
-                }
-                : null
-        };
+        bot.episodePlanTrackers = new Map([[guildId, new EpisodePlanTracker({
+            basename: 'direct-test-plan',
+            version: 'v001',
+            targetDurationMinutes: 30,
+            guests: [{ name: 'Jensen', role: 'guest' }],
+            backgroundBrief: 'Direct generator plan context test.',
+            phases: {
+                expanding: {
+                    targetMinutes: 8,
+                    angles: [
+                        { id: 'origin-story', title: 'Origin story', description: 'Bridge into how the story began.' }
+                    ]
+                },
+                developing: { targetMinutes: 14, angles: [] },
+                converging: { targetMinutes: 5, angles: [] },
+                closing: { targetMinutes: 3, angles: [] }
+            }
+        }, {
+            startedAt: new Date(firstSpeechAt - 42000).toISOString()
+        })]]);
         bot.lastParticipantSpeechAt = new Map([[guildId, firstSpeechAt]]);
         bot.idleDecisionHandledSpeechAt = new Map();
         bot.directResponseInFlight = new Set();
@@ -4047,7 +4312,7 @@ async function runTests() {
         let directAwarenessInjections = null;
         let directAwarenessShelfItems = null;
         let directRecentInternalThoughts = null;
-        let directShowRunnerGuidance = null;
+        let directEpisodePlanStructure = null;
         let directCurrentTime = null;
         let directCurrentEpisodeTimestamp = null;
         const directSilenceCounts = [];
@@ -4060,14 +4325,20 @@ async function runTests() {
                 directAwarenessInjections = input.awarenessInjections || [];
                 directAwarenessShelfItems = input.awarenessShelfItems || [];
                 directRecentInternalThoughts = input.recentInternalThoughts || [];
-                directShowRunnerGuidance = input.showRunnerGuidance || null;
+                directEpisodePlanStructure = input.episodePlanStructure || null;
                 directCurrentTime = input.currentTime || null;
                 directCurrentEpisodeTimestamp = input.currentEpisodeTimestamp || null;
                 directSilenceCounts.push(input.consecutiveSilenceTurns);
                 if (!bot.directResponseInFlight.has(guildId)) {
                     throw new Error('Direct response was not marked in-flight during generation');
                 }
-                return { shouldRespond: false, speech: '', bigBrain: { requested: false, reason: '' } };
+                return {
+                    speech: '',
+                    shouldRespond: false,
+                    chosenAngle: '',
+                    bigBrain: { requested: false, reason: '' },
+                    bigHeart: { requested: false, reason: '' }
+                };
             }
         };
 
@@ -4099,8 +4370,11 @@ async function runTests() {
         if (awarenessWaitRequests[0]?.options?.timeoutMs !== 200 || !awarenessWaitRequests[0]?.turnIdIntent?.turnId) {
             throw new Error(`Direct generator did not wait/claim awareness by turn id intent: ${JSON.stringify(awarenessWaitRequests)}`);
         }
-        if (directShowRunnerGuidance?.phase !== 'background' || !directShowRunnerGuidance.generatorInstruction.includes('bridge')) {
-            throw new Error(`Direct generator did not receive show runner guidance: ${JSON.stringify(directShowRunnerGuidance)}`);
+        if (
+            !directEpisodePlanStructure?.includes('Current phase: expanding.') ||
+            !directEpisodePlanStructure.includes('- origin-story: Bridge into how the story began.')
+        ) {
+            throw new Error(`Direct generator did not receive episode plan structure: ${JSON.stringify(directEpisodePlanStructure)}`);
         }
         if (directRecentInternalThoughts.length !== 0 || recentThoughtRequests.length !== 0) {
             throw new Error(`Direct generator received recent internal thoughts without a trigger: ${JSON.stringify({ directRecentInternalThoughts, recentThoughtRequests })}`);
@@ -4110,7 +4384,7 @@ async function runTests() {
         }
 
         directGenerateCalled = false;
-        directShowRunnerGuidance = null;
+        directEpisodePlanStructure = null;
         directRecentInternalThoughts = null;
         await bot.handleDirectGeneratorFlush(guildId, [
             { speaker: 'Jensen', transcription: 'Can we talk about your internal thoughts and self knowledge?' }

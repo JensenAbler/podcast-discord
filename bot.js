@@ -77,7 +77,9 @@ const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { getPodcastRoot, getRecordingDir } = require('./paths');
 const { PodcastGenerator } = require('./podcast-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
-const { ShowRunnerManager } = require('./showrunner-manager');
+const { ShowRunnerGenerator } = require('./showrunner-generator');
+const { EpisodePlanStore } = require('./episode-plan-store');
+const { EpisodePlanTracker } = require('./episode-plan-tracker');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
 const { BigHeartGenerator } = require('./bigheart-generator');
 const { buildTurnIdIntent } = require('./turn-intent');
@@ -189,10 +191,11 @@ class AlphaClawdVoiceBot {
         });
         this.showRunnerEnabled = options.showRunnerEnabled !== undefined
             ? Boolean(options.showRunnerEnabled)
-            : process.env.PODCAST_SHOW_RUNNER_ENABLED === 'true';
-        this.showRunnerManager = options.showRunnerManager || new ShowRunnerManager({
-            enabled: this.showRunnerEnabled
-        });
+            : process.env.PODCAST_SHOW_RUNNER_ENABLED !== 'false';
+        this.showRunnerGenerator = options.showRunnerGenerator || new ShowRunnerGenerator(options.showRunnerOptions || {});
+        this.episodePlanStore = options.episodePlanStore || new EpisodePlanStore(options.episodePlanStoreOptions || {});
+        this.planningSessions = new Map(); // channelId -> planning session
+        this.episodePlanTrackers = new Map(); // guildId -> EpisodePlanTracker
         this.bigBrainAwarenessSelectionEnabled = options.bigBrainAwarenessSelectionEnabled !== undefined
             ? Boolean(options.bigBrainAwarenessSelectionEnabled)
             : process.env.PODCAST_BIG_BRAIN_AWARENESS_SELECTION_ENABLED === 'true';
@@ -824,24 +827,6 @@ class AlphaClawdVoiceBot {
         }
     }
 
-    startShowRunnerSession(guildId, recordingInfo = {}, topic = '') {
-        if (!this.showRunnerEnabled || !this.showRunnerManager?.startSession) {
-            return null;
-        }
-
-        try {
-            return this.showRunnerManager.startSession(guildId, {
-                recordingPath: recordingInfo.recordingPath,
-                startedAt: recordingInfo.startedAt,
-                topic: topic || 'general discussion',
-                speakers: Object.values(this.speakerMap || {}).map(s => `${s.name} (${s.role || 'speaker'})`)
-            });
-        } catch (error) {
-            console.warn(`[Bot] Failed to start show runner session: ${error.message}`);
-            return null;
-        }
-    }
-
     async endInternalThoughtSession(guildId) {
         if (!this.internalThoughtsEnabled || !this.internalThoughtManager?.endSession) {
             return null;
@@ -855,17 +840,28 @@ class AlphaClawdVoiceBot {
         }
     }
 
-    async endShowRunnerSession(guildId) {
-        if (!this.showRunnerEnabled || !this.showRunnerManager?.endSession) {
+    startEpisodePlanTracker(guildId, episodePlanSelection = null, recordingInfo = {}) {
+        this.episodePlanTrackers.delete(guildId);
+        if (!episodePlanSelection?.plan) {
             return null;
         }
-
         try {
-            return await this.showRunnerManager.endSession(guildId);
+            const tracker = new EpisodePlanTracker(episodePlanSelection.plan, {
+                startedAt: recordingInfo.startedAt || new Date().toISOString()
+            });
+            this.episodePlanTrackers.set(guildId, tracker);
+            console.log(`[Bot] Episode plan tracker started: ${episodePlanSelection.plan.basename}@${episodePlanSelection.plan.version}`);
+            return tracker;
         } catch (error) {
-            console.warn(`[Bot] Failed to end show runner session: ${error.message}`);
+            console.warn(`[Bot] Failed to start episode plan tracker: ${error.message}`);
             return null;
         }
+    }
+
+    endEpisodePlanTracker(guildId) {
+        const tracker = this.episodePlanTrackers.get(guildId);
+        this.episodePlanTrackers.delete(guildId);
+        return tracker ? tracker.snapshot() : null;
     }
 
     observeInternalThoughtTranscriptEntry(guildId, entry = {}) {
@@ -892,24 +888,18 @@ class AlphaClawdVoiceBot {
     }
 
     observeShowRunnerTranscriptEntry(guildId, entry = {}) {
-        if (
-            !this.showRunnerEnabled ||
-            this.recordingState?.get?.(guildId) !== this.RecordingState?.RECORDING ||
-            !this.showRunnerManager?.handleTranscriptEntry
-        ) {
+        if (this.recordingState?.get?.(guildId) !== this.RecordingState?.RECORDING) {
             return null;
         }
-
+        const tracker = this.episodePlanTrackers?.get?.(guildId);
+        if (!tracker) {
+            return null;
+        }
         try {
-            const result = this.showRunnerManager.handleTranscriptEntry(guildId, entry);
-            if (result && typeof result.catch === 'function') {
-                result.catch((error) => {
-                    console.warn(`[Bot] Show runner transcript entry failed: ${error.message}`);
-                });
-            }
-            return result;
+            tracker.observeTranscriptEntry(entry);
+            return tracker.snapshot();
         } catch (error) {
-            console.warn(`[Bot] Show runner transcript entry failed: ${error.message}`);
+            console.warn(`[Bot] Episode plan tracker transcript entry failed: ${error.message}`);
             return null;
         }
     }
@@ -1009,16 +999,16 @@ class AlphaClawdVoiceBot {
         }
     }
 
-    getShowRunnerGuidanceForGenerator(guildId) {
-        if (!this.showRunnerEnabled || !this.showRunnerManager?.getGuidance) {
-            return null;
+    getEpisodePlanStructureForGenerator(guildId, options = {}) {
+        const tracker = this.episodePlanTrackers?.get?.(guildId);
+        if (!tracker) {
+            return '';
         }
-
         try {
-            return this.showRunnerManager.getGuidance(guildId);
+            return tracker.getStructureBlock(options.currentTime || new Date().toISOString());
         } catch (error) {
-            console.warn(`[Bot] Failed to read show runner guidance: ${error.message}`);
-            return null;
+            console.warn(`[Bot] Failed to build episode plan structure: ${error.message}`);
+            return '';
         }
     }
 
@@ -1846,7 +1836,7 @@ class AlphaClawdVoiceBot {
                 ...generatorTiming,
                 turnIdIntent
             });
-            const showRunnerGuidance = this.getShowRunnerGuidanceForGenerator(guildId);
+            const episodePlanStructure = this.getEpisodePlanStructureForGenerator(guildId, generatorTiming);
 
             console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s without participant speech`);
             const response = await this.podcastGenerator.generate({
@@ -1859,7 +1849,7 @@ class AlphaClawdVoiceBot {
                 pendingBigHeart: this.getPendingBigHeartForGenerator(guildId),
                 awarenessInjections,
                 awarenessShelfItems,
-                showRunnerGuidance,
+                episodePlanStructure,
                 consecutiveSilenceTurns: this.getConsecutiveGeneratorSilences(guildId),
                 ...generatorTiming,
                 remember: false
@@ -2271,8 +2261,8 @@ class AlphaClawdVoiceBot {
     /**
      * Register slash commands
      */
-    async registerCommands() {
-        const commands = [
+    buildSlashCommands() {
+        return [
             new SlashCommandBuilder()
                 .setName('podcast-join')
                 .setDescription('Join voice channel and start recording')
@@ -2287,7 +2277,15 @@ class AlphaClawdVoiceBot {
                         .addChoices(
                             { name: 'Claude + Fish', value: 'current' },
                             { name: 'Gemini Live (experimental)', value: 'gemini-live' }
-                        )),
+                        ))
+                .addStringOption(option =>
+                    option.setName('plan')
+                        .setDescription('Episode plan version to use')
+                        .setRequired(false)
+                        .setAutocomplete(true)),
+            new SlashCommandBuilder()
+                .setName('podcast-plan')
+                .setDescription('Start or inspect a text-channel episode planning session'),
             new SlashCommandBuilder()
                 .setName('podcast-leave')
                 .setDescription('Stop recording and leave voice channel'),
@@ -2347,6 +2345,10 @@ class AlphaClawdVoiceBot {
                         .setDescription('Preview the feed update without publishing')
                         .setRequired(false))
         ];
+    }
+
+    async registerCommands() {
+        const commands = this.buildSlashCommands();
 
         const rest = new REST({ version: '10' }).setToken(this.token);
 
@@ -2384,6 +2386,9 @@ class AlphaClawdVoiceBot {
                 case 'podcast-join':
                     await this.handleJoinCommand(interaction);
                     break;
+                case 'podcast-plan':
+                    await this.handlePodcastPlanCommand(interaction);
+                    break;
                 case 'podcast-leave':
                     await this.handleLeaveCommand(interaction);
                     break;
@@ -2406,14 +2411,205 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    async handlePodcastPlanCommand(interaction) {
+        const channelId = interaction.channelId;
+        let session = this.planningSessions.get(channelId);
+        if (!session) {
+            session = {
+                channelId,
+                guildId: interaction.guildId,
+                startedAt: new Date().toISOString(),
+                startedBy: interaction.user?.id || null,
+                messages: [],
+                basename: '',
+                latestPlan: null,
+                latestPlanPath: '',
+                latestVersion: '',
+                loggedMessageCount: 0,
+                processing: Promise.resolve()
+            };
+            this.planningSessions.set(channelId, session);
+            await interaction.reply(
+                "Episode planning is open in this channel. Drop the guest background, desired arc, constraints, and anything Alpha-Clawd should know. I'll shape it into a versioned episode plan when there's enough signal."
+            );
+            return;
+        }
+
+        const latest = session.latestPlan
+            ? `\n\nLatest plan: **${session.latestPlan.basename} ${session.latestPlan.version}**`
+            : '';
+        await interaction.reply(
+            `Episode planning is already open here. Messages captured: **${session.messages.length}**.${latest}`
+        );
+    }
+
+    async handlePlanningMessage(message) {
+        const channelId = message.channelId || message.channel?.id;
+        const session = channelId ? this.planningSessions.get(channelId) : null;
+        if (!session) {
+            return false;
+        }
+        if (message.author?.bot) {
+            return true;
+        }
+
+        const record = this.buildPlanningMessageRecord(message);
+        if (!record.text) {
+            return true;
+        }
+        session.messages.push(record);
+        this.persistPlanningSessionMessages(session);
+
+        session.processing = (session.processing || Promise.resolve())
+            .then(() => this.processPlanningSession(session, record, message.channel))
+            .catch((error) => {
+                console.warn(`[Bot] Podcast planning failed: ${error.message}`);
+                return message.channel?.send?.(`I hit a planning error: ${error.message}`).catch(() => {});
+            });
+        return true;
+    }
+
+    buildPlanningMessageRecord(message) {
+        const memberName = message.member?.displayName || message.author?.globalName || message.author?.username || 'Human';
+        return {
+            speaker: memberName,
+            userId: message.author?.id || null,
+            timestamp: message.createdAt instanceof Date ? message.createdAt.toISOString() : new Date().toISOString(),
+            text: String(message.content || '').trim()
+        };
+    }
+
+    async processPlanningSession(session, latestMessage, channel) {
+        if (!this.showRunnerEnabled) {
+            return;
+        }
+        if (!this.showRunnerGenerator?.generate) {
+            await channel?.send?.('I can collect planning context, but the showrunner generator is not configured.');
+            return;
+        }
+
+        const output = await this.showRunnerGenerator.generate({
+            planningMessages: session.messages,
+            previousPlan: session.latestPlan,
+            basename: session.basename,
+            latestFeedback: latestMessage?.text || ''
+        });
+
+        if (output.plan) {
+            const saved = this.savePlanningOutput(session, output);
+            await this.sendLongMessage(channel, this.formatEpisodePlanForDiscord(saved.plan, output));
+        } else if (output.messageToChannel) {
+            await channel?.send?.(output.messageToChannel);
+        }
+
+        if (output.approved) {
+            if (session.basename) {
+                this.episodePlanStore.appendSessionRecord(session.basename, {
+                    type: 'approved',
+                    latestVersion: session.latestVersion,
+                    message: output.messageToChannel || ''
+                });
+            }
+            this.planningSessions.delete(session.channelId);
+            if (output.messageToChannel && !output.plan) {
+                await channel?.send?.(output.messageToChannel);
+            } else {
+                await channel?.send?.('Episode plan approved. Planning session closed.');
+            }
+        }
+    }
+
+    savePlanningOutput(session, output) {
+        const basename = session.basename || output.plan.basename;
+        const saved = this.episodePlanStore.saveNextVersion(output.plan, { basename });
+        session.basename = saved.plan.basename;
+        session.latestPlan = saved.plan;
+        session.latestPlanPath = saved.path;
+        session.latestVersion = saved.plan.version;
+        this.persistPlanningSessionMessages(session);
+        this.episodePlanStore.appendSessionRecord(session.basename, {
+            type: output.action === 'revise_plan' ? 'revision' : 'plan',
+            version: saved.plan.version,
+            path: saved.path,
+            messageToChannel: output.messageToChannel || ''
+        });
+        return saved;
+    }
+
+    persistPlanningSessionMessages(session) {
+        if (!session?.basename) {
+            return;
+        }
+        while (session.loggedMessageCount < session.messages.length) {
+            const message = session.messages[session.loggedMessageCount];
+            this.episodePlanStore.appendSessionRecord(session.basename, {
+                type: 'planning_message',
+                message
+            });
+            session.loggedMessageCount += 1;
+        }
+    }
+
+    formatEpisodePlanForDiscord(plan, output = {}) {
+        const lines = [
+            output.messageToChannel || 'Here is the episode plan.',
+            '',
+            `**Episode plan: ${plan.basename} ${plan.version}**`,
+            `Target duration: ${plan.targetDurationMinutes} minutes`
+        ];
+        if (plan.guests.length > 0) {
+            lines.push('', '**Guests**');
+            for (const guest of plan.guests) {
+                lines.push(`- ${guest.name}${guest.role ? `: ${guest.role}` : ''}`);
+            }
+        }
+        if (plan.backgroundBrief) {
+            lines.push('', '**Background Brief**', plan.backgroundBrief);
+        }
+        lines.push('', '**Structure**');
+        for (const phase of ['expanding', 'developing', 'converging', 'closing']) {
+            const phasePlan = plan.phases?.[phase] || { targetMinutes: 0, angles: [] };
+            lines.push('', `**${phase}** (${phasePlan.targetMinutes} min)`);
+            for (const angle of phasePlan.angles || []) {
+                lines.push(`- \`${angle.id}\`: ${angle.description || angle.title}`);
+            }
+        }
+        lines.push('', 'Reply with feedback to revise it, or clearly approve it to close planning.');
+        return lines.join('\n');
+    }
+
+    async sendLongMessage(channel, text) {
+        if (!channel?.send) {
+            return;
+        }
+        const chunks = [];
+        let remaining = String(text || '').trim();
+        while (remaining.length > 1900) {
+            let splitAt = remaining.lastIndexOf('\n', 1900);
+            if (splitAt < 500) splitAt = 1900;
+            chunks.push(remaining.slice(0, splitAt).trim());
+            remaining = remaining.slice(splitAt).trim();
+        }
+        if (remaining) chunks.push(remaining);
+        for (const chunk of chunks) {
+            await channel.send(chunk);
+        }
+    }
+
     /**
      * Handle autocomplete interactions for podcast production/publish options
      */
     async handleAutocomplete(interaction) {
-        if (!['podcast-production', 'podcast-publish'].includes(interaction.commandName)) return;
+        if (!['podcast-production', 'podcast-publish', 'podcast-join'].includes(interaction.commandName)) return;
         const focused = interaction.options.getFocused(true);
 
         try {
+            if (interaction.commandName === 'podcast-join' && focused.name === 'plan') {
+                const choices = this.listEpisodePlanAutocompleteChoices(focused.value);
+                await interaction.respond(choices.length ? choices : [{ name: 'No episode plans found', value: '' }]);
+                return;
+            }
+
             if (focused.name === 'episode') {
                 const includeNext = interaction.commandName === 'podcast-production';
                 await interaction.respond(this.getPodcastEpisodeAutocompleteChoices(focused.value, includeNext));
@@ -2487,6 +2683,33 @@ class AlphaClawdVoiceBot {
         return suggestions
             .filter(choice => !query || String(choice.value).startsWith(query) || choice.name.toLowerCase().includes(query))
             .slice(0, 25);
+    }
+
+    listEpisodePlanAutocompleteChoices(focusedValue = '') {
+        try {
+            return this.episodePlanStore
+                .listPlanVersions(focusedValue)
+                .slice(0, 25)
+                .map((plan) => ({
+                    name: plan.label.slice(0, 100),
+                    value: plan.value
+                }));
+        } catch (error) {
+            console.error(`[Bot] Failed to list episode plans for autocomplete: ${error.message}`);
+            return [];
+        }
+    }
+
+    loadEpisodePlanSelection(planRef = '') {
+        const ref = String(planRef || '').trim();
+        if (!ref) {
+            return null;
+        }
+        const loaded = this.episodePlanStore.loadPlan(ref);
+        return {
+            ...loaded,
+            ref
+        };
     }
 
     getProductionEpisodeAutocompleteChoices(focusedValue = '') {
@@ -3055,6 +3278,8 @@ class AlphaClawdVoiceBot {
         try {
             // Get topic FIRST (before joining)
             const topic = interaction.options.getString('topic') || 'the topic at hand';
+            const planRef = interaction.options.getString('plan') || '';
+            const episodePlanSelection = this.loadEpisodePlanSelection(planRef);
 
             // Speaker names auto-resolve from Discord member info inside the
             // receiver (see AudioReceiver.getSpeakerInfo).
@@ -3066,6 +3291,7 @@ class AlphaClawdVoiceBot {
                 userId: interaction.user.id,
                 topic: topic,
                 engine,
+                episodePlanSelection,
                 timestamp: Date.now()
             });
 
@@ -3088,6 +3314,7 @@ class AlphaClawdVoiceBot {
                 `I've asked participants for recording consent in voice.\n` +
                 `Please type **YES** to proceed or **NO** to cancel.\n\n` +
                 `Host engine: **${engine === 'gemini-live' ? 'Gemini Live (experimental)' : 'Claude + Fish'}**\n\n` +
+                (episodePlanSelection ? `Episode plan: **${episodePlanSelection.plan.basename} ${episodePlanSelection.plan.version}**\n\n` : '') +
                 `(Waiting 60 seconds for response...)`
             );
 
@@ -3122,6 +3349,7 @@ class AlphaClawdVoiceBot {
 
         // Check if we're awaiting consent
         if (this.recordingState.get(guildId) !== this.RecordingState.AWAITING_CONSENT) {
+            await this.handlePlanningMessage(message);
             return;
         }
 
@@ -3132,7 +3360,7 @@ class AlphaClawdVoiceBot {
         if (waiter.userId !== userId) return;
 
         if (content === 'yes') {
-            await this.grantConsent(guildId, waiter.topic, waiter.engine);
+            await this.grantConsent(guildId, waiter.topic, waiter.engine, waiter.episodePlanSelection);
         } else if (content === 'no') {
             await this.denyConsent(guildId);
         }
@@ -3141,7 +3369,7 @@ class AlphaClawdVoiceBot {
     /**
      * Grant consent and start recording
      */
-    async grantConsent(guildId, topic, engine = 'current') {
+    async grantConsent(guildId, topic, engine = 'current', episodePlanSelection = null) {
         const sessionHostMode = this.normalizeSessionHostMode(engine);
         this.conversationBuffer?.clear?.();
         this.recordingState.set(guildId, this.RecordingState.RECORDING);
@@ -3160,10 +3388,15 @@ class AlphaClawdVoiceBot {
         // Start recording with consent metadata
         const recordingInfo = this.voiceManager.startRecording(guildId, 'episode', {
             consentGiven: true,
-            consentTimestamp: consentTimestamp
+            consentTimestamp: consentTimestamp,
+            episodePlan: episodePlanSelection ? {
+                basename: episodePlanSelection.plan.basename,
+                version: episodePlanSelection.plan.version,
+                path: episodePlanSelection.path
+            } : null
         });
         this.startInternalThoughtSession(guildId, recordingInfo);
-        this.startShowRunnerSession(guildId, recordingInfo, topic);
+        this.startEpisodePlanTracker(guildId, episodePlanSelection, recordingInfo);
 
         // Announce start (use cached audio to save API credits)
         try {
@@ -3194,7 +3427,8 @@ class AlphaClawdVoiceBot {
             this.podcastGenerator.startSession({
                 topic: topic || 'general discussion',
                 recording: true,
-                speakers: Object.values(this.speakerMap).map(s => `${s.name} (${s.role || 'speaker'})`)
+                speakers: Object.values(this.speakerMap).map(s => `${s.name} (${s.role || 'speaker'})`),
+                episodePlan: episodePlanSelection?.plan
             });
             if (sessionHostMode === 'gemini-live') {
                 try {
@@ -3245,7 +3479,12 @@ class AlphaClawdVoiceBot {
                         event: 'session_start',
                         recording: true,
                         guidelines: PODCAST_GUIDELINES,
-                        topic: topic || 'general discussion'
+                        topic: topic || 'general discussion',
+                        episodePlan: episodePlanSelection ? {
+                            basename: episodePlanSelection.plan.basename,
+                            version: episodePlanSelection.plan.version,
+                            path: episodePlanSelection.path
+                        } : null
                     });
                     console.log('[Bot] Injected podcast session_start event');
                 } catch (err) {
@@ -3348,7 +3587,7 @@ class AlphaClawdVoiceBot {
                     result = await this.voiceManager.stopRecording(guildId);
                     recordingPath = result?.recordingPath;
                 } finally {
-                    await this.endShowRunnerSession(guildId);
+                    this.endEpisodePlanTracker(guildId);
                     await this.endInternalThoughtSession(guildId);
                 }
             }
@@ -3435,7 +3674,7 @@ class AlphaClawdVoiceBot {
         this.consecutiveGeneratorSilences?.delete?.(guildId);
         this.clearParticipantActivityTimers(guildId);
         this.podcastGenerator.endSession();
-        await this.endShowRunnerSession(guildId);
+        this.endEpisodePlanTracker(guildId);
         await this.endInternalThoughtSession(guildId);
 
         await interaction.reply({
@@ -3593,7 +3832,7 @@ class AlphaClawdVoiceBot {
             ...generatorTiming,
             turnIdIntent
         });
-        const showRunnerGuidance = this.getShowRunnerGuidanceForGenerator(guildId);
+        const episodePlanStructure = this.getEpisodePlanStructureForGenerator(guildId, generatorTiming);
         let bigBrainDispatch = null;
         let bigHeartDispatch = null;
 
@@ -3608,7 +3847,7 @@ class AlphaClawdVoiceBot {
                 pendingBigHeart: this.getPendingBigHeartForGenerator(guildId),
                 awarenessInjections,
                 awarenessShelfItems,
-                showRunnerGuidance,
+                episodePlanStructure,
                 recentInternalThoughts: this.getRecentInternalThoughtsForGenerator(guildId, transcript, utterances),
                 consecutiveSilenceTurns: this.getConsecutiveGeneratorSilences(guildId),
                 ...generatorTiming,
@@ -3623,6 +3862,7 @@ class AlphaClawdVoiceBot {
                 this.podcastGenerator.rememberTurn?.(transcript, {
                     shouldRespond: false,
                     speech: '',
+                    chosenAngle: '',
                     bigBrain: { requested: false, reason: '', consumedRunId: '' },
                     bigHeart: { requested: false, reason: '', consumedRunId: '' }
                 });
@@ -3634,6 +3874,7 @@ class AlphaClawdVoiceBot {
                 this.podcastGenerator.rememberTurn?.(transcript, {
                     shouldRespond: false,
                     speech: '',
+                    chosenAngle: '',
                     bigBrain: { requested: false, reason: '', consumedRunId: '' },
                     bigHeart: { requested: false, reason: '', consumedRunId: '' }
                 });
@@ -5066,6 +5307,7 @@ class AlphaClawdVoiceBot {
                 shouldRespond: response.shouldRespond,
                 speech: '',
                 text: '',
+                chosenAngle: '',
                 bigBrain: { requested: false, reason: '', consumedRunId: '' },
                 bigHeart: { requested: false, reason: '', consumedRunId: '' }
             };
@@ -5348,6 +5590,10 @@ class AlphaClawdVoiceBot {
             this.voiceManager.saveTranscriptEntry(guildId, transcriptEntry);
             this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);
             this.observeShowRunnerTranscriptEntry(guildId, transcriptEntry);
+            this.applyEpisodePlanResponse(guildId, finalResponse, {
+                playbackStartedAt,
+                playbackEndedAt
+            });
             this.resetConsecutiveGeneratorSilences(guildId);
 
             if (playbackUnderrunDetected) {
@@ -5366,6 +5612,23 @@ class AlphaClawdVoiceBot {
                 this.directResponseInFlight.delete(guildId);
                 this.conversationBuffer?.setFlushHold?.('direct-response', false);
             }
+        }
+    }
+
+    applyEpisodePlanResponse(guildId, response = {}, timing = {}) {
+        const tracker = this.episodePlanTrackers?.get?.(guildId);
+        if (!tracker) {
+            return null;
+        }
+        try {
+            tracker.applySpokenResponse(response, {
+                ...timing,
+                now: timing.playbackEndedAt || new Date().toISOString()
+            });
+            return tracker.snapshot();
+        } catch (error) {
+            console.warn(`[Bot] Episode plan tracker response update failed: ${error.message}`);
+            return null;
         }
     }
 

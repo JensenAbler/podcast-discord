@@ -25,6 +25,10 @@ function getContractRecordingDir() {
     return path.join(getPodcastRoot(), 'recordings');
 }
 
+function getEpisodePlanDir() {
+    return path.join(getPodcastRoot(), 'episode-plans');
+}
+
 function isTruthyEnv(value) {
     return /^(1|true|yes|on)$/i.test(String(value || '').trim());
 }
@@ -64,6 +68,7 @@ function getRecordingDir(explicitDir) {
 module.exports = {
     getPodcastRoot,
     getContractRecordingDir,
+    getEpisodePlanDir,
     getRecordingDir,
     isLegacyEpisodesRecordingDir
 };

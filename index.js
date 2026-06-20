@@ -26,6 +26,8 @@ const { DiscernmentGenerator } = require('./discernment-generator');
 const { InternalThoughtManager } = require('./internal-thought-manager');
 const { ShowRunnerGenerator } = require('./showrunner-generator');
 const { ShowRunnerManager } = require('./showrunner-manager');
+const { EpisodePlanStore } = require('./episode-plan-store');
+const { EpisodePlanTracker } = require('./episode-plan-tracker');
 const { PacketizationBuffer } = require('./packetization-buffer');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
 const { ParticipantSignalProfile } = require('./participant-signal-profile');
@@ -55,6 +57,8 @@ module.exports = {
     InternalThoughtManager,
     ShowRunnerGenerator,
     ShowRunnerManager,
+    EpisodePlanStore,
+    EpisodePlanTracker,
     PacketizationBuffer,
     BigBrainAwarenessSelector,
     ParticipantSignalProfile,

@@ -2,11 +2,6 @@
   "id": "sample-interview",
   "topic": "Building a live AI podcast host",
   "topicBrief": "A short sample fixture that demonstrates host-turn replay for prompt evaluation.",
-  "questionBank": [
-    "What led you to build this?",
-    "What changed once it became live?",
-    "What should listeners understand before the technical details?"
-  ],
   "turns": [
     {
       "speaker": "Guest",
@@ -38,18 +33,14 @@
       "id": "opening-bridge",
       "turnIndex": 1,
       "phase": "opening",
-      "currentLane": "motivation",
       "nextHostMove": "bridge",
-      "wrapNow": false,
       "notes": "The host should bridge from motivation into practical constraints."
     },
     {
       "id": "timing-synthesis",
       "turnIndex": 3,
       "phase": "background",
-      "currentLane": "latency",
       "nextHostMove": "synthesize",
-      "wrapNow": false,
       "notes": "The host should synthesize latency as a show-flow concern."
     }
   ]
