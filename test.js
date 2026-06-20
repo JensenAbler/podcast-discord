@@ -3031,7 +3031,8 @@ async function runTests() {
         const store = new EpisodePlanStore({ rootDir: tempRoot });
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         bot.planningSessions = new Map();
-        bot.showRunnerEnabled = true;
+        bot.showRunnerEnabled = false;
+        bot.planningControllerEnabled = true;
         bot.episodePlanStore = store;
 
         const basePlan = {
@@ -3163,6 +3164,20 @@ async function runTests() {
             !sentMessages.some((message) => message.includes('**Episode plan: jordan-consciousness-training v002**'))
         ) {
             throw new Error(`Planning revisions did not preserve basename/version history: ${JSON.stringify({ planningCalls, firstSaved, secondSaved, sentMessages })}`);
+        }
+
+        const disabledPlanningBot = Object.create(AlphaClawdVoiceBot.prototype);
+        disabledPlanningBot.planningSessions = new Map();
+        disabledPlanningBot.planningControllerEnabled = false;
+        let disabledReply = '';
+        await disabledPlanningBot.handlePodcastPlanCommand({
+            channelId: 'channel-disabled',
+            guildId: 'guild-plan',
+            user: { id: 'planner' },
+            reply: async (content) => { disabledReply = content; }
+        });
+        if (!disabledReply.includes('disabled') || disabledPlanningBot.planningSessions.has('channel-disabled')) {
+            throw new Error(`Disabled planning command did not reply visibly without opening a session: ${JSON.stringify({ disabledReply, sessions: Array.from(disabledPlanningBot.planningSessions.keys()) })}`);
         }
 
         let statusReply = '';
