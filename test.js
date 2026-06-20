@@ -2925,6 +2925,7 @@ async function runTests() {
             showRunnerCall?.requestPath !== '/chat/completions' ||
             showRunnerCall.body.response_format?.json_schema?.name !== 'podcast_episode_plan_controller' ||
             showRunnerCall.body.response_format?.json_schema?.schema?.required?.join(',') !== 'action,messageToChannel,approved,plan' ||
+            !showRunnerCall.body.response_format?.json_schema?.schema?.properties?.action?.enum?.includes('close_session') ||
             generated.action !== 'generate_plan' ||
             generated.plan.basename !== 'internal-thoughts-live-hosting' ||
             generated.plan.phases.developing.angles.length !== 2
@@ -3070,6 +3071,14 @@ async function runTests() {
                         plan: basePlan
                     };
                 }
+                if (/\b(end|close|cancel|stop|abort)\b/i.test(input.latestFeedback || '')) {
+                    return {
+                        action: 'close_session',
+                        messageToChannel: 'Okay, I will close this planning session without approving an episode plan.',
+                        approved: false,
+                        plan: null
+                    };
+                }
                 if (/approve/i.test(input.latestFeedback || '')) {
                     return {
                         action: 'approve_plan',
@@ -3206,7 +3215,12 @@ async function runTests() {
             reply: async (content) => { closeReply = content; }
         });
         const closeMessages = [];
-        const closeChannel = { id: 'channel-close', send: async (content) => { closeMessages.push(content); } };
+        let closeTypingCount = 0;
+        const closeChannel = {
+            id: 'channel-close',
+            send: async (content) => { closeMessages.push(content); },
+            sendTyping: async () => { closeTypingCount += 1; }
+        };
         await bot.handlePlanningMessage({
             channelId: 'channel-close',
             channel: closeChannel,
@@ -3216,13 +3230,16 @@ async function runTests() {
             author: { id: 'producer', username: 'producer', bot: false },
             member: { displayName: 'producer' }
         });
+        await bot.planningSessions.get('channel-close')?.processing;
         if (
             !closeReply.includes('Episode planning is open') ||
             bot.planningSessions.has('channel-close') ||
-            planningCalls.length !== callsBeforeClose ||
-            closeMessages.at(-1) !== 'Planning session closed. No episode plan was approved.'
+            planningCalls.length !== callsBeforeClose + 1 ||
+            planningCalls.at(-1)?.latestFeedback !== 'lets end this session' ||
+            closeTypingCount !== 1 ||
+            closeMessages.at(-1) !== 'Okay, I will close this planning session without approving an episode plan.'
         ) {
-            throw new Error(`Explicit planning-session close was not immediate and local: ${JSON.stringify({ closeReply, sessions: Array.from(bot.planningSessions.keys()), planningCalls, closeMessages })}`);
+            throw new Error(`Planning-session close request was not routed through the showrunner: ${JSON.stringify({ closeReply, sessions: Array.from(bot.planningSessions.keys()), planningCalls, closeMessages, closeTypingCount })}`);
         }
 
         const joinBot = Object.create(AlphaClawdVoiceBot.prototype);
@@ -3264,7 +3281,7 @@ async function runTests() {
         }
 
         fs.rmSync(tempRoot, { recursive: true, force: true });
-        console.log('  Discord planning sessions capture messages, version plans, close on approval, and feed join plan selection');
+        console.log('  Discord planning sessions capture messages, version plans, model-close sessions, and feed join plan selection');
         passed++;
     } catch (error) {
         console.log(`  Discord episode planning failed: ${error.message}`);
