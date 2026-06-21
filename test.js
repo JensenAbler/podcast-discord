@@ -23,6 +23,7 @@ const {
     EpisodePlanTracker,
     PacketizationBuffer,
     BigBrainAwarenessSelector,
+    DiscordContextInterpreter,
     ParticipantSignalProfile,
     AwarenessShelf,
     RealtimePcmMixer,
@@ -490,6 +491,183 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Awareness shelf failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 1c.1: Discord context interpreter and awareness ingestion');
+    try {
+        const apiCalls = [];
+        const downloads = {
+            'https://cdn.example/image.png': Buffer.from('fake-png-bytes'),
+            'https://cdn.example/brief.pdf': Buffer.from('%PDF-fake'),
+            'https://cdn.example/notes.txt': Buffer.from('plain text research note')
+        };
+        const interpreter = new DiscordContextInterpreter({
+            apiKey: 'test-key',
+            baseUrl: 'https://api.anthropic.com/v1',
+            model: 'claude-test',
+            fetch: async (url, init = {}) => {
+                if (downloads[url]) {
+                    return {
+                        ok: true,
+                        arrayBuffer: async () => downloads[url]
+                    };
+                }
+                apiCalls.push({ url, init, body: JSON.parse(init.body) });
+                return {
+                    ok: true,
+                    json: async () => ({
+                        content: [{
+                            type: 'text',
+                            text: JSON.stringify({
+                                awarenessText: 'Discord background from Jensen: the uploaded image shows an annotated orb, and the PDF frames it as episode research.',
+                                summary: 'Image plus PDF research packet.',
+                                notableDetails: ['annotated orb', 'episode research packet'],
+                                topicAnchors: ['orb', 'research packet'],
+                                confidence: 'high',
+                                caveats: ''
+                            })
+                        }]
+                    })
+                };
+            }
+        });
+
+        const interpreted = await interpreter.interpret({
+            senderName: 'Jensen',
+            messageText: 'Here are the materials.',
+            attachments: [{
+                name: 'image.png',
+                url: 'https://cdn.example/image.png',
+                contentType: 'image/png',
+                size: downloads['https://cdn.example/image.png'].byteLength
+            }, {
+                name: 'brief.pdf',
+                url: 'https://cdn.example/brief.pdf',
+                contentType: 'application/pdf',
+                size: downloads['https://cdn.example/brief.pdf'].byteLength
+            }, {
+                name: 'notes.txt',
+                url: 'https://cdn.example/notes.txt',
+                contentType: 'text/plain',
+                size: downloads['https://cdn.example/notes.txt'].byteLength
+            }],
+            podcastContext: {
+                topic: 'orb research',
+                speakers: ['Jensen (host)'],
+                episodeTimestamp: '00:04:12.000'
+            }
+        });
+        const contentBlocks = apiCalls[0]?.body?.messages?.[0]?.content || [];
+        if (
+            interpreted.awarenessText.includes('not a direct instruction') ||
+            interpreted.topicAnchors[0] !== 'orb' ||
+            !contentBlocks.some((block) => block.type === 'image' && block.source?.media_type === 'image/png') ||
+            !contentBlocks.some((block) => block.type === 'document' && block.source?.media_type === 'application/pdf') ||
+            !contentBlocks.some((block) => block.type === 'text' && String(block.text || '').includes('plain text research note'))
+        ) {
+            throw new Error(`Discord context interpreter did not build source-grounded multimodal request: ${JSON.stringify({ interpreted, contentBlocks })}`);
+        }
+
+        const shelfAdds = [];
+        const bot = new AlphaClawdVoiceBot({
+            token: 'test-token',
+            clientId: 'test-client',
+            fishAudioKey: 'test_fish_audio_key_placeholder',
+            internalThoughtsEnabled: false,
+            discordContextEnabled: true,
+            discordContextInterpreter: {
+                interpret: async (input) => ({
+                    awarenessText: `Discord background from ${input.senderName}: uploaded attachment says the witness timeline matters.`,
+                    summary: 'witness timeline',
+                    notableDetails: ['timeline'],
+                    topicAnchors: ['witness timeline'],
+                    confidence: 'medium',
+                    caveats: ''
+                })
+            },
+            internalThoughtManager: {
+                startSession: (guildId, info) => ({ guildId, info }),
+                endSession: async () => null,
+                addAwarenessShelfItem: (guildId, input) => {
+                    const item = { id: input.id || `shelf-${shelfAdds.length + 1}`, guildId, ...input };
+                    shelfAdds.push(item);
+                    return item;
+                },
+                getAwarenessShelfItemsForGenerator: () => shelfAdds
+            }
+        });
+        const guildId = 'guild-discord-context';
+        const channelId = 'channel-live-context';
+        const started = bot.startInternalThoughtSession(guildId, {
+            recordingPath: fs.mkdtempSync(path.join(os.tmpdir(), 'discord-context-session-')),
+            startedAt: '2026-06-20T10:00:00.000Z'
+        });
+        bot.recordingState.set(guildId, bot.RecordingState.RECORDING);
+        bot.recordingTextChannels.set(guildId, channelId);
+        bot.podcastGenerator.session = {
+            topic: 'orb research',
+            recording: true,
+            speakers: ['Jensen (speaker)']
+        };
+
+        const textMessage = {
+            id: 'message-text',
+            guildId,
+            channelId,
+            content: 'The background packet should be framed as background knowledge.',
+            createdAt: new Date('2026-06-20T10:05:00.000Z'),
+            author: { id: 'user-jensen', bot: false, username: 'Jensen' },
+            member: { displayName: 'Jensen' },
+            attachments: new Map()
+        };
+        const attachmentMessage = {
+            id: 'message-attachment',
+            guildId,
+            channelId,
+            content: 'Attaching a witness timeline image.',
+            createdAt: new Date('2026-06-20T10:06:00.000Z'),
+            author: { id: 'user-jensen', bot: false, username: 'Jensen' },
+            member: { displayName: 'Jensen' },
+            attachments: new Map([[
+                'attachment-1',
+                {
+                    id: 'attachment-1',
+                    name: 'timeline.png',
+                    url: 'https://cdn.example/timeline.png',
+                    contentType: 'image/png',
+                    size: 123
+                }
+            ]])
+        };
+        const wrongChannelMessage = {
+            ...textMessage,
+            id: 'wrong-channel',
+            channelId: 'other-channel',
+            content: 'Should not enter the live episode shelf.'
+        };
+
+        if (!started || !bot.shouldIngestDiscordContextMessage(textMessage) || bot.shouldIngestDiscordContextMessage(wrongChannelMessage)) {
+            throw new Error('Bot did not gate Discord context ingestion to the active episode channel while thoughts are disabled');
+        }
+
+        await bot.ingestDiscordContextMessage(textMessage);
+        await bot.ingestDiscordContextMessage(attachmentMessage);
+        if (
+            shelfAdds.length !== 2 ||
+            !shelfAdds[0].text.startsWith('Discord background from Jensen:') ||
+            !shelfAdds[1].text.includes('uploaded attachment') ||
+            shelfAdds.some((item) => item.text.includes('not a direct instruction')) ||
+            shelfAdds[1].topicAnchors[0] !== 'witness timeline' ||
+            shelfAdds[1].expiresAfterTurns !== 6
+        ) {
+            throw new Error(`Discord context did not enter awareness shelf correctly: ${JSON.stringify(shelfAdds)}`);
+        }
+
+        console.log('  Discord messages and interpreted image/PDF/txt attachments become awareness shelf background without internal thoughts');
+        passed++;
+    } catch (error) {
+        console.log(`  Discord context awareness ingestion failed: ${error.message}`);
         failed++;
     }
 
@@ -1230,10 +1408,12 @@ async function runTests() {
             systemPrompt.includes('awareness notes and internal thoughts which are injected as system messages') &&
             systemPrompt.includes('Disclose them when asked') &&
             systemPrompt.includes('Awareness Shelf:') &&
-            systemPrompt.includes('scene-scoped internal noticings that formed while listening') &&
-            systemPrompt.includes('optional contemplative context') &&
+            systemPrompt.includes('scene-scoped context that formed while listening') &&
+            systemPrompt.includes('background material shared in the live Discord text channel or uploaded attachments') &&
+            systemPrompt.includes('optional contemplative/background context') &&
             systemPrompt.includes('Each shelf item includes when it originated') &&
             systemPrompt.includes('Compare its origin timestamp to the current episode timestamp') &&
+            systemPrompt.includes('Frame Discord-derived items as background material') &&
             systemPrompt.includes('decided not to speak on your previous turn') &&
             systemPrompt.includes('Do not mention "the shelf" unless the guest is explicitly asking') &&
             !systemPrompt.includes('You do not have access to private chain-of-thought') &&

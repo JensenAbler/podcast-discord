@@ -30,6 +30,7 @@ const { EpisodePlanStore } = require('./episode-plan-store');
 const { EpisodePlanTracker } = require('./episode-plan-tracker');
 const { PacketizationBuffer } = require('./packetization-buffer');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
+const { DiscordContextInterpreter } = require('./discord-context-interpreter');
 const { ParticipantSignalProfile } = require('./participant-signal-profile');
 const { AwarenessShelf } = require('./awareness-shelf');
 const { RealtimePcmMixer } = require('./realtime-pcm-mixer');
@@ -61,6 +62,7 @@ module.exports = {
     EpisodePlanTracker,
     PacketizationBuffer,
     BigBrainAwarenessSelector,
+    DiscordContextInterpreter,
     ParticipantSignalProfile,
     AwarenessShelf,
     RealtimePcmMixer,
