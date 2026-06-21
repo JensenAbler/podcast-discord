@@ -570,6 +570,10 @@ async function runTests() {
         }
 
         const shelfAdds = [];
+        let resolveAttachmentInterpretation;
+        const attachmentInterpretation = new Promise((resolve) => {
+            resolveAttachmentInterpretation = resolve;
+        });
         const bot = new AlphaClawdVoiceBot({
             token: 'test-token',
             clientId: 'test-client',
@@ -577,21 +581,35 @@ async function runTests() {
             internalThoughtsEnabled: false,
             discordContextEnabled: true,
             discordContextInterpreter: {
-                interpret: async (input) => ({
-                    awarenessText: `Discord background from ${input.senderName}: uploaded attachment says the witness timeline matters.`,
-                    summary: 'witness timeline',
-                    notableDetails: ['timeline'],
-                    topicAnchors: ['witness timeline'],
-                    confidence: 'medium',
-                    caveats: ''
-                })
+                interpret: async (input) => {
+                    await attachmentInterpretation;
+                    return {
+                        awarenessText: `Discord background from ${input.senderName}: uploaded attachment says the witness timeline matters.`,
+                        summary: 'witness timeline',
+                        notableDetails: ['timeline'],
+                        topicAnchors: ['witness timeline'],
+                        confidence: 'medium',
+                        caveats: ''
+                    };
+                }
             },
             internalThoughtManager: {
                 startSession: (guildId, info) => ({ guildId, info }),
                 endSession: async () => null,
                 addAwarenessShelfItem: (guildId, input) => {
-                    const item = { id: input.id || `shelf-${shelfAdds.length + 1}`, guildId, ...input };
+                    const item = {
+                        id: input.id || `shelf-${shelfAdds.length + 1}`,
+                        guildId,
+                        status: 'active',
+                        ...input
+                    };
                     shelfAdds.push(item);
+                    return item;
+                },
+                updateAwarenessShelfItem: (guildId, itemId, patch) => {
+                    const item = shelfAdds.find((entry) => entry.guildId === guildId && entry.id === itemId);
+                    if (!item) return null;
+                    Object.assign(item, patch, { guildId, id: itemId, status: item.status || 'active' });
                     return item;
                 },
                 getAwarenessShelfItemsForGenerator: () => shelfAdds
@@ -652,11 +670,22 @@ async function runTests() {
         }
 
         await bot.ingestDiscordContextMessage(textMessage);
-        await bot.ingestDiscordContextMessage(attachmentMessage);
+        const attachmentWork = bot.enqueueDiscordContextIngestion(attachmentMessage);
+        if (
+            shelfAdds.length !== 2 ||
+            !shelfAdds[1].text.includes('interpretation is still in progress') ||
+            !shelfAdds[1].text.includes('the upload is visible in the live Discord channel') ||
+            shelfAdds[1].expiresAfterTurns !== 12
+        ) {
+            throw new Error(`Pending Discord attachment did not enter awareness shelf immediately: ${JSON.stringify(shelfAdds)}`);
+        }
+        resolveAttachmentInterpretation();
+        await attachmentWork;
         if (
             shelfAdds.length !== 2 ||
             !shelfAdds[0].text.startsWith('Discord background from Jensen:') ||
             !shelfAdds[1].text.includes('uploaded attachment') ||
+            shelfAdds[1].text.includes('interpretation is still in progress') ||
             shelfAdds.some((item) => item.text.includes('not a direct instruction')) ||
             shelfAdds[1].topicAnchors[0] !== 'witness timeline' ||
             shelfAdds[1].expiresAfterTurns !== 6
@@ -664,7 +693,7 @@ async function runTests() {
             throw new Error(`Discord context did not enter awareness shelf correctly: ${JSON.stringify(shelfAdds)}`);
         }
 
-        console.log('  Discord messages and interpreted image/PDF/txt attachments become awareness shelf background without internal thoughts');
+        console.log('  Discord messages and interpreted image/PDF/txt attachments become awareness shelf background, with pending upload signal, without internal thoughts');
         passed++;
     } catch (error) {
         console.log(`  Discord context awareness ingestion failed: ${error.message}`);

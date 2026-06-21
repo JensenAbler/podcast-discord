@@ -194,6 +194,11 @@ class AlphaClawdVoiceBot {
             ? Boolean(options.discordContextTextEnabled)
             : process.env.PODCAST_DISCORD_CONTEXT_TEXT_ENABLED !== 'false';
         this.discordContextShelfTurns = Number(options.discordContextShelfTurns || process.env.PODCAST_DISCORD_CONTEXT_SHELF_TURNS || 6);
+        this.discordContextPendingShelfTurns = Number(
+            options.discordContextPendingShelfTurns ||
+            process.env.PODCAST_DISCORD_CONTEXT_PENDING_SHELF_TURNS ||
+            Math.max(this.discordContextShelfTurns || 0, 12)
+        );
         this.awarenessShelfEnabled = options.awarenessShelfEnabled !== undefined
             ? Boolean(options.awarenessShelfEnabled)
             : (process.env.PODCAST_AWARENESS_SHELF_ENABLED === 'true' || this.discordContextEnabled);
@@ -3543,11 +3548,16 @@ class AlphaClawdVoiceBot {
         }
 
         const guildId = message.guildId;
+        const pendingItem = this.addPendingDiscordAttachmentAwarenessItem(guildId, message);
+        const pendingItemId = pendingItem?.id || null;
         const previous = this.discordContextProcessing.get(guildId) || Promise.resolve();
         const work = previous
             .catch(() => {})
-            .then(() => this.ingestDiscordContextMessage(message))
+            .then(() => this.ingestDiscordContextMessage(message, { pendingItemId }))
             .catch((error) => {
+                if (pendingItemId) {
+                    this.markDiscordContextIngestionFailed(guildId, message, pendingItemId, error);
+                }
                 console.warn(`[Bot] Discord context ingestion failed: guild=${guildId}, message=${message.id || 'unknown'}, error=${error.message}`);
                 return null;
             });
@@ -3572,17 +3582,65 @@ class AlphaClawdVoiceBot {
         return hasAttachments || (this.discordContextTextEnabled && hasText);
     }
 
-    async ingestDiscordContextMessage(message) {
+    async ingestDiscordContextMessage(message, options = {}) {
         const guildId = message.guildId;
-        const attachments = this.getDiscordMessageAttachments(message);
-        const messageText = String(message.content || '').trim();
-        if (attachments.length === 0 && !messageText) {
+        const baseInput = this.buildDiscordContextBaseInput(message);
+        if (baseInput.attachments.length === 0 && !baseInput.messageText) {
             return null;
         }
 
+        const output = baseInput.attachments.length > 0
+            ? await this.discordContextInterpreter.interpret(baseInput)
+            : this.buildDiscordTextAwarenessOutput(baseInput);
+
+        const text = String(output.awarenessText || '').trim();
+        if (!text) {
+            console.log(`[Bot] Discord context ingestion produced no shelf text: message=${message.id || 'unknown'}`);
+            if (options.pendingItemId) {
+                this.updateDiscordContextAwarenessItem(guildId, {
+                    ...baseInput,
+                    itemId: options.pendingItemId,
+                    output: {
+                        confidence: 'low',
+                        caveats: 'Interpreter returned no usable description.',
+                        topicAnchors: []
+                    },
+                    text: this.buildDiscordAttachmentNoDescriptionText(baseInput)
+                });
+            }
+            return null;
+        }
+
+        const itemInput = {
+            ...baseInput,
+            output,
+            text
+        };
+        const item = options.pendingItemId
+            ? (this.updateDiscordContextAwarenessItem(guildId, {
+                ...itemInput,
+                itemId: options.pendingItemId
+            }) || this.addDiscordContextAwarenessItem(guildId, itemInput))
+            : this.addDiscordContextAwarenessItem(guildId, itemInput);
+        if (item) {
+            console.log(
+                `[Bot] Discord context added to awareness shelf: guild=${guildId}, ` +
+                `message=${message.id || 'unknown'}, attachments=${baseInput.attachments.length}, item=${item.id}, ` +
+                `text="${this.truncateForLog(item.text, 180)}"`
+            );
+        } else {
+            console.log(`[Bot] Discord context shelf add skipped: guild=${guildId}, message=${message.id || 'unknown'}`);
+        }
+        return item;
+    }
+
+    buildDiscordContextBaseInput(message) {
+        const guildId = message.guildId;
+        const attachments = this.getDiscordMessageAttachments(message);
+        const messageText = String(message.content || '').trim();
         const senderName = message.member?.displayName || message.author?.globalName || message.author?.username || 'Discord user';
         const createdAt = message.createdAt instanceof Date ? message.createdAt.toISOString() : new Date().toISOString();
-        const baseInput = {
+        return {
             senderName,
             senderId: message.author?.id || null,
             messageId: message.id || '',
@@ -3592,32 +3650,6 @@ class AlphaClawdVoiceBot {
             attachments,
             podcastContext: this.buildDiscordContextPodcastSnapshot(guildId)
         };
-
-        const output = attachments.length > 0
-            ? await this.discordContextInterpreter.interpret(baseInput)
-            : this.buildDiscordTextAwarenessOutput(baseInput);
-
-        const text = String(output.awarenessText || '').trim();
-        if (!text) {
-            console.log(`[Bot] Discord context ingestion produced no shelf text: message=${message.id || 'unknown'}`);
-            return null;
-        }
-
-        const item = this.addDiscordContextAwarenessItem(guildId, {
-            ...baseInput,
-            output,
-            text
-        });
-        if (item) {
-            console.log(
-                `[Bot] Discord context added to awareness shelf: guild=${guildId}, ` +
-                `message=${message.id || 'unknown'}, attachments=${attachments.length}, item=${item.id}, ` +
-                `text="${this.truncateForLog(item.text, 180)}"`
-            );
-        } else {
-            console.log(`[Bot] Discord context shelf add skipped: guild=${guildId}, message=${message.id || 'unknown'}`);
-        }
-        return item;
     }
 
     getDiscordMessageAttachments(message) {
@@ -3647,6 +3679,97 @@ class AlphaClawdVoiceBot {
             confidence: 'high',
             caveats: ''
         };
+    }
+
+    addPendingDiscordAttachmentAwarenessItem(guildId, message) {
+        const baseInput = this.buildDiscordContextBaseInput(message);
+        if (baseInput.attachments.length === 0) {
+            return null;
+        }
+
+        const item = this.addDiscordContextAwarenessItem(guildId, {
+            ...baseInput,
+            output: {
+                confidence: 'pending',
+                caveats: 'Attachment interpretation is still in progress.',
+                topicAnchors: this.getDiscordAttachmentTopicAnchors(baseInput.attachments)
+            },
+            text: this.buildPendingDiscordAttachmentText(baseInput),
+            expiresAfterTurns: this.getDiscordContextPendingShelfTurns()
+        });
+        if (item) {
+            console.log(
+                `[Bot] Discord context pending attachment added to awareness shelf: guild=${guildId}, ` +
+                `message=${message.id || 'unknown'}, attachments=${baseInput.attachments.length}, item=${item.id}`
+            );
+        }
+        return item;
+    }
+
+    buildPendingDiscordAttachmentText(input = {}) {
+        const sender = String(input.senderName || 'Discord user').trim();
+        const description = this.describeDiscordAttachments(input.attachments || []);
+        const names = this.formatDiscordAttachmentNames(input.attachments || []);
+        const note = String(input.messageText || '').replace(/\s+/g, ' ').trim();
+        const noteText = note ? ` Accompanying chat note: ${this.truncateText(note, 220)}` : '';
+        return `Discord background from ${sender}: ${sender} uploaded ${description}${names ? ` (${names})` : ''}; the upload is visible in the live Discord channel, and automated interpretation is still in progress.${noteText}`;
+    }
+
+    buildDiscordAttachmentNoDescriptionText(input = {}) {
+        const sender = String(input.senderName || 'Discord user').trim();
+        const description = this.describeDiscordAttachments(input.attachments || []);
+        const names = this.formatDiscordAttachmentNames(input.attachments || []);
+        return `Discord background from ${sender}: ${sender} uploaded ${description}${names ? ` (${names})` : ''}; the upload was received, but automated interpretation returned no usable description.`;
+    }
+
+    buildDiscordAttachmentFailedText(input = {}) {
+        const sender = String(input.senderName || 'Discord user').trim();
+        const description = this.describeDiscordAttachments(input.attachments || []);
+        const names = this.formatDiscordAttachmentNames(input.attachments || []);
+        return `Discord background from ${sender}: ${sender} uploaded ${description}${names ? ` (${names})` : ''}; the upload was received, but automated interpretation failed.`;
+    }
+
+    describeDiscordAttachments(attachments = []) {
+        const counts = { image: 0, pdf: 0, text: 0, file: 0 };
+        for (const attachment of attachments) {
+            const kind = this.getDiscordAttachmentKind(attachment);
+            counts[kind] = (counts[kind] || 0) + 1;
+        }
+        const parts = [];
+        if (counts.image) parts.push(`${counts.image} image attachment${counts.image === 1 ? '' : 's'}`);
+        if (counts.pdf) parts.push(`${counts.pdf} PDF attachment${counts.pdf === 1 ? '' : 's'}`);
+        if (counts.text) parts.push(`${counts.text} text attachment${counts.text === 1 ? '' : 's'}`);
+        if (counts.file) parts.push(`${counts.file} file attachment${counts.file === 1 ? '' : 's'}`);
+        return parts.length > 0 ? parts.join(', ') : 'attachment(s)';
+    }
+
+    getDiscordAttachmentKind(attachment = {}) {
+        const contentType = String(attachment.contentType || '').toLowerCase();
+        const name = String(attachment.name || '').toLowerCase();
+        if (contentType.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(name)) return 'image';
+        if (contentType.includes('pdf') || /\.pdf$/i.test(name)) return 'pdf';
+        if (contentType.startsWith('text/') || /\.(txt|md|json|csv|log)$/i.test(name)) return 'text';
+        return 'file';
+    }
+
+    formatDiscordAttachmentNames(attachments = []) {
+        return attachments
+            .map((attachment) => String(attachment.name || 'attachment').trim())
+            .filter(Boolean)
+            .slice(0, 4)
+            .join(', ');
+    }
+
+    getDiscordAttachmentTopicAnchors(attachments = []) {
+        const anchors = new Set();
+        for (const attachment of attachments) {
+            const kind = this.getDiscordAttachmentKind(attachment);
+            if (kind === 'image') anchors.add('pending image upload');
+            else if (kind === 'pdf') anchors.add('pending PDF upload');
+            else if (kind === 'text') anchors.add('pending text upload');
+            else anchors.add('pending attachment upload');
+        }
+        return Array.from(anchors);
     }
 
     buildDiscordContextPodcastSnapshot(guildId) {
@@ -3690,6 +3813,60 @@ class AlphaClawdVoiceBot {
         if (!this.internalThoughtManager?.addAwarenessShelfItem) {
             return null;
         }
+        const payload = this.buildDiscordContextAwarenessPayload(input);
+        if (input.expiresAfterTurns !== undefined) {
+            payload.expiresAfterTurns = input.expiresAfterTurns;
+        }
+        try {
+            return this.internalThoughtManager.addAwarenessShelfItem(guildId, payload);
+        } catch (error) {
+            console.warn(`[Bot] Failed to add Discord context awareness shelf item: ${error.message}`);
+            return null;
+        }
+    }
+
+    updateDiscordContextAwarenessItem(guildId, input = {}) {
+        if (!this.internalThoughtManager?.updateAwarenessShelfItem) {
+            return null;
+        }
+        const itemId = String(input.itemId || input.messageId && `discord-context-${input.messageId}` || '').trim();
+        if (!itemId) {
+            return null;
+        }
+        const payload = this.buildDiscordContextAwarenessPayload(input);
+        if (input.expiresAfterTurns !== undefined) {
+            payload.expiresAfterTurns = input.expiresAfterTurns;
+        }
+        try {
+            const updated = this.internalThoughtManager.updateAwarenessShelfItem(guildId, itemId, payload);
+            if (updated?.status && updated.status !== 'active' && this.internalThoughtManager?.reactivateAwarenessShelfItem) {
+                return this.internalThoughtManager.reactivateAwarenessShelfItem(guildId, itemId, payload);
+            }
+            return updated;
+        } catch (error) {
+            console.warn(`[Bot] Failed to update Discord context awareness shelf item: ${error.message}`);
+            return null;
+        }
+    }
+
+    markDiscordContextIngestionFailed(guildId, message, itemId, error) {
+        const baseInput = this.buildDiscordContextBaseInput(message);
+        if (baseInput.attachments.length === 0) {
+            return null;
+        }
+        return this.updateDiscordContextAwarenessItem(guildId, {
+            ...baseInput,
+            itemId,
+            output: {
+                confidence: 'low',
+                caveats: this.truncateText(error?.message || 'Attachment interpretation failed.', 180),
+                topicAnchors: this.getDiscordAttachmentTopicAnchors(baseInput.attachments)
+            },
+            text: this.buildDiscordAttachmentFailedText(baseInput)
+        });
+    }
+
+    buildDiscordContextAwarenessPayload(input = {}) {
         const output = input.output || {};
         const anchors = Array.isArray(output.topicAnchors) ? output.topicAnchors : [];
         const attachmentNames = (input.attachments || [])
@@ -3702,25 +3879,28 @@ class AlphaClawdVoiceBot {
             output.caveats ? `caveats=${output.caveats}` : null
         ].filter(Boolean);
 
-        try {
-            return this.internalThoughtManager.addAwarenessShelfItem(guildId, {
-                id: input.messageId ? `discord-context-${input.messageId}` : undefined,
-                text: input.text,
-                reason: reasonParts.join('; '),
-                topicAnchors: anchors,
-                originTimestamp: input.messageTimestamp,
-                expiresAfterTurns: this.getDiscordContextShelfTurns()
-            });
-        } catch (error) {
-            console.warn(`[Bot] Failed to add Discord context awareness shelf item: ${error.message}`);
-            return null;
-        }
+        return {
+            id: input.messageId ? `discord-context-${input.messageId}` : undefined,
+            text: input.text,
+            reason: reasonParts.join('; '),
+            topicAnchors: anchors,
+            originTimestamp: input.messageTimestamp,
+            expiresAfterTurns: this.getDiscordContextShelfTurns()
+        };
     }
 
     getDiscordContextShelfTurns() {
         const parsed = Number(this.discordContextShelfTurns);
         if (!Number.isFinite(parsed) || parsed <= 0) {
             return 6;
+        }
+        return Math.floor(parsed);
+    }
+
+    getDiscordContextPendingShelfTurns() {
+        const parsed = Number(this.discordContextPendingShelfTurns);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+            return Math.max(this.getDiscordContextShelfTurns(), 12);
         }
         return Math.floor(parsed);
     }
