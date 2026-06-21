@@ -82,6 +82,7 @@ const { EpisodePlanStore } = require('./episode-plan-store');
 const { EpisodePlanTracker } = require('./episode-plan-tracker');
 const { BigBrainAwarenessSelector } = require('./bigbrain-awareness-selector');
 const { BigHeartGenerator } = require('./bigheart-generator');
+const { DiscordContextInterpreter } = require('./discord-context-interpreter');
 const { buildTurnIdIntent } = require('./turn-intent');
 const { ParticipantSignalProfile } = require('./participant-signal-profile');
 const { GeminiLiveHost } = require('./gemini-live-host');
@@ -186,9 +187,23 @@ class AlphaClawdVoiceBot {
         this.internalThoughtsEnabled = options.internalThoughtsEnabled !== undefined
             ? Boolean(options.internalThoughtsEnabled)
             : process.env.PODCAST_INTERNAL_THOUGHTS_ENABLED === 'true';
+        this.discordContextEnabled = options.discordContextEnabled !== undefined
+            ? Boolean(options.discordContextEnabled)
+            : process.env.PODCAST_DISCORD_CONTEXT_ENABLED !== 'false';
+        this.discordContextTextEnabled = options.discordContextTextEnabled !== undefined
+            ? Boolean(options.discordContextTextEnabled)
+            : process.env.PODCAST_DISCORD_CONTEXT_TEXT_ENABLED !== 'false';
+        this.discordContextShelfTurns = Number(options.discordContextShelfTurns || process.env.PODCAST_DISCORD_CONTEXT_SHELF_TURNS || 6);
+        this.awarenessShelfEnabled = options.awarenessShelfEnabled !== undefined
+            ? Boolean(options.awarenessShelfEnabled)
+            : (process.env.PODCAST_AWARENESS_SHELF_ENABLED === 'true' || this.discordContextEnabled);
         this.internalThoughtManager = options.internalThoughtManager || new InternalThoughtManager({
-            enabled: this.internalThoughtsEnabled
+            enabled: this.internalThoughtsEnabled,
+            awarenessShelfEnabled: this.awarenessShelfEnabled
         });
+        this.discordContextInterpreter = options.discordContextInterpreter || new DiscordContextInterpreter(options.discordContextInterpreterOptions || {});
+        this.discordContextProcessing = new Map(); // guildId -> promise
+        this.recordingTextChannels = new Map(); // guildId -> text channel id where /podcast-join was invoked
         this.showRunnerEnabled = options.showRunnerEnabled !== undefined
             ? Boolean(options.showRunnerEnabled)
             : process.env.PODCAST_SHOW_RUNNER_ENABLED !== 'false';
@@ -815,7 +830,7 @@ class AlphaClawdVoiceBot {
     }
 
     startInternalThoughtSession(guildId, recordingInfo = {}) {
-        if (!this.internalThoughtsEnabled || !this.internalThoughtManager?.startSession) {
+        if ((!this.internalThoughtsEnabled && !this.awarenessShelfEnabled) || !this.internalThoughtManager?.startSession) {
             return null;
         }
 
@@ -831,7 +846,7 @@ class AlphaClawdVoiceBot {
     }
 
     async endInternalThoughtSession(guildId) {
-        if (!this.internalThoughtsEnabled || !this.internalThoughtManager?.endSession) {
+        if (!this.internalThoughtManager?.endSession) {
             return null;
         }
 
@@ -1027,7 +1042,7 @@ class AlphaClawdVoiceBot {
     }
 
     getAwarenessShelfItemsForGenerator(guildId, options = {}) {
-        if (!this.internalThoughtsEnabled || !this.internalThoughtManager?.getAwarenessShelfItemsForGenerator) {
+        if (!this.internalThoughtManager?.getAwarenessShelfItemsForGenerator) {
             return [];
         }
 
@@ -2247,7 +2262,9 @@ class AlphaClawdVoiceBot {
 
         this.client.on('messageCreate', (message) => {
             if (message.author.bot) return;
-            this.handleMessage(message);
+            this.handleMessage(message).catch((error) => {
+                console.error(`[Bot] Error handling Discord message: ${error.message}`);
+            });
         });
 
         this.client.on('error', (error) => {
@@ -2733,6 +2750,15 @@ class AlphaClawdVoiceBot {
     truncateForLog(text = '', maxChars = 160) {
         const clean = String(text || '').replace(/\s+/g, ' ').trim();
         return clean.length > maxChars ? `${clean.slice(0, maxChars - 1)}...` : clean;
+    }
+
+    truncateText(text = '', maxChars = 1000) {
+        const clean = String(text || '').replace(/\s+/g, ' ').trim();
+        const limit = Number(maxChars);
+        if (!clean || !Number.isFinite(limit) || limit <= 0 || clean.length <= limit) {
+            return clean;
+        }
+        return `${clean.slice(0, Math.max(0, limit - 24)).trim()} ... [trimmed]`;
     }
 
     /**
@@ -3431,6 +3457,7 @@ class AlphaClawdVoiceBot {
                 topic: topic,
                 engine,
                 episodePlanSelection,
+                channelId: interaction.channelId,
                 timestamp: Date.now()
             });
 
@@ -3488,7 +3515,10 @@ class AlphaClawdVoiceBot {
 
         // Check if we're awaiting consent
         if (this.recordingState.get(guildId) !== this.RecordingState.AWAITING_CONSENT) {
-            await this.handlePlanningMessage(message);
+            const handledPlanning = await this.handlePlanningMessage(message);
+            if (!handledPlanning) {
+                this.enqueueDiscordContextIngestion(message);
+            }
             return;
         }
 
@@ -3499,20 +3529,213 @@ class AlphaClawdVoiceBot {
         if (waiter.userId !== userId) return;
 
         if (content === 'yes') {
-            await this.grantConsent(guildId, waiter.topic, waiter.engine, waiter.episodePlanSelection);
+            await this.grantConsent(guildId, waiter.topic, waiter.engine, waiter.episodePlanSelection, {
+                channelId: waiter.channelId
+            });
         } else if (content === 'no') {
             await this.denyConsent(guildId);
         }
     }
 
+    enqueueDiscordContextIngestion(message) {
+        if (!this.shouldIngestDiscordContextMessage(message)) {
+            return null;
+        }
+
+        const guildId = message.guildId;
+        const previous = this.discordContextProcessing.get(guildId) || Promise.resolve();
+        const work = previous
+            .catch(() => {})
+            .then(() => this.ingestDiscordContextMessage(message))
+            .catch((error) => {
+                console.warn(`[Bot] Discord context ingestion failed: guild=${guildId}, message=${message.id || 'unknown'}, error=${error.message}`);
+                return null;
+            });
+        this.discordContextProcessing.set(guildId, work);
+        return work;
+    }
+
+    shouldIngestDiscordContextMessage(message) {
+        if (!this.discordContextEnabled || !message?.guildId || message.author?.bot) {
+            return false;
+        }
+        if (this.recordingState.get(message.guildId) !== this.RecordingState.RECORDING) {
+            return false;
+        }
+        const activeChannelId = this.recordingTextChannels.get(message.guildId);
+        const channelId = message.channelId || message.channel?.id;
+        if (!activeChannelId || !channelId || activeChannelId !== channelId) {
+            return false;
+        }
+        const hasText = Boolean(String(message.content || '').trim());
+        const hasAttachments = Number(message.attachments?.size || message.attachments?.length || 0) > 0;
+        return hasAttachments || (this.discordContextTextEnabled && hasText);
+    }
+
+    async ingestDiscordContextMessage(message) {
+        const guildId = message.guildId;
+        const attachments = this.getDiscordMessageAttachments(message);
+        const messageText = String(message.content || '').trim();
+        if (attachments.length === 0 && !messageText) {
+            return null;
+        }
+
+        const senderName = message.member?.displayName || message.author?.globalName || message.author?.username || 'Discord user';
+        const createdAt = message.createdAt instanceof Date ? message.createdAt.toISOString() : new Date().toISOString();
+        const baseInput = {
+            senderName,
+            senderId: message.author?.id || null,
+            messageId: message.id || '',
+            channelId: message.channelId || message.channel?.id || '',
+            messageTimestamp: createdAt,
+            messageText,
+            attachments,
+            podcastContext: this.buildDiscordContextPodcastSnapshot(guildId)
+        };
+
+        const output = attachments.length > 0
+            ? await this.discordContextInterpreter.interpret(baseInput)
+            : this.buildDiscordTextAwarenessOutput(baseInput);
+
+        const text = String(output.awarenessText || '').trim();
+        if (!text) {
+            console.log(`[Bot] Discord context ingestion produced no shelf text: message=${message.id || 'unknown'}`);
+            return null;
+        }
+
+        const item = this.addDiscordContextAwarenessItem(guildId, {
+            ...baseInput,
+            output,
+            text
+        });
+        if (item) {
+            console.log(
+                `[Bot] Discord context added to awareness shelf: guild=${guildId}, ` +
+                `message=${message.id || 'unknown'}, attachments=${attachments.length}, item=${item.id}, ` +
+                `text="${this.truncateForLog(item.text, 180)}"`
+            );
+        } else {
+            console.log(`[Bot] Discord context shelf add skipped: guild=${guildId}, message=${message.id || 'unknown'}`);
+        }
+        return item;
+    }
+
+    getDiscordMessageAttachments(message) {
+        const values = typeof message.attachments?.values === 'function'
+            ? Array.from(message.attachments.values())
+            : Array.isArray(message.attachments)
+                ? message.attachments
+                : [];
+        return values.map((attachment) => ({
+            id: String(attachment.id || '').trim(),
+            name: String(attachment.name || attachment.filename || 'attachment').trim(),
+            url: String(attachment.url || attachment.proxyURL || '').trim(),
+            proxyURL: String(attachment.proxyURL || '').trim(),
+            contentType: String(attachment.contentType || '').trim(),
+            size: Number(attachment.size || 0)
+        }));
+    }
+
+    buildDiscordTextAwarenessOutput(input = {}) {
+        const sender = String(input.senderName || 'Discord user').trim();
+        const text = String(input.messageText || '').replace(/\s+/g, ' ').trim();
+        return {
+            awarenessText: `Discord background from ${sender}: ${this.truncateText(text, 900)}`,
+            summary: text,
+            notableDetails: [],
+            topicAnchors: [],
+            confidence: 'high',
+            caveats: ''
+        };
+    }
+
+    buildDiscordContextPodcastSnapshot(guildId) {
+        const session = this.podcastGenerator?.session || {};
+        const lines = [];
+        const recentHistory = Array.isArray(this.podcastGenerator?.history)
+            ? this.podcastGenerator.history.slice(-4)
+            : [];
+        for (const item of recentHistory) {
+            if (item.transcript) lines.push(String(item.transcript).trim());
+            if (item.response?.speech) lines.push(`Alpha-Clawd: ${String(item.response.speech).trim()}`);
+        }
+
+        let episodeTimestamp = null;
+        try {
+            episodeTimestamp = this.internalThoughtManager?.getEpisodeTimestampForTime?.(guildId, new Date().toISOString()) || null;
+        } catch {}
+
+        let episodePlan = '';
+        try {
+            const tracker = this.episodePlanTrackers?.get?.(guildId);
+            const snapshot = tracker?.snapshot?.();
+            if (snapshot?.currentPhase) {
+                episodePlan = [
+                    `currentPhase=${snapshot.currentPhase}`,
+                    snapshot.currentAngle ? `currentAngle=${snapshot.currentAngle}` : null
+                ].filter(Boolean).join(', ');
+            }
+        } catch {}
+
+        return {
+            topic: session.topic || '',
+            speakers: Array.isArray(session.speakers) ? session.speakers.slice(0, 12) : [],
+            episodeTimestamp,
+            episodePlan,
+            recentTranscript: this.truncateText(lines.filter(Boolean).join('\n'), 2400)
+        };
+    }
+
+    addDiscordContextAwarenessItem(guildId, input = {}) {
+        if (!this.internalThoughtManager?.addAwarenessShelfItem) {
+            return null;
+        }
+        const output = input.output || {};
+        const anchors = Array.isArray(output.topicAnchors) ? output.topicAnchors : [];
+        const attachmentNames = (input.attachments || [])
+            .map((attachment) => attachment.name)
+            .filter(Boolean);
+        const reasonParts = [
+            attachmentNames.length > 0 ? `Discord attachment(s): ${attachmentNames.join(', ')}` : 'Discord channel message',
+            input.senderName ? `sender=${input.senderName}` : null,
+            output.confidence ? `confidence=${output.confidence}` : null,
+            output.caveats ? `caveats=${output.caveats}` : null
+        ].filter(Boolean);
+
+        try {
+            return this.internalThoughtManager.addAwarenessShelfItem(guildId, {
+                id: input.messageId ? `discord-context-${input.messageId}` : undefined,
+                text: input.text,
+                reason: reasonParts.join('; '),
+                topicAnchors: anchors,
+                originTimestamp: input.messageTimestamp,
+                expiresAfterTurns: this.getDiscordContextShelfTurns()
+            });
+        } catch (error) {
+            console.warn(`[Bot] Failed to add Discord context awareness shelf item: ${error.message}`);
+            return null;
+        }
+    }
+
+    getDiscordContextShelfTurns() {
+        const parsed = Number(this.discordContextShelfTurns);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+            return 6;
+        }
+        return Math.floor(parsed);
+    }
+
     /**
      * Grant consent and start recording
      */
-    async grantConsent(guildId, topic, engine = 'current', episodePlanSelection = null) {
+    async grantConsent(guildId, topic, engine = 'current', episodePlanSelection = null, context = {}) {
         const sessionHostMode = this.normalizeSessionHostMode(engine);
         this.conversationBuffer?.clear?.();
         this.recordingState.set(guildId, this.RecordingState.RECORDING);
         this.sessionHostModes.set(guildId, sessionHostMode);
+        if (context.channelId) {
+            this.recordingTextChannels.set(guildId, context.channelId);
+        }
         this.resetConsecutiveGeneratorSilences(guildId);
         const consentTimestamp = new Date().toISOString();
 
@@ -3735,6 +3958,8 @@ class AlphaClawdVoiceBot {
             this.recordingState.delete(guildId);
             this.consentWaiters.delete(guildId);
             this.sessionHostModes.delete(guildId);
+            this.recordingTextChannels.delete(guildId);
+            this.discordContextProcessing.delete(guildId);
 
             // Leave voice channel
             await this.voiceManager.leaveChannel(guildId);
@@ -3810,6 +4035,8 @@ class AlphaClawdVoiceBot {
         this.stopIdleDecisionLoop(guildId);
         await this.stopGeminiLiveSession(guildId);
         this.sessionHostModes.delete(guildId);
+        this.recordingTextChannels.delete(guildId);
+        this.discordContextProcessing.delete(guildId);
         this.consecutiveGeneratorSilences?.delete?.(guildId);
         this.clearParticipantActivityTimers(guildId);
         this.podcastGenerator.endSession();
