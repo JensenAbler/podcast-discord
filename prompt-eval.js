@@ -224,7 +224,7 @@ function buildDefaultEpisodePlan(fixture) {
         guests: unique(fixture.turns.filter((turn) => turn.role !== 'host').map((turn) => turn.speaker))
             .map((name) => ({ name, role: 'guest' })),
         backgroundBrief: cleanMultiline(fixture.topicBrief || fixture.topic || ''),
-        floatingAngles: [],
+        excludedAngles: [],
         phases: {
             expanding: {
                 targetMinutes: phaseMinutes,

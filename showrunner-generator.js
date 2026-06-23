@@ -69,20 +69,20 @@ class ShowRunnerGenerator extends PodcastGenerator {
             '',
             'You are in a text-channel planning session with the humans who may appear in the episode. Your job is to gather durable guest/topic background, decide when there is enough context to create an episode plan, revise that plan from feedback, and recognize clear approval.',
             '',
-            'The episode plan is a static structure the live host will use during the recording. It supersedes prepared-question lists. It should create a finite set of planned angles, plus a separate finite floatingAngles list for worthwhile topics that are deliberately excluded from the scheduled structure.',
-            'Use floatingAngles to reassure the humans that plausible topics were noticed and held in reserve. Humans can later ask to swap, append, remove, or rearrange them during revision.',
+            'The episode plan is a static structure the live host will use during the recording. It supersedes prepared-question lists. It should create a finite set of planned angles, plus a separate finite excludedAngles list for significant topics that are deliberately excluded from the scheduled structure.',
+            'Aggressively fill excludedAngles with significant information, story lanes, examples, tangents, and topics from the planning messages that do not fit in the time allowed. The humans should be able to see that all important material is on the table, even when it is not scheduled.',
             '',
             'When background is still thin, ask one useful follow-up in messageToChannel.',
             'When there is enough background, produce a plan and present it in messageToChannel.',
             'When feedback arrives after a plan exists, revise the plan directly and explain the revision briefly.',
-            'When humans ask to remove, drop, cut, or delete a scheduled angle from the plan, move that angle into floatingAngles instead of erasing it, unless they explicitly ask to discard it from both the scheduled plan and floating angles.',
+            'Never actually delete an angle. Delete = exclude. When humans ask to remove, drop, cut, or delete a scheduled angle from the plan, move that angle into excludedAngles instead of erasing it.',
             'When humans clearly approve the plan, set approved=true and include a concise closing message.',
             'When humans clearly ask to end, close, cancel, stop, or abort the planning session without approving a plan, set action=close_session, approved=false, plan=null, and include a concise closing message.',
             '',
             'Plan phases must be exactly: expanding, developing, converging, closing.',
             'Each phase has targetMinutes and angles only. Do not include phase purpose.',
-            'Each scheduled or floating angle needs a stable id, a short title, and a short description.',
-            'Keep the plan shape limited to basename, version, targetDurationMinutes, guests, backgroundBrief, floatingAngles, phases, phase targetMinutes, and phase angles.',
+            'Each scheduled or excluded angle needs a stable id, a short title, and a short description.',
+            'Keep the plan shape limited to basename, version, targetDurationMinutes, guests, backgroundBrief, excludedAngles, phases, phase targetMinutes, and phase angles.',
             'Choose a compact basename from the plan contents. Once an existing basename is provided, keep it unchanged.'
         ].join('\n');
     }
@@ -165,7 +165,7 @@ class ShowRunnerGenerator extends PodcastGenerator {
                         {
                             type: 'object',
                             additionalProperties: false,
-                            required: ['basename', 'version', 'targetDurationMinutes', 'guests', 'backgroundBrief', 'floatingAngles', 'phases'],
+                            required: ['basename', 'version', 'targetDurationMinutes', 'guests', 'backgroundBrief', 'excludedAngles', 'phases'],
                             properties: {
                                 basename: { type: 'string' },
                                 version: { type: 'string' },
@@ -183,10 +183,10 @@ class ShowRunnerGenerator extends PodcastGenerator {
                                     }
                                 },
                                 backgroundBrief: { type: 'string' },
-                                floatingAngles: {
+                                excludedAngles: {
                                     type: 'array',
                                     items: angleSchema,
-                                    description: 'Worthwhile topics deliberately left unscheduled so humans can swap, append, or rearrange them during planning revisions.'
+                                    description: 'Significant topics deliberately excluded from the scheduled plan because they do not fit the time budget.'
                                 },
                                 phases: {
                                     type: 'object',

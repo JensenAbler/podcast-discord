@@ -3098,7 +3098,7 @@ async function runTests() {
                                 targetDurationMinutes: 40,
                                 guests: [{ name: 'Jensen', role: 'builder' }],
                                 backgroundBrief: 'The guest cares about internal thoughts and structure.',
-                                floatingAngles: [
+                                excludedAngles: [
                                     { id: 'build-history', title: 'Build history', description: 'Hold the implementation backstory in reserve if humans want it.' }
                                 ],
                                 phases: {
@@ -3141,11 +3141,11 @@ async function runTests() {
             showRunnerCall.body.response_format?.json_schema?.name !== 'podcast_episode_plan_controller' ||
             showRunnerCall.body.response_format?.json_schema?.schema?.required?.join(',') !== 'action,messageToChannel,approved,plan' ||
             !showRunnerCall.body.response_format?.json_schema?.schema?.properties?.action?.enum?.includes('close_session') ||
-            !showRunnerPlanSchema?.required?.includes('floatingAngles') ||
-            showRunnerPlanSchema?.properties?.floatingAngles?.items?.required?.join(',') !== 'id,title,description' ||
+            !showRunnerPlanSchema?.required?.includes('excludedAngles') ||
+            showRunnerPlanSchema?.properties?.excludedAngles?.items?.required?.join(',') !== 'id,title,description' ||
             generated.action !== 'generate_plan' ||
             generated.plan.basename !== 'internal-thoughts-live-hosting' ||
-            generated.plan.floatingAngles.length !== 1 ||
+            generated.plan.excludedAngles.length !== 1 ||
             generated.plan.phases.developing.angles.length !== 2
         ) {
             throw new Error(`Show runner generator did not produce an episode plan: ${JSON.stringify({ showRunnerCall, generated })}`);
@@ -3156,10 +3156,10 @@ async function runTests() {
         });
         if (
             !showRunnerMessages[0].content.includes('preproduction showrunner') ||
-            !showRunnerMessages[0].content.includes('floatingAngles') ||
-            !showRunnerMessages[0].content.includes('move that angle into floatingAngles') ||
+            !showRunnerMessages[0].content.includes('excludedAngles') ||
+            !showRunnerMessages[0].content.includes('Delete = exclude') ||
             !showRunnerMessages[1].content.includes('Previous episode plan') ||
-            !showRunnerMessages[1].content.includes('"floatingAngles"') ||
+            !showRunnerMessages[1].content.includes('"excludedAngles"') ||
             !showRunnerMessages[2].content.includes('"targetDurationMinutes"') ||
             showRunnerMessages[2].content.includes('"wrapNow"') ||
             showRunnerMessages[2].content.includes('"generatorInstruction"')
@@ -3186,7 +3186,7 @@ async function runTests() {
             firstSave.plan.basename !== secondSave.plan.basename ||
             !fs.existsSync(firstSave.path) ||
             JSON.parse(fs.readFileSync(firstSave.path, 'utf8')).phases.developing.angles.length !== 2 ||
-            JSON.parse(fs.readFileSync(firstSave.path, 'utf8')).floatingAngles[0]?.id !== 'build-history'
+            JSON.parse(fs.readFileSync(firstSave.path, 'utf8')).excludedAngles[0]?.id !== 'build-history'
         ) {
             throw new Error(`Episode plan store did not version plans immutably: ${JSON.stringify({ firstSave, secondSave })}`);
         }
@@ -3283,7 +3283,7 @@ async function runTests() {
             targetDurationMinutes: 90,
             guests: [{ name: 'Jordan', role: 'guest' }],
             backgroundBrief: 'Jordan wants to discuss consciousness training.',
-            floatingAngles: [
+            excludedAngles: [
                 { id: 'boarding-school', title: 'Boarding school', description: 'Keep boarding-school texture available if humans want to add it later.' }
             ],
             phases: {
@@ -3333,7 +3333,7 @@ async function runTests() {
                         plan: {
                             ...basePlan,
                             backgroundBrief: 'This echoed plan must not create a new version during approval.',
-                            floatingAngles: [
+                            excludedAngles: [
                                 { id: 'approval-echo', title: 'Approval Echo', description: 'This should not be saved as v003.' }
                             ]
                         }
@@ -3347,8 +3347,8 @@ async function runTests() {
                         ...basePlan,
                         basename: 'should-not-replace-basename',
                         backgroundBrief: 'Jordan wants a deeper consciousness-training arc.',
-                        floatingAngles: [
-                            ...basePlan.floatingAngles,
+                        excludedAngles: [
+                            ...basePlan.excludedAngles,
                             { id: 'skywatcher', title: 'Skywatcher', description: 'Hold the Skywatcher tangent in reserve.' }
                         ],
                         phases: {
@@ -3416,10 +3416,10 @@ async function runTests() {
             secondSaved.plan.basename !== 'jordan-consciousness-training' ||
             firstSaved.plan.phases.developing.angles.length !== 1 ||
             secondSaved.plan.phases.developing.angles.length !== 2 ||
-            firstSaved.plan.floatingAngles[0]?.id !== 'boarding-school' ||
-            secondSaved.plan.floatingAngles[1]?.id !== 'skywatcher' ||
-            !sentMessages.some((message) => message.includes('**Floating Angles**') && message.includes('boarding-school')) ||
-            !sentMessages.some((message) => message.includes("Alpha-Clawd won't budget time for these")) ||
+            firstSaved.plan.excludedAngles[0]?.id !== 'boarding-school' ||
+            secondSaved.plan.excludedAngles[1]?.id !== 'skywatcher' ||
+            !sentMessages.some((message) => message.includes('**Excluded Angles**') && message.includes('boarding-school')) ||
+            !sentMessages.some((message) => message.includes("We won't mention these")) ||
             !sentMessages.some((message) => message.includes('skywatcher')) ||
             !sentMessages.some((message) => message.includes('**Episode plan: jordan-consciousness-training v002**'))
         ) {

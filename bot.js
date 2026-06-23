@@ -2737,13 +2737,15 @@ class AlphaClawdVoiceBot {
                 lines.push(`- \`${angle.id}\`: ${angle.description || angle.title}`);
             }
         }
-        lines.push('', '**Floating Angles**');
-        lines.push("_Alpha-Clawd won't budget time for these. Reply with feedback to promote any desired angle into the conversation._");
-        const floatingAngles = Array.isArray(plan.floatingAngles) ? plan.floatingAngles : [];
-        if (floatingAngles.length === 0) {
+        lines.push('', '**Excluded Angles**');
+        lines.push("_We won't mention these._");
+        const excludedAngles = Array.isArray(plan.excludedAngles)
+            ? plan.excludedAngles
+            : (Array.isArray(plan.floatingAngles) ? plan.floatingAngles : []);
+        if (excludedAngles.length === 0) {
             lines.push('- (none)');
         } else {
-            for (const angle of floatingAngles) {
+            for (const angle of excludedAngles) {
                 lines.push(`- \`${angle.id}\`: ${angle.description || angle.title}`);
             }
         }
