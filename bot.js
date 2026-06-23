@@ -1085,14 +1085,14 @@ class AlphaClawdVoiceBot {
     }
 
     async generateEpisodePlanOpening(guildId, plan = {}) {
-        if (typeof this.podcastGenerator?.generate !== 'function') {
+        if (typeof this.beginGeneratorTurn !== 'function') {
             throw new Error('podcast generator is not available for planned opener');
         }
 
         const firstAngle = this.getFirstEpisodePlanAngle(plan);
         const generatorTiming = this.getGeneratorCallTiming(guildId);
         const episodePlanStructure = this.getEpisodePlanStructureForGenerator(guildId, generatorTiming);
-        const response = await this.podcastGenerator.generate({
+        const initialResponse = await this.beginGeneratorTurn({
             transcript: '',
             episodeOpening: true,
             episodePlanStructure,
@@ -1101,6 +1101,7 @@ class AlphaClawdVoiceBot {
             ...generatorTiming,
             remember: false
         });
+        const response = await this.settleGeneratorResponse(initialResponse, 'planned opener');
         const speech = this.cleanText(response?.speech || '');
         if (!response?.shouldRespond || !speech) {
             throw new Error('podcast generator returned no planned opener speech');
@@ -2065,7 +2066,7 @@ class AlphaClawdVoiceBot {
             const episodePlanStructure = this.getEpisodePlanStructureForGenerator(guildId, generatorTiming);
 
             console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s without participant speech`);
-            const response = await this.podcastGenerator.generate({
+            const response = await this.beginGeneratorTurn({
                 transcript: '',
                 idleCheck: true,
                 idleSeconds,

@@ -3321,16 +3321,27 @@ async function runTests() {
             },
             saveTranscriptEntry: (_guildId, entry) => { savedOpeningTranscript = entry; }
         };
-        openingBot.podcastGenerator = {
-            generate: async (input) => {
-                modelOpeningInput = input;
-                return {
+        openingBot.beginGeneratorTurn = async (input) => {
+            modelOpeningInput = input;
+            return {
+                speech: '',
+                shouldRespond: true,
+                chosenAngle: '',
+                bigBrain: { requested: false, reason: '', consumedRunId: '' },
+                bigHeart: { requested: false, reason: '', consumedRunId: '' },
+                isStreaming: true,
+                completed: Promise.resolve({
                     speech: modelOpeningSpeech,
                     shouldRespond: true,
                     chosenAngle: 'guest-background',
                     bigBrain: { requested: true, reason: 'This should be suppressed for planned openers.', consumedRunId: '' },
                     bigHeart: { requested: true, reason: 'This should be suppressed for planned openers.', consumedRunId: '' }
-                };
+                })
+            };
+        };
+        openingBot.podcastGenerator = {
+            generate: async () => {
+                throw new Error('planned opener should use beginGeneratorTurn');
             },
             rememberAssistantResponse: (response) => { rememberedOpening = response; }
         };
@@ -4949,16 +4960,24 @@ async function runTests() {
         bot.resetConsecutiveGeneratorSilences(guildId);
         directSilenceCounts.length = 0;
         directGenerateCalled = false;
+        let idleBeginCalls = 0;
+        const originalBeginGeneratorTurn = bot.beginGeneratorTurn.bind(bot);
+        bot.beginGeneratorTurn = async (input) => {
+            idleBeginCalls += 1;
+            return originalBeginGeneratorTurn(input);
+        };
         await bot.handleIdleDecisionTick(guildId);
         await bot.handleIdleDecisionTick(guildId);
         if (
+            idleBeginCalls !== 2 ||
             directSilenceCounts.length !== 2 ||
             directSilenceCounts[0] !== 0 ||
             directSilenceCounts[1] !== 1 ||
             bot.getConsecutiveGeneratorSilences(guildId) !== 2
         ) {
-            throw new Error(`Idle decision did not re-run while dead air persisted: ${JSON.stringify({ directGenerateCalled, directSilenceCounts, streak: bot.getConsecutiveGeneratorSilences(guildId) })}`);
+            throw new Error(`Idle decision did not re-run through beginGeneratorTurn while dead air persisted: ${JSON.stringify({ idleBeginCalls, directGenerateCalled, directSilenceCounts, streak: bot.getConsecutiveGeneratorSilences(guildId) })}`);
         }
+        delete bot.beginGeneratorTurn;
         bot.resetConsecutiveGeneratorSilences(guildId);
 
         directGenerateCalled = false;
