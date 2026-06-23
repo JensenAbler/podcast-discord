@@ -75,6 +75,7 @@ class ShowRunnerGenerator extends PodcastGenerator {
             'When background is still thin, ask one useful follow-up in messageToChannel.',
             'When there is enough background, produce a plan and present it in messageToChannel.',
             'When feedback arrives after a plan exists, revise the plan directly and explain the revision briefly.',
+            'When humans ask to remove, drop, cut, or delete a scheduled angle from the plan, move that angle into floatingAngles instead of erasing it, unless they explicitly ask to discard it from both the scheduled plan and floating angles.',
             'When humans clearly approve the plan, set approved=true and include a concise closing message.',
             'When humans clearly ask to end, close, cancel, stop, or abort the planning session without approving a plan, set action=close_session, approved=false, plan=null, and include a concise closing message.',
             '',

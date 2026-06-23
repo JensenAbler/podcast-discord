@@ -2643,18 +2643,18 @@ class AlphaClawdVoiceBot {
             return;
         }
 
-        if (output.plan) {
-            const saved = this.savePlanningOutput(session, output);
-            console.log(`[Bot] Podcast planning saved plan: channel=${session.channelId}, basename=${saved.plan.basename}, version=${saved.plan.version}, path=${saved.path}`);
-            await this.sendLongMessage(channel, this.formatEpisodePlanForDiscord(saved.plan, output));
-        } else if (output.messageToChannel) {
-            console.log(`[Bot] Podcast planning sending message: channel=${session.channelId}, chars=${output.messageToChannel.length}`);
-            await channel?.send?.(output.messageToChannel);
-        } else {
-            console.log(`[Bot] Podcast planning chose no channel message: channel=${session.channelId}, action=${output.action}`);
-        }
-
         if (output.approved) {
+            let sentApprovalMessage = false;
+            if (!session.latestPlan && output.plan) {
+                const saved = this.savePlanningOutput(session, output);
+                console.log(`[Bot] Podcast planning saved first approved plan: channel=${session.channelId}, basename=${saved.plan.basename}, version=${saved.plan.version}, path=${saved.path}`);
+                await this.sendLongMessage(channel, this.formatEpisodePlanForDiscord(saved.plan, output));
+                sentApprovalMessage = true;
+            } else if (output.messageToChannel) {
+                await channel?.send?.(output.messageToChannel);
+                sentApprovalMessage = true;
+            }
+
             if (session.basename) {
                 this.episodePlanStore.appendSessionRecord(session.basename, {
                     type: 'approved',
@@ -2664,11 +2664,21 @@ class AlphaClawdVoiceBot {
             }
             this.planningSessions.delete(session.channelId);
             console.log(`[Bot] Podcast planning approved and closed: channel=${session.channelId}, basename=${session.basename || 'none'}, latest=${session.latestVersion || 'none'}`);
-            if (output.messageToChannel && !output.plan) {
-                await channel?.send?.(output.messageToChannel);
-            } else {
+            if (!sentApprovalMessage) {
                 await channel?.send?.('Episode plan approved. Planning session closed.');
             }
+            return;
+        }
+
+        if (output.plan) {
+            const saved = this.savePlanningOutput(session, output);
+            console.log(`[Bot] Podcast planning saved plan: channel=${session.channelId}, basename=${saved.plan.basename}, version=${saved.plan.version}, path=${saved.path}`);
+            await this.sendLongMessage(channel, this.formatEpisodePlanForDiscord(saved.plan, output));
+        } else if (output.messageToChannel) {
+            console.log(`[Bot] Podcast planning sending message: channel=${session.channelId}, chars=${output.messageToChannel.length}`);
+            await channel?.send?.(output.messageToChannel);
+        } else {
+            console.log(`[Bot] Podcast planning chose no channel message: channel=${session.channelId}, action=${output.action}`);
         }
     }
 
@@ -2728,7 +2738,7 @@ class AlphaClawdVoiceBot {
             }
         }
         lines.push('', '**Floating Angles**');
-        lines.push('_Not scheduled yet. Reply with feedback to swap, append, remove, or rearrange these._');
+        lines.push("_Alpha-Clawd won't budget time for these. Reply with feedback to promote any desired angle into the conversation._");
         const floatingAngles = Array.isArray(plan.floatingAngles) ? plan.floatingAngles : [];
         if (floatingAngles.length === 0) {
             lines.push('- (none)');

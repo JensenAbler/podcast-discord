@@ -3157,6 +3157,7 @@ async function runTests() {
         if (
             !showRunnerMessages[0].content.includes('preproduction showrunner') ||
             !showRunnerMessages[0].content.includes('floatingAngles') ||
+            !showRunnerMessages[0].content.includes('move that angle into floatingAngles') ||
             !showRunnerMessages[1].content.includes('Previous episode plan') ||
             !showRunnerMessages[1].content.includes('"floatingAngles"') ||
             !showRunnerMessages[2].content.includes('"targetDurationMinutes"') ||
@@ -3329,7 +3330,13 @@ async function runTests() {
                         action: 'approve_plan',
                         messageToChannel: 'Approved.',
                         approved: true,
-                        plan: null
+                        plan: {
+                            ...basePlan,
+                            backgroundBrief: 'This echoed plan must not create a new version during approval.',
+                            floatingAngles: [
+                                { id: 'approval-echo', title: 'Approval Echo', description: 'This should not be saved as v003.' }
+                            ]
+                        }
                     };
                 }
                 return {
@@ -3412,6 +3419,7 @@ async function runTests() {
             firstSaved.plan.floatingAngles[0]?.id !== 'boarding-school' ||
             secondSaved.plan.floatingAngles[1]?.id !== 'skywatcher' ||
             !sentMessages.some((message) => message.includes('**Floating Angles**') && message.includes('boarding-school')) ||
+            !sentMessages.some((message) => message.includes("Alpha-Clawd won't budget time for these")) ||
             !sentMessages.some((message) => message.includes('skywatcher')) ||
             !sentMessages.some((message) => message.includes('**Episode plan: jordan-consciousness-training v002**'))
         ) {
@@ -3514,12 +3522,16 @@ async function runTests() {
 
         await bot.handlePlanningMessage(makePlanningMessage('Approved. Let us use this.', 'producer'));
         await bot.planningSessions.get('channel-plan')?.processing;
-        if (bot.planningSessions.has('channel-plan') || sentMessages.at(-1) !== 'Approved.') {
-            throw new Error(`Approval did not close the planning session cleanly: ${JSON.stringify({ sessions: Array.from(bot.planningSessions.keys()), sentMessages })}`);
+        if (
+            bot.planningSessions.has('channel-plan') ||
+            sentMessages.at(-1) !== 'Approved.' ||
+            fs.existsSync(path.join(tempRoot, 'jordan-consciousness-training', 'v003', 'episode-plan.json'))
+        ) {
+            throw new Error(`Approval did not close the planning session cleanly without writing a new version: ${JSON.stringify({ sessions: Array.from(bot.planningSessions.keys()), sentMessages })}`);
         }
 
         const sessionLog = fs.readFileSync(path.join(tempRoot, 'jordan-consciousness-training', 'planning-session.jsonl'), 'utf8');
-        if (!sessionLog.includes('"planning_message"') || !sessionLog.includes('"approved"')) {
+        if (!sessionLog.includes('"planning_message"') || !sessionLog.includes('"approved"') || !sessionLog.includes('"latestVersion":"v002"')) {
             throw new Error(`Planning session log did not capture messages and approval: ${sessionLog}`);
         }
 
