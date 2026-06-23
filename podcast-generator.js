@@ -896,11 +896,26 @@ class PodcastGenerator {
             lines.push(`Consecutive prior Alpha-Clawd silence decisions: ${Math.max(0, Math.floor(Number(options.consecutiveSilenceTurns)))}`);
         }
 
+        if (options.episodeOpening) {
+            const preferredOpeningAngle = this.cleanText(options.preferredOpeningAngle || '');
+            lines.push(
+                'Episode opening task:',
+                'Craft Alpha-Clawd\'s first spoken host turn for this planned live podcast episode.',
+                'Welcome the guest or guests, orient listeners to the premise in one short digestible phrase, then prompt the guest to speak into the first planned angle.',
+                'Use the episode plan structure and background as source material, but do not read or summarize the plan.',
+                'Keep it very short: one or two natural spoken sentences, about 20-45 words.',
+                'Set shouldRespond=true. Set chosenAngle to the planned angle this opening invites the guest into. Do not request bigBrain or bigHeart.'
+            );
+            if (preferredOpeningAngle) {
+                lines.push(`Preferred opening planned angle: ${preferredOpeningAngle}`);
+            }
+        }
+
         const inlineTranscript = this.formatTranscriptWithPauses(options.utterances || []);
         if (lines.length > 0) {
             lines.push('');
         }
-        lines.push(inlineTranscript || transcript || '(empty)');
+        lines.push(inlineTranscript || transcript || (options.episodeOpening ? '(episode has not started yet)' : '(empty)'));
 
         if (turnDirectives.standbyRequest) {
             lines.push(

@@ -1751,6 +1751,27 @@ async function runTests() {
         ) {
             throw new Error(`Episode plan structure was not injected into generator prompt: ${showRunnerPrompt}`);
         }
+        const openingPrompt = generator.buildUserPrompt('', null, {
+            episodeOpening: true,
+            preferredOpeningAngle: 'guest-background',
+            episodePlanStructure: [
+                'Guest background:',
+                '- Jensen (guest): builder of Alpha-Clawd',
+                '',
+                'Available planned angles in this phase:',
+                '- guest-background: Establish who Jensen is and why the system matters.'
+            ].join('\n')
+        });
+        if (
+            !openingPrompt.includes('Episode opening task:') ||
+            !openingPrompt.includes('Welcome the guest or guests') ||
+            !openingPrompt.includes('prompt the guest to speak into the first planned angle') ||
+            !openingPrompt.includes('Set shouldRespond=true') ||
+            !openingPrompt.includes('Preferred opening planned angle: guest-background') ||
+            !openingPrompt.includes('(episode has not started yet)')
+        ) {
+            throw new Error(`Episode opening prompt was not constructed correctly: ${openingPrompt}`);
+        }
         console.log('  Generator tracks standby, no-question pacing, and episode structure directives');
         passed++;
 
@@ -3275,6 +3296,8 @@ async function runTests() {
         let savedOpeningTranscript = null;
         let rememberedOpening = null;
         let startupPlaybackWaited = false;
+        let modelOpeningInput = null;
+        const modelOpeningSpeech = "Recording started. Welcome in, Jensen. Let's begin with your background in Alpha-Clawd: what should listeners understand first?";
         openingBot.voiceProvider = {
             synthesize: async (text) => {
                 synthesizedOpening = text;
@@ -3299,6 +3322,16 @@ async function runTests() {
             saveTranscriptEntry: (_guildId, entry) => { savedOpeningTranscript = entry; }
         };
         openingBot.podcastGenerator = {
+            generate: async (input) => {
+                modelOpeningInput = input;
+                return {
+                    speech: modelOpeningSpeech,
+                    shouldRespond: true,
+                    chosenAngle: 'guest-background',
+                    bigBrain: { requested: true, reason: 'This should be suppressed for planned openers.', consumedRunId: '' },
+                    bigHeart: { requested: true, reason: 'This should be suppressed for planned openers.', consumedRunId: '' }
+                };
+            },
             rememberAssistantResponse: (response) => { rememberedOpening = response; }
         };
 
@@ -3308,10 +3341,16 @@ async function runTests() {
         const openingSnapshot = openingTracker.snapshot();
         if (
             !openingResult.planned ||
+            !openingResult.modelCrafted ||
+            openingResult.fallback ||
             openingResult.chosenAngle !== 'guest-background' ||
-            !synthesizedOpening.includes('Welcome in, Jensen') ||
-            !synthesizedOpening.includes('For listeners, Jensen is the builder of Alpha-Clawd') ||
-            !synthesizedOpening.includes("Let's start with guest background. What should listeners understand first?") ||
+            modelOpeningInput?.episodeOpening !== true ||
+            modelOpeningInput?.preferredOpeningAngle !== 'guest-background' ||
+            !modelOpeningInput?.episodePlanStructure?.includes('Guest background:') ||
+            !modelOpeningInput?.episodePlanStructure?.includes('Jensen (builder): Who is Jensen: the builder of Alpha-Clawd') ||
+            synthesizedOpening !== modelOpeningSpeech ||
+            synthesizedOpening.includes('For listeners, Jensen is the builder of Alpha-Clawd') ||
+            synthesizedOpening.includes("Let's start with guest background. What should listeners understand first?") ||
             synthesizedOpening.includes('Who is Jensen:') ||
             synthesizedOpening.includes('The episode background is') ||
             synthesizedOpening.includes('[trimmed]') ||
@@ -3323,10 +3362,12 @@ async function runTests() {
             savedOpeningTranscript?.chosenAngle !== 'guest-background' ||
             savedOpeningTranscript?.duration !== 3000 ||
             rememberedOpening?.chosenAngle !== 'guest-background' ||
+            rememberedOpening?.bigBrain?.requested ||
+            rememberedOpening?.bigHeart?.requested ||
             openingSnapshot.lastChosenAngle !== 'guest-background' ||
             !openingSnapshot.activeAngles.includes('guest-background')
         ) {
-            throw new Error(`Planned recording opener did not preserve guest background and tracker state: ${JSON.stringify({ openingResult, synthesizedOpening, recordedOpeningBytes, spokenOpeningBytes, savedOpeningTranscript, rememberedOpening, openingSnapshot })}`);
+            throw new Error(`Planned recording opener did not preserve guest background and tracker state: ${JSON.stringify({ openingResult, modelOpeningInput, synthesizedOpening, recordedOpeningBytes, spokenOpeningBytes, savedOpeningTranscript, rememberedOpening, openingSnapshot })}`);
         }
 
         const noGuestBriefOpening = openingBot.buildEpisodePlanOpening({

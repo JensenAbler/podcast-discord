@@ -1084,6 +1084,58 @@ class AlphaClawdVoiceBot {
         return `Let's start with ${lowercaseFirst(title)}. What should listeners understand first?`;
     }
 
+    async generateEpisodePlanOpening(guildId, plan = {}) {
+        if (typeof this.podcastGenerator?.generate !== 'function') {
+            throw new Error('podcast generator is not available for planned opener');
+        }
+
+        const firstAngle = this.getFirstEpisodePlanAngle(plan);
+        const generatorTiming = this.getGeneratorCallTiming(guildId);
+        const episodePlanStructure = this.getEpisodePlanStructureForGenerator(guildId, generatorTiming);
+        const response = await this.podcastGenerator.generate({
+            transcript: '',
+            episodeOpening: true,
+            episodePlanStructure,
+            preferredOpeningAngle: firstAngle?.id || '',
+            consecutiveSilenceTurns: 0,
+            ...generatorTiming,
+            remember: false
+        });
+        const speech = this.cleanText(response?.speech || '');
+        if (!response?.shouldRespond || !speech) {
+            throw new Error('podcast generator returned no planned opener speech');
+        }
+
+        const plannedAngleIds = new Set(
+            ['expanding', 'developing', 'converging', 'closing']
+                .flatMap((phase) => Array.isArray(plan.phases?.[phase]?.angles)
+                    ? plan.phases[phase].angles.map((angle) => this.cleanText(angle?.id))
+                    : [])
+                .filter(Boolean)
+        );
+        let chosenAngle = this.cleanText(response.chosenAngle || firstAngle?.id || '');
+        if (chosenAngle && plannedAngleIds.size > 0 && !plannedAngleIds.has(chosenAngle)) {
+            console.warn(`[Bot] Planned opener returned unknown chosenAngle="${chosenAngle}"; using ${firstAngle?.id || 'no angle'} instead`);
+            chosenAngle = firstAngle?.id || '';
+        }
+
+        return {
+            text: speech,
+            chosenAngle,
+            source: 'episode_plan_opening',
+            modelCrafted: true,
+            response: {
+                ...response,
+                shouldRespond: true,
+                speech,
+                text: speech,
+                chosenAngle,
+                bigBrain: { requested: false, reason: '', consumedRunId: '' },
+                bigHeart: { requested: false, reason: '', consumedRunId: '' }
+            }
+        };
+    }
+
     getFirstEpisodePlanAngle(plan = {}) {
         const phases = ['expanding', 'developing', 'converging', 'closing'];
         for (const phase of phases) {
@@ -1101,9 +1153,21 @@ class AlphaClawdVoiceBot {
     }
 
     async speakRecordingStart(guildId, sessionHostMode, episodePlanSelection = null) {
-        const opening = episodePlanSelection?.plan
-            ? this.buildEpisodePlanOpening(episodePlanSelection.plan)
-            : null;
+        let opening = null;
+        if (episodePlanSelection?.plan) {
+            try {
+                opening = await this.generateEpisodePlanOpening(guildId, episodePlanSelection.plan);
+                console.log(`[Bot] Generated model-crafted episode opener for ${episodePlanSelection.plan.basename}@${episodePlanSelection.plan.version}`);
+            } catch (error) {
+                console.warn(`[Bot] Planned opener generation failed; using fallback opener: ${error.message}`);
+                opening = {
+                    ...this.buildEpisodePlanOpening(episodePlanSelection.plan),
+                    source: 'episode_plan_opening_fallback',
+                    modelCrafted: false,
+                    fallbackReason: error.message
+                };
+            }
+        }
         const plannedOpeningText = this.cleanText(opening?.text || '');
         if (plannedOpeningText) {
             const synthesizedBuffer = await this.voiceProvider.synthesize(plannedOpeningText, {
@@ -1119,9 +1183,12 @@ class AlphaClawdVoiceBot {
                 transcription: plannedOpeningText,
                 timestamp: generatedAt,
                 generatedAt,
-                source: 'episode_plan_opening',
+                source: opening.source || 'episode_plan_opening',
                 chosenAngle: opening.chosenAngle || ''
             };
+            if (opening.modelCrafted === false && opening.fallbackReason) {
+                transcriptEntry.openingFallbackReason = opening.fallbackReason;
+            }
             if (timing) {
                 transcriptEntry.playbackRequestedAt = timing.playbackRequestedAt;
                 transcriptEntry.playbackStartedAt = timing.playbackStartedAt;
@@ -1131,22 +1198,25 @@ class AlphaClawdVoiceBot {
             this.voiceManager.saveTranscriptEntry?.(guildId, transcriptEntry);
             this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);
             this.observeShowRunnerTranscriptEntry(guildId, transcriptEntry);
-            this.applyEpisodePlanResponse(guildId, {
-                shouldRespond: true,
-                speech: plannedOpeningText,
-                chosenAngle: opening.chosenAngle || ''
-            }, {
-                playbackStartedAt: timing?.playbackStartedAt || generatedAt,
-                playbackEndedAt: timing?.playbackEndedAt || generatedAt
-            });
-            this.podcastGenerator.rememberAssistantResponse?.({
+            const plannedOpeningResponse = opening.response || {
                 shouldRespond: true,
                 speech: plannedOpeningText,
                 chosenAngle: opening.chosenAngle || '',
-                bigBrain: { requested: false, reason: '' },
-                bigHeart: { requested: false, reason: '' }
+                bigBrain: { requested: false, reason: '', consumedRunId: '' },
+                bigHeart: { requested: false, reason: '', consumedRunId: '' }
+            };
+            this.applyEpisodePlanResponse(guildId, plannedOpeningResponse, {
+                playbackStartedAt: timing?.playbackStartedAt || generatedAt,
+                playbackEndedAt: timing?.playbackEndedAt || generatedAt
             });
-            return { planned: true, text: plannedOpeningText, chosenAngle: opening.chosenAngle || '' };
+            this.podcastGenerator.rememberAssistantResponse?.(plannedOpeningResponse);
+            return {
+                planned: true,
+                text: plannedOpeningText,
+                chosenAngle: opening.chosenAngle || '',
+                modelCrafted: opening.modelCrafted === true,
+                fallback: opening.modelCrafted === false
+            };
         }
 
         const audioBuffer = this.cachedAudio.recordingStarted;
