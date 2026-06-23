@@ -152,6 +152,7 @@ function normalizeEpisodePlan(plan = {}, options = {}) {
     const guests = normalizeGuests(plan.guests);
     const backgroundBrief = cleanMultiline(plan.backgroundBrief || '');
     const phases = normalizePhases(plan.phases, targetDurationMinutes);
+    const floatingAngles = normalizeAngles(plan.floatingAngles || plan.unscheduledAngles || plan.reserveAngles);
 
     return {
         basename,
@@ -159,6 +160,7 @@ function normalizeEpisodePlan(plan = {}, options = {}) {
         targetDurationMinutes,
         guests,
         backgroundBrief,
+        floatingAngles,
         phases
     };
 }
@@ -244,6 +246,7 @@ function deriveBasenameFromPlan(plan = {}) {
     const brief = cleanText(plan.backgroundBrief || '');
     const firstAngle = PHASES
         .flatMap((phase) => normalizeAngles(plan.phases?.[phase]?.angles || []))
+        .concat(normalizeAngles(plan.floatingAngles || plan.unscheduledAngles || plan.reserveAngles))
         .map((angle) => angle.title)
         .find(Boolean);
     return slugify([guests, firstAngle, brief].filter(Boolean).join(' ').slice(0, 80)) || 'episode-plan';

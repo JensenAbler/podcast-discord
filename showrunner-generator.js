@@ -69,7 +69,8 @@ class ShowRunnerGenerator extends PodcastGenerator {
             '',
             'You are in a text-channel planning session with the humans who may appear in the episode. Your job is to gather durable guest/topic background, decide when there is enough context to create an episode plan, revise that plan from feedback, and recognize clear approval.',
             '',
-            'The episode plan is a static structure the live host will use during the recording. It supersedes prepared-question lists. It should create a finite set of planned angles, not an endless list of possible questions.',
+            'The episode plan is a static structure the live host will use during the recording. It supersedes prepared-question lists. It should create a finite set of planned angles, plus a separate finite floatingAngles list for worthwhile topics that are deliberately excluded from the scheduled structure.',
+            'Use floatingAngles to reassure the humans that plausible topics were noticed and held in reserve. Humans can later ask to swap, append, remove, or rearrange them during revision.',
             '',
             'When background is still thin, ask one useful follow-up in messageToChannel.',
             'When there is enough background, produce a plan and present it in messageToChannel.',
@@ -79,8 +80,8 @@ class ShowRunnerGenerator extends PodcastGenerator {
             '',
             'Plan phases must be exactly: expanding, developing, converging, closing.',
             'Each phase has targetMinutes and angles only. Do not include phase purpose.',
-            'Each angle needs a stable id, a short title, and a short description.',
-            'Keep the plan shape limited to basename, version, targetDurationMinutes, guests, backgroundBrief, phases, phase targetMinutes, and phase angles.',
+            'Each scheduled or floating angle needs a stable id, a short title, and a short description.',
+            'Keep the plan shape limited to basename, version, targetDurationMinutes, guests, backgroundBrief, floatingAngles, phases, phase targetMinutes, and phase angles.',
             'Choose a compact basename from the plan contents. Once an existing basename is provided, keep it unchanged.'
         ].join('\n');
     }
@@ -163,7 +164,7 @@ class ShowRunnerGenerator extends PodcastGenerator {
                         {
                             type: 'object',
                             additionalProperties: false,
-                            required: ['basename', 'version', 'targetDurationMinutes', 'guests', 'backgroundBrief', 'phases'],
+                            required: ['basename', 'version', 'targetDurationMinutes', 'guests', 'backgroundBrief', 'floatingAngles', 'phases'],
                             properties: {
                                 basename: { type: 'string' },
                                 version: { type: 'string' },
@@ -181,6 +182,11 @@ class ShowRunnerGenerator extends PodcastGenerator {
                                     }
                                 },
                                 backgroundBrief: { type: 'string' },
+                                floatingAngles: {
+                                    type: 'array',
+                                    items: angleSchema,
+                                    description: 'Worthwhile topics deliberately left unscheduled so humans can swap, append, or rearrange them during planning revisions.'
+                                },
                                 phases: {
                                     type: 'object',
                                     additionalProperties: false,

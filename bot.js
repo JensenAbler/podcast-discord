@@ -2727,6 +2727,16 @@ class AlphaClawdVoiceBot {
                 lines.push(`- \`${angle.id}\`: ${angle.description || angle.title}`);
             }
         }
+        lines.push('', '**Floating Angles**');
+        lines.push('_Not scheduled yet. Reply with feedback to swap, append, remove, or rearrange these._');
+        const floatingAngles = Array.isArray(plan.floatingAngles) ? plan.floatingAngles : [];
+        if (floatingAngles.length === 0) {
+            lines.push('- (none)');
+        } else {
+            for (const angle of floatingAngles) {
+                lines.push(`- \`${angle.id}\`: ${angle.description || angle.title}`);
+            }
+        }
         lines.push('', 'Reply with feedback to revise it, or clearly approve it to close planning.');
         return lines.join('\n');
     }
