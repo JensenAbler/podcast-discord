@@ -625,6 +625,7 @@ class VoiceManager {
         const recordingPath = path.join(this.options.recordingDir, `${episodeName}-${timestamp}`);
         
         fs.mkdirSync(recordingPath, { recursive: true });
+        const episodePlan = this.writeEpisodePlanSnapshot(recordingPath, options.episodePlan);
         
         // Create AudioRecorder instance
         const recorder = new AudioRecorder({
@@ -640,13 +641,18 @@ class VoiceManager {
         const recordingInfo = recorder.startRecording(recordingPath, {
             consentGiven: options.consentGiven || false,
             consentTimestamp: options.consentTimestamp || new Date().toISOString(),
-            episodeName
+            episodeName,
+            episodePlan
         });
 
         this.recorders.set(guildId, recorder);
         this.isRecording.set(guildId, true);
         this.recordingPaths.set(guildId, recordingPath);
-        this.recordingMetadata.set(guildId, recordingInfo);
+        const storedRecordingInfo = {
+            ...recordingInfo,
+            episodePlan
+        };
+        this.recordingMetadata.set(guildId, storedRecordingInfo);
 
         // Create transcript file
         const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
@@ -659,8 +665,45 @@ class VoiceManager {
             transcriptPath,
             audioFilePath: recordingInfo.audioFilePath,
             startedAt: recordingInfo.startTime,
-            consentTimestamp: recordingInfo.consentTimestamp
+            consentTimestamp: recordingInfo.consentTimestamp,
+            episodePlan
         };
+    }
+
+    writeEpisodePlanSnapshot(recordingPath, input = null) {
+        if (!input) {
+            return null;
+        }
+
+        const plan = input.plan || input.snapshot || input;
+        if (!plan || typeof plan !== 'object') {
+            return null;
+        }
+
+        const basename = String(input.basename || plan.basename || '').trim();
+        const version = String(input.version || plan.version || '').trim();
+        const sourcePath = String(input.path || input.sourcePath || '').trim();
+        const relativePath = 'episode-plan.json';
+        const outputPath = path.join(recordingPath, relativePath);
+
+        try {
+            fs.writeFileSync(outputPath, JSON.stringify(plan, null, 2));
+            return {
+                basename,
+                version,
+                path: relativePath,
+                sourcePath: sourcePath || null
+            };
+        } catch (error) {
+            console.warn(`[VoiceManager] Failed to write episode plan snapshot: ${error.message}`);
+            return {
+                basename,
+                version,
+                path: null,
+                sourcePath: sourcePath || null,
+                error: error.message
+            };
+        }
     }
 
     /**
@@ -676,6 +719,7 @@ class VoiceManager {
         const recordingPath = this.recordingPaths.get(guildId);
         const recorder = this.recorders.get(guildId);
         const receiver = this.receivers.get(guildId);
+        const storedMetadata = this.recordingMetadata.get(guildId) || {};
         let audioResult = null;
 
         if (receiver) {
@@ -714,7 +758,8 @@ class VoiceManager {
             consent: {
                 given: audioResult ? audioResult.consentGiven : false,
                 timestamp: audioResult ? audioResult.consentTimestamp : null
-            }
+            },
+            episodePlan: storedMetadata.episodePlan || null
         };
 
         fs.writeFileSync(finalPath, JSON.stringify(recording, null, 2));

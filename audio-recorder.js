@@ -22,6 +22,7 @@ class AudioRecorder {
         this.stopTime = null;
         this.consentTimestamp = null;
         this.consentGiven = false;
+        this.metadata = {};
         this.journal = null;
         this.speakers = new Set();
         this.stats = this.createEmptyStats();
@@ -45,6 +46,7 @@ class AudioRecorder {
         this.startTime = Date.now();
         this.consentTimestamp = metadata.consentTimestamp || new Date(this.startTime).toISOString();
         this.consentGiven = Boolean(metadata.consentGiven);
+        this.metadata = { ...metadata };
         this.speakers.clear();
         this.stats = this.createEmptyStats();
         fs.mkdirSync(outputPath, { recursive: true });
@@ -258,7 +260,8 @@ class AudioRecorder {
                 mixedAudio: path.basename(this.audioFilePath),
                 transcript: 'transcript.jsonl',
                 journal: 'audio-journal/chunks.jsonl'
-            }
+            },
+            episodePlan: this.metadata.episodePlan || null
         };
         fs.writeFileSync(
             path.join(this.outputPath, 'audio-recording-metadata.json'),

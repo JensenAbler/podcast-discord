@@ -3934,7 +3934,8 @@ class AlphaClawdVoiceBot {
             episodePlan: episodePlanSelection ? {
                 basename: episodePlanSelection.plan.basename,
                 version: episodePlanSelection.plan.version,
-                path: episodePlanSelection.path
+                sourcePath: episodePlanSelection.path,
+                plan: episodePlanSelection.plan
             } : null
         });
         this.startInternalThoughtSession(guildId, recordingInfo);

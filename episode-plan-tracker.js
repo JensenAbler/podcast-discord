@@ -7,6 +7,8 @@ class EpisodePlanTracker {
         this.currentPhaseIndex = Math.max(0, PHASES.indexOf(options.currentPhase || PHASES[0]));
         this.phaseStartedAt = options.phaseStartedAt || this.startedAt;
         this.lastChosenAngle = cleanText(options.lastChosenAngle || '');
+        this.currentAngleStartedAt = options.currentAngleStartedAt || null;
+        this.currentAngleHostTurns = Math.max(0, Number(options.currentAngleHostTurns || 0));
         this.completedAngles = new Set(Array.isArray(options.completedAngles) ? options.completedAngles : []);
         this.activeAngles = new Set(Array.isArray(options.activeAngles) ? options.activeAngles : []);
         this.recentTurns = Array.isArray(options.recentTurns) ? options.recentTurns.slice(-6) : [];
@@ -46,6 +48,7 @@ class EpisodePlanTracker {
 
         const plannedIds = new Set(this.currentPhasePlan.angles.map((angle) => angle.id));
         const previous = this.lastChosenAngle;
+        const now = timing.now || timing.playbackEndedAt || new Date().toISOString();
         if (chosenAngle !== previous) {
             if (previous) {
                 this.completedAngles.add(previous);
@@ -55,12 +58,18 @@ class EpisodePlanTracker {
                 this.activeAngles.add(chosenAngle);
             }
             this.lastChosenAngle = chosenAngle;
+            this.currentAngleStartedAt = now;
+            this.currentAngleHostTurns = 1;
         } else if (plannedIds.has(chosenAngle)) {
             this.activeAngles.add(chosenAngle);
             this.lastChosenAngle = chosenAngle;
+            if (!this.currentAngleStartedAt) {
+                this.currentAngleStartedAt = now;
+            }
+            this.currentAngleHostTurns += 1;
         }
 
-        this.advancePhaseIfNeeded(timing.now || timing.playbackEndedAt || new Date().toISOString());
+        this.advancePhaseIfNeeded(now);
         return true;
     }
 
@@ -68,6 +77,8 @@ class EpisodePlanTracker {
         while (this.currentPhaseIndex < PHASES.length - 1 && this.getAvailableAngles().length === 0) {
             this.currentPhaseIndex += 1;
             this.phaseStartedAt = now;
+            this.currentAngleStartedAt = null;
+            this.currentAngleHostTurns = 0;
         }
     }
 
@@ -84,6 +95,13 @@ class EpisodePlanTracker {
         const phaseElapsed = elapsedMinutes(this.phaseStartedAt, now);
         const target = Number(this.currentPhasePlan.targetMinutes) || 1;
         const remaining = Math.max(0, target - phaseElapsed);
+        const availableAngles = this.getAvailableAngles();
+        const currentAngleElapsed = this.lastChosenAngle && this.currentAngleStartedAt
+            ? elapsedMinutes(this.currentAngleStartedAt, now)
+            : 0;
+        const timePerRemainingAngle = availableAngles.length > 0
+            ? remaining / availableAngles.length
+            : remaining;
         const lines = [
             `Current phase: ${this.currentPhase}.`,
             `Phase target length: ${formatMinutes(target)}.`,
@@ -91,16 +109,18 @@ class EpisodePlanTracker {
             `Phase time remaining: ${formatMinutes(remaining)}.`,
             '',
             `Last turn chosenAngle: ${this.lastChosenAngle || '(none)'}.`,
+            `Current angle elapsed: ${this.lastChosenAngle ? formatMinutes(currentAngleElapsed) : '(none)'}.`,
+            `Host turns spent on current angle: ${this.lastChosenAngle ? this.currentAngleHostTurns : 0}.`,
+            `Phase time remaining per remaining angle: ${availableAngles.length > 0 ? formatMinutes(timePerRemainingAngle) : '(none)'}.`,
             'The planned angles below are preproduction background knowledge, not things the guest already said in this live conversation.',
             'When using planned background, frame it as background or the episode plan. Only say the guest "mentioned" or "said earlier" when that fact appears in the live transcript.',
             'Available planned angles in this phase:'
         ];
 
-        const angles = this.getAvailableAngles();
-        if (angles.length === 0) {
+        if (availableAngles.length === 0) {
             lines.push('- (none)');
         } else {
-            for (const angle of angles) {
+            for (const angle of availableAngles) {
                 lines.push(`- ${angle.id}: ${angle.description || angle.title}`);
             }
         }
@@ -112,7 +132,7 @@ class EpisodePlanTracker {
 
         lines.push(
             '',
-            'Use the phase time remaining as a pressure signal, not a hard timer. Stay with an angle while curiosity and listener value justify it. Move on when the angle has landed enough for the episode structure, especially if remaining phase time is shrinking.',
+            "Use the phase time remaining as a pressure signal, not a hard timer. A substantive answer does not necessarily complete an angle. When the phase is ahead of schedule, prefer deepening the current angle, asking for examples, tension, stakes, consequences, lived texture, and generally playing with what's alive and curious before moving on.",
             '',
             'When your response is working one of these planned angles, set chosenAngle to that angle id.',
             'Keep the same chosenAngle while staying with it.',
@@ -137,6 +157,8 @@ class EpisodePlanTracker {
             currentPhase: this.currentPhase,
             phaseStartedAt: this.phaseStartedAt,
             lastChosenAngle: this.lastChosenAngle,
+            currentAngleStartedAt: this.currentAngleStartedAt,
+            currentAngleHostTurns: this.currentAngleHostTurns,
             completedAngles: Array.from(this.completedAngles),
             activeAngles: Array.from(this.activeAngles),
             recentTurns: this.recentTurns.slice()

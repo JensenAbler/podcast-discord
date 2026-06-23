@@ -3198,22 +3198,39 @@ async function runTests() {
         const afterChoice = tracker.getStructureBlock('2026-05-15T00:32:00.000Z');
         tracker.applySpokenResponse({
             shouldRespond: true,
+            speech: 'Let us stay with internal thoughts and make it more concrete.',
+            chosenAngle: 'internal-thoughts'
+        }, { now: '2026-05-15T00:33:00.000Z' });
+        const afterDeepening = tracker.getStructureBlock('2026-05-15T00:33:00.000Z');
+        tracker.applySpokenResponse({
+            shouldRespond: true,
             speech: 'Now the live structure piece.',
             chosenAngle: 'live-structure'
-        }, { now: '2026-05-15T00:33:00.000Z' });
-        const afterMove = tracker.getStructureBlock('2026-05-15T00:33:00.000Z');
+        }, { now: '2026-05-15T00:34:00.000Z' });
+        const afterMove = tracker.getStructureBlock('2026-05-15T00:34:00.000Z');
         if (
             !initialBlock.includes('preproduction background knowledge') ||
             !initialBlock.includes('Only say the guest "mentioned" or "said earlier"') ||
             !initialBlock.includes('- guest-background: Establish the builder and why the system matters.') ||
+            !initialBlock.includes('Current angle elapsed: (none).') ||
+            !initialBlock.includes('Host turns spent on current angle: 0.') ||
+            !initialBlock.includes('Phase time remaining per remaining angle: 0 minutes.') ||
+            !initialBlock.includes('A substantive answer does not necessarily complete an angle.') ||
+            !initialBlock.includes("playing with what's alive and curious before moving on.") ||
             !afterExpansion.includes('Current phase: developing.') ||
+            !afterExpansion.includes('Current angle elapsed: 0 minutes.') ||
+            !afterExpansion.includes('Host turns spent on current angle: 0.') ||
             !afterExpansion.includes('- internal-thoughts: Explore how internal awareness changes hosting.') ||
             afterChoice.includes('- internal-thoughts:') ||
             !afterChoice.includes('Last turn chosenAngle: internal-thoughts.') ||
+            !afterChoice.includes('Host turns spent on current angle: 1.') ||
+            !afterChoice.includes('Phase time remaining per remaining angle: 20 minutes.') ||
+            !afterDeepening.includes('Current angle elapsed: 1 minute.') ||
+            !afterDeepening.includes('Host turns spent on current angle: 2.') ||
             afterMove.includes('- live-structure:') ||
             !tracker.snapshot().completedAngles.includes('internal-thoughts')
         ) {
-            throw new Error(`Episode plan tracker did not move chosen angles correctly: ${JSON.stringify({ initialBlock, afterExpansion, afterChoice, afterMove, snapshot: tracker.snapshot() })}`);
+            throw new Error(`Episode plan tracker did not move chosen angles correctly: ${JSON.stringify({ initialBlock, afterExpansion, afterChoice, afterDeepening, afterMove, snapshot: tracker.snapshot() })}`);
         }
         fs.rmSync(planRoot, { recursive: true, force: true });
 
@@ -7095,6 +7112,83 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Transcript timing failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 10a: Recording metadata stores selected episode plan pointer');
+    try {
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'episode-plan-recording-'));
+        const guildId = 'guild-plan-recording';
+        const manager = new VoiceManager({ on: () => {} }, { recordingDir: tempRoot });
+        const sourcePath = '/opt/clawcast-network/content/episode-plans/tree-power-sunrise/v006/episode-plan.json';
+        const selectedPlan = {
+            basename: 'tree-power-sunrise',
+            version: 'v006',
+            targetDurationMinutes: 75,
+            guests: [{ name: 'Jensen', role: 'guest' }],
+            backgroundBrief: 'A compact plan snapshot.',
+            phases: {
+                expanding: {
+                    targetMinutes: 20,
+                    angles: [{ id: 'giving-tree-world', title: 'Giving Tree', description: 'Set the world.' }]
+                },
+                developing: { targetMinutes: 25, angles: [] },
+                converging: { targetMinutes: 20, angles: [] },
+                closing: { targetMinutes: 10, angles: [] }
+            }
+        };
+        const recordingInfo = manager.startRecording(guildId, 'episode', {
+            consentGiven: true,
+            consentTimestamp: '2026-05-03T00:00:00.000Z',
+            episodePlan: {
+                basename: selectedPlan.basename,
+                version: selectedPlan.version,
+                sourcePath,
+                plan: selectedPlan
+            }
+        });
+        fs.appendFileSync(path.join(recordingInfo.recordingPath, 'transcript.jsonl'), JSON.stringify({
+            timestamp: '2026-05-03T00:00:01.000Z',
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            text: 'Testing the selected plan metadata.'
+        }) + '\n');
+
+        const snapshotPath = path.join(recordingInfo.recordingPath, 'episode-plan.json');
+        if (
+            recordingInfo.episodePlan?.path !== 'episode-plan.json' ||
+            recordingInfo.episodePlan?.sourcePath !== sourcePath ||
+            !fs.existsSync(snapshotPath) ||
+            JSON.parse(fs.readFileSync(snapshotPath, 'utf8')).basename !== selectedPlan.basename
+        ) {
+            throw new Error(`Selected plan snapshot was not stored at recording start: ${JSON.stringify(recordingInfo.episodePlan)}`);
+        }
+
+        const stopped = await manager.stopRecording(guildId);
+        const complete = JSON.parse(fs.readFileSync(path.join(recordingInfo.recordingPath, 'episode-complete.json'), 'utf8'));
+        const episodeMetadata = JSON.parse(fs.readFileSync(path.join(recordingInfo.recordingPath, 'episode-metadata.json'), 'utf8'));
+        const audioMetadata = JSON.parse(fs.readFileSync(path.join(recordingInfo.recordingPath, 'audio-recording-metadata.json'), 'utf8'));
+        if (
+            stopped.episodePlan?.path !== 'episode-plan.json' ||
+            complete.episodePlan?.basename !== selectedPlan.basename ||
+            episodeMetadata.episodePlan?.version !== selectedPlan.version ||
+            audioMetadata.episodePlan?.sourcePath !== sourcePath ||
+            !episodeMetadata.files.includes('episode-plan.json')
+        ) {
+            throw new Error(`Selected plan pointer was not preserved in metadata: ${JSON.stringify({
+                stopped: stopped.episodePlan,
+                complete: complete.episodePlan,
+                episodeMetadata: episodeMetadata.episodePlan,
+                audioMetadata: audioMetadata.episodePlan,
+                files: episodeMetadata.files
+            })}`);
+        }
+
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+        console.log('  Recording metadata stores the selected episode plan snapshot and pointer');
+        passed++;
+    } catch (error) {
+        console.log(`  Episode plan recording metadata failed: ${error.message}`);
         failed++;
     }
 
