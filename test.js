@@ -3274,6 +3274,7 @@ async function runTests() {
         let spokenOpeningBytes = 0;
         let savedOpeningTranscript = null;
         let rememberedOpening = null;
+        let startupPlaybackWaited = false;
         openingBot.voiceProvider = {
             synthesize: async (text) => {
                 synthesizedOpening = text;
@@ -3282,7 +3283,19 @@ async function runTests() {
         };
         openingBot.voiceManager = {
             addBotAudioToRecording: (_guildId, buffer) => { recordedOpeningBytes += buffer.length; },
-            speak: async (_guildId, buffer) => { spokenOpeningBytes += buffer.length; },
+            speakWithTiming: async (_guildId, buffer) => {
+                spokenOpeningBytes += buffer.length;
+                return {
+                    finished: Promise.resolve({
+                        playbackRequestedAt: '2026-05-15T00:00:01.000Z',
+                        playbackStartedAt: '2026-05-15T00:00:02.000Z',
+                        playbackEndedAt: '2026-05-15T00:00:05.000Z'
+                    }).then((timing) => {
+                        startupPlaybackWaited = true;
+                        return timing;
+                    })
+                };
+            },
             saveTranscriptEntry: (_guildId, entry) => { savedOpeningTranscript = entry; }
         };
         openingBot.podcastGenerator = {
@@ -3297,18 +3310,37 @@ async function runTests() {
             !openingResult.planned ||
             openingResult.chosenAngle !== 'guest-background' ||
             !synthesizedOpening.includes('Welcome in, Jensen') ||
-            !synthesizedOpening.includes('Who is Jensen: the builder of Alpha-Clawd') ||
-            !synthesizedOpening.includes('The episode background is The guest cares about internal thoughts and structure.') ||
+            !synthesizedOpening.includes('For listeners, Jensen is the builder of Alpha-Clawd') ||
+            !synthesizedOpening.includes("Let's start with guest background. What should listeners understand first?") ||
+            synthesizedOpening.includes('Who is Jensen:') ||
+            synthesizedOpening.includes('The episode background is') ||
+            synthesizedOpening.includes('[trimmed]') ||
             synthesizedOpening.includes('Episode is now live') ||
             recordedOpeningBytes === 0 ||
             spokenOpeningBytes === 0 ||
+            !startupPlaybackWaited ||
             savedOpeningTranscript?.source !== 'episode_plan_opening' ||
             savedOpeningTranscript?.chosenAngle !== 'guest-background' ||
+            savedOpeningTranscript?.duration !== 3000 ||
             rememberedOpening?.chosenAngle !== 'guest-background' ||
             openingSnapshot.lastChosenAngle !== 'guest-background' ||
             !openingSnapshot.activeAngles.includes('guest-background')
         ) {
             throw new Error(`Planned recording opener did not preserve guest background and tracker state: ${JSON.stringify({ openingResult, synthesizedOpening, recordedOpeningBytes, spokenOpeningBytes, savedOpeningTranscript, rememberedOpening, openingSnapshot })}`);
+        }
+
+        const noGuestBriefOpening = openingBot.buildEpisodePlanOpening({
+            basename: 'rayman-3-childhood',
+            guests: [{ name: 'Jensen', role: 'guest', brief: '' }],
+            backgroundBrief: 'Jensen recounts childhood experiences with Rayman 3 Hoodlum Havoc on PC. This should not be read as the opener.',
+            phases: generated.plan.phases
+        });
+        if (
+            !noGuestBriefOpening.text.includes("we're doing a conversation about rayman 3 childhood") ||
+            noGuestBriefOpening.text.includes('Jensen recounts childhood experiences') ||
+            noGuestBriefOpening.text.includes('[trimmed]')
+        ) {
+            throw new Error(`Plan opener did not digest long episode background: ${JSON.stringify(noGuestBriefOpening)}`);
         }
         fs.rmSync(planRoot, { recursive: true, force: true });
 
