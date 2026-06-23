@@ -8486,7 +8486,65 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 16a: generateStreaming gates speech-first response and silence turns correctly');
+    console.log('\nTest 16a: Anthropic streaming error events reject instead of becoming silence');
+    try {
+        const { PodcastGenerator } = require('./podcast-generator');
+        const originalFetch = globalThis.fetch;
+        const seenUnhandled = [];
+        const handler = (reason) => { seenUnhandled.push(reason); };
+        process.on('unhandledRejection', handler);
+
+        let shouldErr = null;
+        try {
+            globalThis.fetch = async () => {
+                const sse = [
+                    'event: error',
+                    'data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"},"request_id":"req_test"}',
+                    ''
+                ].join('\n');
+                return new Response(sse, {
+                    status: 200,
+                    headers: { 'content-type': 'text/event-stream' }
+                });
+            };
+
+            const gen = new PodcastGenerator({
+                apiKey: 'anthropic-test-key',
+                baseUrl: 'https://api.anthropic.com/v1',
+                model: 'claude-test',
+                timeout: 1000
+            });
+            const stream = await gen.generateStreaming({ transcript: 'Jensen: Please respond.', remember: false });
+            try {
+                await stream.shouldRespond;
+            } catch (e) {
+                shouldErr = e;
+            }
+
+            await new Promise(resolve => setImmediate(resolve));
+            await new Promise(resolve => setTimeout(resolve, 30));
+            await new Promise(resolve => setImmediate(resolve));
+        } finally {
+            process.off('unhandledRejection', handler);
+            globalThis.fetch = originalFetch;
+        }
+
+        if (!shouldErr || !/overloaded_error|Overloaded/.test(shouldErr.message || '')) {
+            throw new Error(`Expected Anthropic SSE error to reject shouldRespond, got: ${shouldErr?.message}`);
+        }
+        if (seenUnhandled.length > 0) {
+            const first = seenUnhandled[0];
+            throw new Error(`Leaked unhandled rejection(s): ${first?.message || first}`);
+        }
+
+        console.log('  Anthropic SSE error events reject streaming handles');
+        passed++;
+    } catch (error) {
+        console.log(`  Anthropic streaming error event handling failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 16b: generateStreaming gates speech-first response and silence turns correctly');
     try {
         const { PodcastGenerator } = require('./podcast-generator');
         const originalFetch = globalThis.fetch;
@@ -8600,7 +8658,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 16b: generateStreaming normalizes spoken slash separators');
+    console.log('\nTest 16c: generateStreaming normalizes spoken slash separators');
     try {
         const { PodcastGenerator } = require('./podcast-generator');
         const originalFetch = globalThis.fetch;
@@ -8880,6 +8938,74 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Anthropic streaming failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 46a: Anthropic streaming accepts partial JSON deltas');
+    try {
+        const { PodcastGenerator } = require('./podcast-generator');
+        const originalFetch = globalThis.fetch;
+
+        try {
+            globalThis.fetch = async () => {
+                const data = (event) => `data: ${JSON.stringify(event)}`;
+                const sse = [
+                    'event: content_block_delta',
+                    data({
+                        type: 'content_block_delta',
+                        delta: {
+                            type: 'input_json_delta',
+                            partial_json: '{"speech":"Partial JSON '
+                        }
+                    }),
+                    '',
+                    'event: content_block_delta',
+                    data({
+                        type: 'content_block_delta',
+                        delta: {
+                            type: 'input_json_delta',
+                            partial_json: 'streaming works.","shouldRespond":true,"chosenAngle":"","bigBrain":{"requested":false,"reason":"","consumedRunId":""},"bigHeart":{"requested":false,"reason":"","consumedRunId":""}}'
+                        }
+                    }),
+                    '',
+                    'event: message_stop',
+                    data({ type: 'message_stop' }),
+                    ''
+                ].join('\n');
+                return new Response(sse, {
+                    status: 200,
+                    headers: { 'content-type': 'text/event-stream' }
+                });
+            };
+
+            const gen = new PodcastGenerator({
+                apiKey: 'anthropic-test-key',
+                baseUrl: 'https://api.anthropic.com/v1',
+                model: 'claude-test',
+                timeout: 1000
+            });
+            const stream = await gen.generateStreaming({
+                transcript: 'Jensen: Test Anthropic partial JSON streaming.',
+                remember: false
+            });
+            const shouldRespond = await stream.shouldRespond;
+            let speech = '';
+            for await (const chunk of stream.speechStream) {
+                speech += chunk;
+            }
+            const completed = await stream.completed;
+
+            if (!shouldRespond || speech !== 'Partial JSON streaming works.' || completed.speech !== speech) {
+                throw new Error(`Partial JSON streaming did not feed speech: ${JSON.stringify({ shouldRespond, speech, completed })}`);
+            }
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        console.log('  Anthropic partial JSON deltas feed the speech reader');
+        passed++;
+    } catch (error) {
+        console.log(`  Anthropic partial JSON streaming failed: ${error.message}`);
         failed++;
     }
 

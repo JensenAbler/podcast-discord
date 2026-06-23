@@ -233,12 +233,17 @@ async function* streamChatCompletionEvents(response) {
             if (payload === '[DONE]') return;
             if (!payload) continue;
 
+            let event;
             try {
-                yield JSON.parse(payload);
+                event = JSON.parse(payload);
             } catch {
                 // Skip malformed events but keep the stream alive
                 continue;
             }
+            if (event?.type === 'error') {
+                throw buildStreamingEventError(event);
+            }
+            yield event;
         }
     }
 
@@ -247,11 +252,29 @@ async function* streamChatCompletionEvents(response) {
     if (finalLine.startsWith('data:')) {
         const payload = finalLine.slice(5).trim();
         if (payload && payload !== '[DONE]') {
+            let event;
             try {
-                yield JSON.parse(payload);
-            } catch {}
+                event = JSON.parse(payload);
+            } catch {
+                return;
+            }
+            if (event?.type === 'error') {
+                throw buildStreamingEventError(event);
+            }
+            yield event;
         }
     }
+}
+
+function buildStreamingEventError(event = {}) {
+    const payload = event.error || event;
+    const type = payload.type || event.type || 'stream_error';
+    const message = payload.message || 'Streaming provider emitted an error event';
+    const err = new Error(`Streaming provider error: ${type} - ${message}`);
+    err.type = type;
+    err.body = event;
+    err.requestId = event.request_id || payload.request_id || null;
+    return err;
 }
 
 class PodcastGenerator {
@@ -632,6 +655,9 @@ class PodcastGenerator {
             }
             if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
                 return event.delta.text || '';
+            }
+            if (event.type === 'content_block_delta' && typeof event.delta?.partial_json === 'string') {
+                return event.delta.partial_json;
             }
             return '';
         }
