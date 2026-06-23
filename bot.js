@@ -1035,6 +1035,141 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    buildEpisodePlanOpening(plan = {}) {
+        const guests = Array.isArray(plan.guests) ? plan.guests : [];
+        const guestNames = guests
+            .map((guest) => this.cleanText(guest.name))
+            .filter(Boolean);
+        const guestBrief = guests
+            .map((guest) => {
+                const name = this.cleanText(guest.name);
+                const role = this.cleanText(guest.role);
+                const brief = this.truncateText(guest.brief || '', 260);
+                if (!name || !brief) return '';
+                const label = role ? `${name}, ${role}` : name;
+                return `${label}: ${brief}`;
+            })
+            .filter(Boolean)
+            .join(' ');
+        const backgroundBrief = this.truncateText(plan.backgroundBrief || '', 320);
+        const firstAngle = this.getFirstEpisodePlanAngle(plan);
+        const greeting = guestNames.length > 0
+            ? `Recording started. Welcome in, ${formatNameList(guestNames)}.`
+            : 'Recording started. Welcome in.';
+        const contextParts = [
+            guestBrief ? `For listeners, the useful guest background is ${guestBrief}` : '',
+            backgroundBrief ? `The episode background is ${backgroundBrief}` : ''
+        ].filter(Boolean);
+        const context = contextParts.length > 0
+            ? contextParts.join(' ')
+            : '';
+        const firstMove = firstAngle
+            ? `To start, I want to ground us in ${firstAngle.title}: ${firstAngle.description || firstAngle.title}.`
+            : "Let's start by grounding the conversation and then follow what feels alive.";
+
+        return {
+            text: [greeting, context, firstMove].filter(Boolean).join(' '),
+            chosenAngle: firstAngle?.id || ''
+        };
+    }
+
+    getFirstEpisodePlanAngle(plan = {}) {
+        const phases = ['expanding', 'developing', 'converging', 'closing'];
+        for (const phase of phases) {
+            const angles = Array.isArray(plan.phases?.[phase]?.angles) ? plan.phases[phase].angles : [];
+            const angle = angles.find((item) => item?.id);
+            if (angle) {
+                return {
+                    id: this.cleanText(angle.id),
+                    title: this.cleanText(angle.title || angle.id),
+                    description: this.cleanText(angle.description || angle.title || angle.id)
+                };
+            }
+        }
+        return null;
+    }
+
+    async speakRecordingStart(guildId, sessionHostMode, episodePlanSelection = null) {
+        const opening = episodePlanSelection?.plan
+            ? this.buildEpisodePlanOpening(episodePlanSelection.plan)
+            : null;
+        const plannedOpeningText = this.cleanText(opening?.text || '');
+        if (plannedOpeningText) {
+            const synthesizedBuffer = await this.voiceProvider.synthesize(plannedOpeningText, {
+                voiceId: this.voiceId
+            });
+            this.voiceManager.addBotAudioToRecording(guildId, synthesizedBuffer);
+            const generatedAt = new Date().toISOString();
+            let timing = null;
+            if (sessionHostMode === 'gemini-live') {
+                const announcement = await this.voiceManager.speakWithTiming(guildId, synthesizedBuffer);
+                timing = await announcement.finished;
+            } else {
+                await this.voiceManager.speak(guildId, synthesizedBuffer);
+            }
+
+            const transcriptEntry = {
+                speaker: 'Alpha-Clawd',
+                speakerRole: 'host',
+                transcription: plannedOpeningText,
+                timestamp: generatedAt,
+                generatedAt,
+                source: 'episode_plan_opening',
+                chosenAngle: opening.chosenAngle || ''
+            };
+            if (timing) {
+                transcriptEntry.playbackRequestedAt = timing.playbackRequestedAt;
+                transcriptEntry.playbackStartedAt = timing.playbackStartedAt;
+                transcriptEntry.playbackEndedAt = timing.playbackEndedAt;
+                transcriptEntry.duration = durationMs(timing.playbackStartedAt, timing.playbackEndedAt);
+            }
+            this.voiceManager.saveTranscriptEntry?.(guildId, transcriptEntry);
+            this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);
+            this.observeShowRunnerTranscriptEntry(guildId, transcriptEntry);
+            this.applyEpisodePlanResponse(guildId, {
+                shouldRespond: true,
+                speech: plannedOpeningText,
+                chosenAngle: opening.chosenAngle || ''
+            }, {
+                playbackStartedAt: timing?.playbackStartedAt || generatedAt,
+                playbackEndedAt: timing?.playbackEndedAt || generatedAt
+            });
+            this.podcastGenerator.rememberAssistantResponse?.({
+                shouldRespond: true,
+                speech: plannedOpeningText,
+                chosenAngle: opening.chosenAngle || '',
+                bigBrain: { requested: false, reason: '' },
+                bigHeart: { requested: false, reason: '' }
+            });
+            return { planned: true, text: plannedOpeningText, chosenAngle: opening.chosenAngle || '' };
+        }
+
+        const audioBuffer = this.cachedAudio.recordingStarted;
+        if (audioBuffer) {
+            this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
+            if (sessionHostMode === 'gemini-live') {
+                const announcement = await this.voiceManager.speakWithTiming(guildId, audioBuffer);
+                await announcement.finished;
+            } else {
+                await this.voiceManager.speak(guildId, audioBuffer);
+            }
+            return { planned: false };
+        }
+
+        const startText = `Recording started! Episode is now live. Speak naturally and I'll join the conversation.`;
+        const synthesizedBuffer = await this.voiceProvider.synthesize(startText, {
+            voiceId: this.voiceId
+        });
+        this.voiceManager.addBotAudioToRecording(guildId, synthesizedBuffer);
+        if (sessionHostMode === 'gemini-live') {
+            const announcement = await this.voiceManager.speakWithTiming(guildId, synthesizedBuffer);
+            await announcement.finished;
+        } else {
+            await this.voiceManager.speak(guildId, synthesizedBuffer);
+        }
+        return { planned: false };
+    }
+
     getGeneratorCallTiming(guildId) {
         const currentTime = new Date().toISOString();
         let currentEpisodeTimestamp = null;
@@ -2723,7 +2858,8 @@ class AlphaClawdVoiceBot {
         if (plan.guests.length > 0) {
             lines.push('', '**Guests**');
             for (const guest of plan.guests) {
-                lines.push(`- ${guest.name}${guest.role ? `: ${guest.role}` : ''}`);
+                const brief = this.cleanText(guest.brief || '');
+                lines.push(`- ${guest.name}${guest.role ? `: ${guest.role}` : ''}${brief ? ` - ${brief}` : ''}`);
             }
         }
         if (plan.backgroundBrief) {
@@ -2777,6 +2913,10 @@ class AlphaClawdVoiceBot {
     truncateForLog(text = '', maxChars = 160) {
         const clean = String(text || '').replace(/\s+/g, ' ').trim();
         return clean.length > maxChars ? `${clean.slice(0, maxChars - 1)}...` : clean;
+    }
+
+    cleanText(text = '') {
+        return String(text || '').replace(/\s+/g, ' ').trim();
     }
 
     truncateText(text = '', maxChars = 1000) {
@@ -3965,36 +4105,13 @@ class AlphaClawdVoiceBot {
 
         // Announce start (use cached audio to save API credits)
         try {
-            const audioBuffer = this.cachedAudio.recordingStarted;
-            if (audioBuffer) {
-                this.voiceManager.addBotAudioToRecording(guildId, audioBuffer);
-                if (sessionHostMode === 'gemini-live') {
-                    const announcement = await this.voiceManager.speakWithTiming(guildId, audioBuffer);
-                    await announcement.finished;
-                } else {
-                    await this.voiceManager.speak(guildId, audioBuffer);
-                }
-            } else {
-                // Fallback to synthesis if cached audio not available
-                const startText = `Recording started! Episode is now live. Speak naturally and I'll join the conversation.`;
-                const synthesizedBuffer = await this.voiceProvider.synthesize(startText, {
-                    voiceId: this.voiceId
-                });
-                this.voiceManager.addBotAudioToRecording(guildId, synthesizedBuffer);
-                if (sessionHostMode === 'gemini-live') {
-                    const announcement = await this.voiceManager.speakWithTiming(guildId, synthesizedBuffer);
-                    await announcement.finished;
-                } else {
-                    await this.voiceManager.speak(guildId, synthesizedBuffer);
-                }
-            }
-
             this.podcastGenerator.startSession({
                 topic: topic || 'general discussion',
                 recording: true,
                 speakers: Object.values(this.speakerMap).map(s => `${s.name} (${s.role || 'speaker'})`),
                 episodePlan: episodePlanSelection?.plan
             });
+            await this.speakRecordingStart(guildId, sessionHostMode, episodePlanSelection);
             if (sessionHostMode === 'gemini-live') {
                 try {
                     await this.startGeminiLiveSession(guildId);
@@ -6538,6 +6655,26 @@ class AlphaClawdVoiceBot {
 
         this.client.destroy();
     }
+}
+
+function formatNameList(names = []) {
+    const clean = names.map((name) => String(name || '').trim()).filter(Boolean);
+    if (clean.length <= 1) {
+        return clean[0] || '';
+    }
+    if (clean.length === 2) {
+        return `${clean[0]} and ${clean[1]}`;
+    }
+    return `${clean.slice(0, -1).join(', ')}, and ${clean[clean.length - 1]}`;
+}
+
+function durationMs(startedAt, endedAt) {
+    const start = Date.parse(startedAt || '');
+    const end = Date.parse(endedAt || '');
+    if (Number.isNaN(start) || Number.isNaN(end) || end < start) {
+        return 0;
+    }
+    return end - start;
 }
 
 // Export for use as module or standalone

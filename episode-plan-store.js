@@ -210,7 +210,7 @@ function normalizeGuests(value) {
         .map((guest) => {
             if (typeof guest === 'string') {
                 const name = cleanText(guest);
-                return name ? { name, role: '' } : null;
+                return name ? { name, role: '', brief: '' } : null;
             }
             if (!guest || typeof guest !== 'object') return null;
             const name = cleanText(guest.name || guest.speaker || guest.displayName);
@@ -218,7 +218,8 @@ function normalizeGuests(value) {
             seen.add(name.toLowerCase());
             return {
                 name,
-                role: cleanText(guest.role || '')
+                role: cleanText(guest.role || ''),
+                brief: cleanMultiline(guest.brief || guest.backgroundBrief || guest.bio || guest.description || guest.whoIs || '')
             };
         })
         .filter(Boolean);

@@ -102,7 +102,15 @@ class EpisodePlanTracker {
         const timePerRemainingAngle = availableAngles.length > 0
             ? remaining / availableAngles.length
             : remaining;
-        const lines = [
+        const lines = [];
+        const guestLines = this.formatGuestBriefs();
+        if (guestLines) {
+            lines.push('Guest background:', guestLines, '');
+        }
+        if (this.plan.backgroundBrief) {
+            lines.push('Episode background:', this.plan.backgroundBrief, '');
+        }
+        lines.push(
             `Current phase: ${this.currentPhase}.`,
             `Phase target length: ${formatMinutes(target)}.`,
             `Phase elapsed: ${formatMinutes(phaseElapsed)}.`,
@@ -115,7 +123,7 @@ class EpisodePlanTracker {
             'The planned angles below are preproduction background knowledge, not things the guest already said in this live conversation.',
             'When using planned background, frame it as background or the episode plan. Only say the guest "mentioned" or "said earlier" when that fact appears in the live transcript.',
             'Available planned angles in this phase:'
-        ];
+        );
 
         if (availableAngles.length === 0) {
             lines.push('- (none)');
@@ -139,6 +147,20 @@ class EpisodePlanTracker {
             'When you deliberately move to a new planned angle, set chosenAngle to the new id; that marks the previous planned angle complete.'
         );
 
+        return lines.join('\n');
+    }
+
+    formatGuestBriefs() {
+        const lines = (Array.isArray(this.plan.guests) ? this.plan.guests : [])
+            .map((guest) => {
+                const name = cleanText(guest.name);
+                if (!name) return '';
+                const role = cleanText(guest.role);
+                const brief = cleanText(guest.brief);
+                const label = role ? `${name} (${role})` : name;
+                return brief ? `- ${label}: ${brief}` : `- ${label}`;
+            })
+            .filter(Boolean);
         return lines.join('\n');
     }
 

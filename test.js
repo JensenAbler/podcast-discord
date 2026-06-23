@@ -3096,7 +3096,11 @@ async function runTests() {
                                 basename: 'internal-thoughts-live-hosting',
                                 version: 'v001',
                                 targetDurationMinutes: 40,
-                                guests: [{ name: 'Jensen', role: 'builder' }],
+                                guests: [{
+                                    name: 'Jensen',
+                                    role: 'builder',
+                                    brief: 'Who is Jensen: the builder of Alpha-Clawd and the person testing live show structure.'
+                                }],
                                 backgroundBrief: 'The guest cares about internal thoughts and structure.',
                                 excludedAngles: [
                                     { id: 'build-history', title: 'Build history', description: 'Hold the implementation backstory in reserve if humans want it.' }
@@ -3142,9 +3146,11 @@ async function runTests() {
             showRunnerCall.body.response_format?.json_schema?.schema?.required?.join(',') !== 'action,messageToChannel,approved,plan' ||
             !showRunnerCall.body.response_format?.json_schema?.schema?.properties?.action?.enum?.includes('close_session') ||
             !showRunnerPlanSchema?.required?.includes('excludedAngles') ||
+            showRunnerPlanSchema?.properties?.guests?.items?.required?.join(',') !== 'name,role,brief' ||
             showRunnerPlanSchema?.properties?.excludedAngles?.items?.required?.join(',') !== 'id,title,description' ||
             generated.action !== 'generate_plan' ||
             generated.plan.basename !== 'internal-thoughts-live-hosting' ||
+            !generated.plan.guests[0]?.brief?.includes('builder of Alpha-Clawd') ||
             generated.plan.excludedAngles.length !== 1 ||
             generated.plan.phases.developing.angles.length !== 2
         ) {
@@ -3158,8 +3164,10 @@ async function runTests() {
             !showRunnerMessages[0].content.includes('preproduction showrunner') ||
             !showRunnerMessages[0].content.includes('excludedAngles') ||
             !showRunnerMessages[0].content.includes('Delete = exclude') ||
+            !showRunnerMessages[0].content.includes('guests[].brief') ||
             !showRunnerMessages[1].content.includes('Previous episode plan') ||
             !showRunnerMessages[1].content.includes('"excludedAngles"') ||
+            !showRunnerMessages[2].content.includes('"brief"') ||
             !showRunnerMessages[2].content.includes('"targetDurationMinutes"') ||
             showRunnerMessages[2].content.includes('"wrapNow"') ||
             showRunnerMessages[2].content.includes('"generatorInstruction"')
@@ -3186,6 +3194,7 @@ async function runTests() {
             firstSave.plan.basename !== secondSave.plan.basename ||
             !fs.existsSync(firstSave.path) ||
             JSON.parse(fs.readFileSync(firstSave.path, 'utf8')).phases.developing.angles.length !== 2 ||
+            !JSON.parse(fs.readFileSync(firstSave.path, 'utf8')).guests[0]?.brief?.includes('builder of Alpha-Clawd') ||
             JSON.parse(fs.readFileSync(firstSave.path, 'utf8')).excludedAngles[0]?.id !== 'build-history'
         ) {
             throw new Error(`Episode plan store did not version plans immutably: ${JSON.stringify({ firstSave, secondSave })}`);
@@ -3222,6 +3231,9 @@ async function runTests() {
         if (
             !initialBlock.includes('preproduction background knowledge') ||
             !initialBlock.includes('Only say the guest "mentioned" or "said earlier"') ||
+            !initialBlock.includes('Guest background:') ||
+            !initialBlock.includes('Jensen (builder): Who is Jensen: the builder of Alpha-Clawd') ||
+            !initialBlock.includes('Episode background:') ||
             !initialBlock.includes('- guest-background: Establish the builder and why the system matters.') ||
             initialBlock.includes('build-history') ||
             !initialBlock.includes('Current angle elapsed: (none).') ||
@@ -3243,6 +3255,60 @@ async function runTests() {
             !tracker.snapshot().completedAngles.includes('internal-thoughts')
         ) {
             throw new Error(`Episode plan tracker did not move chosen angles correctly: ${JSON.stringify({ initialBlock, afterExpansion, afterChoice, afterDeepening, afterMove, snapshot: tracker.snapshot() })}`);
+        }
+
+        const openingGuildId = 'guild-planned-opening';
+        const openingTracker = new EpisodePlanTracker(generated.plan, {
+            startedAt: '2026-05-15T00:00:00.000Z'
+        });
+        const openingBot = Object.create(AlphaClawdVoiceBot.prototype);
+        openingBot.voiceId = 'voice-test';
+        openingBot.cachedAudio = { recordingStarted: Buffer.from('cached generic start') };
+        openingBot.RecordingState = { RECORDING: 'RECORDING' };
+        openingBot.recordingState = new Map([[openingGuildId, openingBot.RecordingState.RECORDING]]);
+        openingBot.internalThoughtsEnabled = false;
+        openingBot.internalThoughtManager = null;
+        openingBot.episodePlanTrackers = new Map([[openingGuildId, openingTracker]]);
+        let synthesizedOpening = '';
+        let recordedOpeningBytes = 0;
+        let spokenOpeningBytes = 0;
+        let savedOpeningTranscript = null;
+        let rememberedOpening = null;
+        openingBot.voiceProvider = {
+            synthesize: async (text) => {
+                synthesizedOpening = text;
+                return Buffer.from('planned opening audio');
+            }
+        };
+        openingBot.voiceManager = {
+            addBotAudioToRecording: (_guildId, buffer) => { recordedOpeningBytes += buffer.length; },
+            speak: async (_guildId, buffer) => { spokenOpeningBytes += buffer.length; },
+            saveTranscriptEntry: (_guildId, entry) => { savedOpeningTranscript = entry; }
+        };
+        openingBot.podcastGenerator = {
+            rememberAssistantResponse: (response) => { rememberedOpening = response; }
+        };
+
+        const openingResult = await openingBot.speakRecordingStart(openingGuildId, 'current', {
+            plan: generated.plan
+        });
+        const openingSnapshot = openingTracker.snapshot();
+        if (
+            !openingResult.planned ||
+            openingResult.chosenAngle !== 'guest-background' ||
+            !synthesizedOpening.includes('Welcome in, Jensen') ||
+            !synthesizedOpening.includes('Who is Jensen: the builder of Alpha-Clawd') ||
+            !synthesizedOpening.includes('The episode background is The guest cares about internal thoughts and structure.') ||
+            synthesizedOpening.includes('Episode is now live') ||
+            recordedOpeningBytes === 0 ||
+            spokenOpeningBytes === 0 ||
+            savedOpeningTranscript?.source !== 'episode_plan_opening' ||
+            savedOpeningTranscript?.chosenAngle !== 'guest-background' ||
+            rememberedOpening?.chosenAngle !== 'guest-background' ||
+            openingSnapshot.lastChosenAngle !== 'guest-background' ||
+            !openingSnapshot.activeAngles.includes('guest-background')
+        ) {
+            throw new Error(`Planned recording opener did not preserve guest background and tracker state: ${JSON.stringify({ openingResult, synthesizedOpening, recordedOpeningBytes, spokenOpeningBytes, savedOpeningTranscript, rememberedOpening, openingSnapshot })}`);
         }
         fs.rmSync(planRoot, { recursive: true, force: true });
 
@@ -4775,6 +4841,8 @@ async function runTests() {
         }
         if (
             !directEpisodePlanStructure?.includes('Current phase: expanding.') ||
+            !directEpisodePlanStructure.includes('Episode background:') ||
+            !directEpisodePlanStructure.includes('Direct generator plan context test.') ||
             !directEpisodePlanStructure.includes('- origin-story: Bridge into how the story began.')
         ) {
             throw new Error(`Direct generator did not receive episode plan structure: ${JSON.stringify(directEpisodePlanStructure)}`);

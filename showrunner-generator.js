@@ -71,6 +71,8 @@ class ShowRunnerGenerator extends PodcastGenerator {
             '',
             'The episode plan is a static structure the live host will use during the recording. It supersedes prepared-question lists. It should create a finite set of planned angles, plus a separate finite excludedAngles list for significant topics that are deliberately excluded from the scheduled structure.',
             'Aggressively fill excludedAngles with significant information, story lanes, examples, tangents, and topics from the planning messages that do not fit in the time allowed. The humans should be able to see that all important material is on the table, even when it is not scheduled.',
+            'Preserve durable guest identity/background in guests[].brief. When the planning messages include a "Who is ___" paragraph, bio, or person-specific background, put that material in the matching guest brief instead of burying it in the episode-level backgroundBrief.',
+            'Use backgroundBrief for episode-level context, topic stakes, desired arc, constraints, and production notes that are not specific to one guest.',
             '',
             'When background is still thin, ask one useful follow-up in messageToChannel.',
             'When there is enough background, produce a plan and present it in messageToChannel.',
@@ -82,7 +84,7 @@ class ShowRunnerGenerator extends PodcastGenerator {
             'Plan phases must be exactly: expanding, developing, converging, closing.',
             'Each phase has targetMinutes and angles only. Do not include phase purpose.',
             'Each scheduled or excluded angle needs a stable id, a short title, and a short description.',
-            'Keep the plan shape limited to basename, version, targetDurationMinutes, guests, backgroundBrief, excludedAngles, phases, phase targetMinutes, and phase angles.',
+            'Keep the plan shape limited to basename, version, targetDurationMinutes, guests, guest name/role/brief, backgroundBrief, excludedAngles, phases, phase targetMinutes, and phase angles.',
             'Choose a compact basename from the plan contents. Once an existing basename is provided, keep it unchanged.'
         ].join('\n');
     }
@@ -175,10 +177,11 @@ class ShowRunnerGenerator extends PodcastGenerator {
                                     items: {
                                         type: 'object',
                                         additionalProperties: false,
-                                        required: ['name', 'role'],
+                                        required: ['name', 'role', 'brief'],
                                         properties: {
                                             name: { type: 'string' },
-                                            role: { type: 'string' }
+                                            role: { type: 'string' },
+                                            brief: { type: 'string', description: 'Durable person-specific background, especially any "Who is ___" paragraph or bio from planning.' }
                                         }
                                     }
                                 },
