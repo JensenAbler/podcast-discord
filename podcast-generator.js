@@ -291,11 +291,14 @@ class PodcastGenerator {
         this.model = options.model || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini';
         this.timeout = Number(options.timeout || process.env.PODCAST_GENERATOR_TIMEOUT_MS || 15000);
         this.maxCompletionTokens = Number(options.maxCompletionTokens || process.env.PODCAST_GENERATOR_MAX_TOKENS || 1500);
-        this.maxHistoryTurns = Number(options.maxHistoryTurns || process.env.PODCAST_GENERATOR_HISTORY_TURNS || 8);
+        this.maxHistoryTurns = this.parsePositiveInt(
+            options.maxHistoryTurns ?? process.env.PODCAST_GENERATOR_HISTORY_TURNS,
+            Infinity
+        );
         this.maxSpeechChars = Number(options.maxSpeechChars || process.env.PODCAST_GENERATOR_MAX_SPEECH_CHARS || 0);
         this.maxRequestTokens = this.parsePositiveInt(
             options.maxRequestTokens ?? process.env.PODCAST_GENERATOR_MAX_REQUEST_TOKENS,
-            8000
+            Infinity
         );
         this.promptTokenSafetyMargin = this.parsePositiveInt(
             options.promptTokenSafetyMargin ?? process.env.PODCAST_GENERATOR_PROMPT_TOKEN_SAFETY_MARGIN,
@@ -927,13 +930,14 @@ class PodcastGenerator {
             lines.push(
                 'Episode opening task:',
                 'Craft Alpha-Clawd\'s first spoken host turn for this planned live podcast episode.',
-                'Welcome the guest or guests, orient listeners to the premise in one short digestible phrase, then prompt the guest to speak into the first planned angle.',
+                'Welcome the guest or guests, orient listeners to the premise in one short digestible phrase, then invite the guest or guests to respond to being welcomed.',
+                'Do not ask the first planned-angle question in this opening turn.',
                 'Use the episode plan structure and background as source material, but do not read or summarize the plan.',
                 'Keep it very short: one or two natural spoken sentences, about 20-45 words.',
-                'Set shouldRespond=true. Set chosenAngle to the planned angle this opening invites the guest into. Do not request bigBrain or bigHeart.'
+                'Set shouldRespond=true. Set chosenAngle to an empty string. Do not request bigBrain or bigHeart.'
             );
             if (preferredOpeningAngle) {
-                lines.push(`Preferred opening planned angle: ${preferredOpeningAngle}`);
+                lines.push(`First planned angle after the opening round: ${preferredOpeningAngle}`);
             }
         }
 
@@ -2305,7 +2309,8 @@ class PodcastGenerator {
     }
 
     getRecentHistory() {
-        return this.history.slice(-this.maxHistoryTurns * 2);
+        const maxMessages = this.getMaxHistoryMessages();
+        return Number.isFinite(maxMessages) ? this.history.slice(-maxMessages) : this.history.slice();
     }
 
     getCurrentDirectiveText(transcript = '', utterances = []) {
@@ -2506,10 +2511,15 @@ class PodcastGenerator {
     }
 
     trimHistory() {
-        const maxMessages = this.maxHistoryTurns * 2;
-        if (this.history.length > maxMessages) {
+        const maxMessages = this.getMaxHistoryMessages();
+        if (Number.isFinite(maxMessages) && this.history.length > maxMessages) {
             this.history = this.history.slice(-maxMessages);
         }
+    }
+
+    getMaxHistoryMessages() {
+        const turns = Number(this.maxHistoryTurns);
+        return Number.isFinite(turns) && turns > 0 ? turns * 2 : Infinity;
     }
 
     logUsage(result, keyConfig = {}) {

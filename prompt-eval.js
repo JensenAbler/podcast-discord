@@ -588,7 +588,8 @@ class PromptEvalRunner {
         let previousGuidance = null;
         let activeEpisodePlan = fixture.episodePlan;
         let tracker = new EpisodePlanTracker(activeEpisodePlan, {
-            startedAt: fixture.episodeStartedAt || fixture.turns[0]?.timestamp || this.now()
+            startedAt: fixture.episodeStartedAt || fixture.turns[0]?.timestamp || this.now(),
+            openingHostSpoken: true
         });
         let observedTurnCursor = 0;
         const judgeGenerator = judge ? (this.judgeGenerator || new PromptEvalJudgeGenerator()) : null;
@@ -606,7 +607,8 @@ class PromptEvalRunner {
                     if (showrunnerOutput?.plan) {
                         activeEpisodePlan = showrunnerOutput.plan;
                         tracker = new EpisodePlanTracker(activeEpisodePlan, {
-                            startedAt: fixture.episodeStartedAt || fixture.turns[0]?.timestamp || this.now()
+                            startedAt: fixture.episodeStartedAt || fixture.turns[0]?.timestamp || this.now(),
+                            openingHostSpoken: true
                         });
                         observedTurnCursor = 0;
                     }

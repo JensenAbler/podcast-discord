@@ -1040,18 +1040,15 @@ class AlphaClawdVoiceBot {
         const guestNames = guests
             .map((guest) => this.cleanText(guest.name))
             .filter(Boolean);
-        const firstAngle = this.getFirstEpisodePlanAngle(plan);
         const greeting = guestNames.length > 0
             ? `Recording started. Welcome in, ${formatNameList(guestNames)}.`
             : 'Recording started. Welcome in.';
         const context = this.buildEpisodePlanOpeningContext(plan);
-        const firstMove = firstAngle
-            ? this.buildEpisodePlanOpeningMove(firstAngle)
-            : "Let's start by grounding the conversation and then follow what feels alive.";
+        const invitation = 'Before we get into the plan, say hello and bring us into the room.';
 
         return {
-            text: [greeting, context, firstMove].filter(Boolean).join(' '),
-            chosenAngle: firstAngle?.id || ''
+            text: [greeting, context, invitation].filter(Boolean).join(' '),
+            chosenAngle: ''
         };
     }
 
@@ -1079,11 +1076,6 @@ class AlphaClawdVoiceBot {
         return '';
     }
 
-    buildEpisodePlanOpeningMove(angle = {}) {
-        const title = this.cleanText(angle.title || angle.id || 'the opening angle');
-        return `Let's start with ${lowercaseFirst(title)}. What should listeners understand first?`;
-    }
-
     async generateEpisodePlanOpening(guildId, plan = {}) {
         if (typeof this.beginGeneratorTurn !== 'function') {
             throw new Error('podcast generator is not available for planned opener');
@@ -1107,18 +1099,11 @@ class AlphaClawdVoiceBot {
             throw new Error('podcast generator returned no planned opener speech');
         }
 
-        const plannedAngleIds = new Set(
-            ['expanding', 'developing', 'converging', 'closing']
-                .flatMap((phase) => Array.isArray(plan.phases?.[phase]?.angles)
-                    ? plan.phases[phase].angles.map((angle) => this.cleanText(angle?.id))
-                    : [])
-                .filter(Boolean)
-        );
-        let chosenAngle = this.cleanText(response.chosenAngle || firstAngle?.id || '');
-        if (chosenAngle && plannedAngleIds.size > 0 && !plannedAngleIds.has(chosenAngle)) {
-            console.warn(`[Bot] Planned opener returned unknown chosenAngle="${chosenAngle}"; using ${firstAngle?.id || 'no angle'} instead`);
-            chosenAngle = firstAngle?.id || '';
+        const returnedAngle = this.cleanText(response.chosenAngle || '');
+        if (returnedAngle) {
+            console.warn(`[Bot] Planned opener returned chosenAngle="${returnedAngle}"; clearing it until guests respond to the opening.`);
         }
+        const chosenAngle = '';
 
         return {
             text: speech,

@@ -1627,9 +1627,31 @@ async function runTests() {
             throw new Error(`Recent internal thoughts prompt was not formatted/capped correctly: ${recentThoughtPrompt}`);
         }
 
+        const savedDefaultCapEnv = {
+            PODCAST_GENERATOR_MAX_REQUEST_TOKENS: process.env.PODCAST_GENERATOR_MAX_REQUEST_TOKENS,
+            PODCAST_GENERATOR_HISTORY_TURNS: process.env.PODCAST_GENERATOR_HISTORY_TURNS
+        };
+        delete process.env.PODCAST_GENERATOR_MAX_REQUEST_TOKENS;
+        delete process.env.PODCAST_GENERATOR_HISTORY_TURNS;
         const defaultSpeechCapGenerator = new PodcastGenerator({ apiKey: 'sk-test-placeholder' });
         if (defaultSpeechCapGenerator.maxSpeechChars !== 0) {
             throw new Error(`Default live speech cap should be 0 (no cap), got ${defaultSpeechCapGenerator.maxSpeechChars}`);
+        }
+        if (Number.isFinite(defaultSpeechCapGenerator.getPromptTokenBudget())) {
+            throw new Error(`Default prompt token budget should be unbounded, got ${defaultSpeechCapGenerator.getPromptTokenBudget()}`);
+        }
+        if (Number.isFinite(defaultSpeechCapGenerator.maxHistoryTurns)) {
+            throw new Error(`Default history turn cap should be unbounded, got ${defaultSpeechCapGenerator.maxHistoryTurns}`);
+        }
+        if (savedDefaultCapEnv.PODCAST_GENERATOR_MAX_REQUEST_TOKENS === undefined) {
+            delete process.env.PODCAST_GENERATOR_MAX_REQUEST_TOKENS;
+        } else {
+            process.env.PODCAST_GENERATOR_MAX_REQUEST_TOKENS = savedDefaultCapEnv.PODCAST_GENERATOR_MAX_REQUEST_TOKENS;
+        }
+        if (savedDefaultCapEnv.PODCAST_GENERATOR_HISTORY_TURNS === undefined) {
+            delete process.env.PODCAST_GENERATOR_HISTORY_TURNS;
+        } else {
+            process.env.PODCAST_GENERATOR_HISTORY_TURNS = savedDefaultCapEnv.PODCAST_GENERATOR_HISTORY_TURNS;
         }
 
         const pendingPrompt = generator.buildUserPrompt('Jensen: Did Big Brain finish yet?', null, {
@@ -1765,9 +1787,11 @@ async function runTests() {
         if (
             !openingPrompt.includes('Episode opening task:') ||
             !openingPrompt.includes('Welcome the guest or guests') ||
-            !openingPrompt.includes('prompt the guest to speak into the first planned angle') ||
+            !openingPrompt.includes('invite the guest or guests to respond to being welcomed') ||
+            !openingPrompt.includes('Do not ask the first planned-angle question in this opening turn') ||
             !openingPrompt.includes('Set shouldRespond=true') ||
-            !openingPrompt.includes('Preferred opening planned angle: guest-background') ||
+            !openingPrompt.includes('Set chosenAngle to an empty string') ||
+            !openingPrompt.includes('First planned angle after the opening round: guest-background') ||
             !openingPrompt.includes('(episode has not started yet)')
         ) {
             throw new Error(`Episode opening prompt was not constructed correctly: ${openingPrompt}`);
@@ -3222,7 +3246,9 @@ async function runTests() {
         }
 
         const tracker = new EpisodePlanTracker(generated.plan, {
-            startedAt: '2026-05-15T00:00:00.000Z'
+            startedAt: '2026-05-15T00:00:00.000Z',
+            openingHostSpoken: true,
+            openingGuestSpeakers: ['Jensen']
         });
         const initialBlock = tracker.getStructureBlock('2026-05-15T00:31:00.000Z');
         tracker.applySpokenResponse({
@@ -3297,7 +3323,7 @@ async function runTests() {
         let rememberedOpening = null;
         let startupPlaybackWaited = false;
         let modelOpeningInput = null;
-        const modelOpeningSpeech = "Recording started. Welcome in, Jensen. Let's begin with your background in Alpha-Clawd: what should listeners understand first?";
+        const modelOpeningSpeech = 'Recording started. Welcome in, Jensen. Today we are talking about Alpha-Clawd live hosting. Before we get into the plan, say hello and bring us into the room.';
         openingBot.voiceProvider = {
             synthesize: async (text) => {
                 synthesizedOpening = text;
@@ -3354,7 +3380,7 @@ async function runTests() {
             !openingResult.planned ||
             !openingResult.modelCrafted ||
             openingResult.fallback ||
-            openingResult.chosenAngle !== 'guest-background' ||
+            openingResult.chosenAngle !== '' ||
             modelOpeningInput?.episodeOpening !== true ||
             modelOpeningInput?.preferredOpeningAngle !== 'guest-background' ||
             !modelOpeningInput?.episodePlanStructure?.includes('Guest background:') ||
@@ -3362,6 +3388,7 @@ async function runTests() {
             synthesizedOpening !== modelOpeningSpeech ||
             synthesizedOpening.includes('For listeners, Jensen is the builder of Alpha-Clawd') ||
             synthesizedOpening.includes("Let's start with guest background. What should listeners understand first?") ||
+            synthesizedOpening.includes("Let's begin with your background") ||
             synthesizedOpening.includes('Who is Jensen:') ||
             synthesizedOpening.includes('The episode background is') ||
             synthesizedOpening.includes('[trimmed]') ||
@@ -3370,15 +3397,28 @@ async function runTests() {
             spokenOpeningBytes === 0 ||
             !startupPlaybackWaited ||
             savedOpeningTranscript?.source !== 'episode_plan_opening' ||
-            savedOpeningTranscript?.chosenAngle !== 'guest-background' ||
+            savedOpeningTranscript?.chosenAngle !== '' ||
             savedOpeningTranscript?.duration !== 3000 ||
-            rememberedOpening?.chosenAngle !== 'guest-background' ||
+            rememberedOpening?.chosenAngle !== '' ||
             rememberedOpening?.bigBrain?.requested ||
             rememberedOpening?.bigHeart?.requested ||
-            openingSnapshot.lastChosenAngle !== 'guest-background' ||
-            !openingSnapshot.activeAngles.includes('guest-background')
+            openingSnapshot.lastChosenAngle !== '' ||
+            openingSnapshot.activeAngles.includes('guest-background') ||
+            openingSnapshot.openingHostSpoken !== true ||
+            openingSnapshot.openingGuestSpeakers.length !== 0 ||
+            !openingTracker.getStructureBlock('2026-06-20T00:00:04.000Z').includes('- (waiting for each planned guest to respond to the opening)') ||
+            openingTracker.getStructureBlock('2026-06-20T00:00:04.000Z').includes('- guest-background:')
         ) {
             throw new Error(`Planned recording opener did not preserve guest background and tracker state: ${JSON.stringify({ openingResult, modelOpeningInput, synthesizedOpening, recordedOpeningBytes, spokenOpeningBytes, savedOpeningTranscript, rememberedOpening, openingSnapshot })}`);
+        }
+        openingTracker.observeTranscriptEntry({
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            timestamp: '2026-06-20T00:00:07.000Z',
+            duration: 1
+        });
+        if (!openingTracker.getStructureBlock('2026-06-20T00:00:08.000Z').includes('- guest-background:')) {
+            throw new Error(`Opening round did not reveal the first planned angle after guest response: ${openingTracker.getStructureBlock('2026-06-20T00:00:08.000Z')}`);
         }
 
         const noGuestBriefOpening = openingBot.buildEpisodePlanOpening({
@@ -3389,6 +3429,9 @@ async function runTests() {
         });
         if (
             !noGuestBriefOpening.text.includes("we're doing a conversation about rayman 3 childhood") ||
+            !noGuestBriefOpening.text.includes('Before we get into the plan, say hello and bring us into the room') ||
+            noGuestBriefOpening.chosenAngle !== '' ||
+            noGuestBriefOpening.text.includes("Let's start with") ||
             noGuestBriefOpening.text.includes('Jensen recounts childhood experiences') ||
             noGuestBriefOpening.text.includes('[trimmed]')
         ) {
@@ -4813,7 +4856,9 @@ async function runTests() {
                 closing: { targetMinutes: 3, angles: [] }
             }
         }, {
-            startedAt: new Date(firstSpeechAt - 42000).toISOString()
+            startedAt: new Date(firstSpeechAt - 42000).toISOString(),
+            openingHostSpoken: true,
+            openingGuestSpeakers: ['Jensen']
         })]]);
         bot.lastParticipantSpeechAt = new Map([[guildId, firstSpeechAt]]);
         bot.idleDecisionHandledSpeechAt = new Map();

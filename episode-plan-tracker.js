@@ -12,6 +12,12 @@ class EpisodePlanTracker {
         this.completedAngles = new Set(Array.isArray(options.completedAngles) ? options.completedAngles : []);
         this.activeAngles = new Set(Array.isArray(options.activeAngles) ? options.activeAngles : []);
         this.recentTurns = Array.isArray(options.recentTurns) ? options.recentTurns.slice(-6) : [];
+        this.openingHostSpoken = Boolean(options.openingHostSpoken);
+        this.openingGuestSpeakers = new Set(
+            Array.isArray(options.openingGuestSpeakers)
+                ? options.openingGuestSpeakers.map(normalizeSpeakerName).filter(Boolean)
+                : []
+        );
     }
 
     get currentPhase() {
@@ -35,6 +41,15 @@ class EpisodePlanTracker {
             durationMs
         });
         this.recentTurns = this.recentTurns.slice(-6);
+
+        if (role === 'host') {
+            this.openingHostSpoken = true;
+        } else if (this.openingHostSpoken && !this.isOpeningRoundComplete()) {
+            const speaker = normalizeSpeakerName(entry.speaker || entry.userId || 'guest');
+            if (speaker) {
+                this.openingGuestSpeakers.add(speaker);
+            }
+        }
     }
 
     applySpokenResponse(response = {}, timing = {}) {
@@ -96,11 +111,13 @@ class EpisodePlanTracker {
         const target = Number(this.currentPhasePlan.targetMinutes) || 1;
         const remaining = Math.max(0, target - phaseElapsed);
         const availableAngles = this.getAvailableAngles();
+        const openingRoundComplete = this.isOpeningRoundComplete();
         const currentAngleElapsed = this.lastChosenAngle && this.currentAngleStartedAt
             ? elapsedMinutes(this.currentAngleStartedAt, now)
             : 0;
-        const timePerRemainingAngle = availableAngles.length > 0
-            ? remaining / availableAngles.length
+        const visibleAngles = openingRoundComplete ? availableAngles : [];
+        const timePerRemainingAngle = visibleAngles.length > 0
+            ? remaining / visibleAngles.length
             : remaining;
         const lines = [];
         const guestLines = this.formatGuestBriefs();
@@ -119,18 +136,29 @@ class EpisodePlanTracker {
             `Last turn chosenAngle: ${this.lastChosenAngle || '(none)'}.`,
             `Current angle elapsed: ${this.lastChosenAngle ? formatMinutes(currentAngleElapsed) : '(none)'}.`,
             `Host turns spent on current angle: ${this.lastChosenAngle ? this.currentAngleHostTurns : 0}.`,
-            `Phase time remaining per remaining angle: ${availableAngles.length > 0 ? formatMinutes(timePerRemainingAngle) : '(none)'}.`,
+            `Phase time remaining per remaining angle: ${visibleAngles.length > 0 ? formatMinutes(timePerRemainingAngle) : '(none)'}.`,
             'The planned angles below are preproduction background knowledge, not things the guest already said in this live conversation.',
             'When using planned background, frame it as background or the episode plan. Only say the guest "mentioned" or "said earlier" when that fact appears in the live transcript.',
             'Available planned angles in this phase:'
         );
 
-        if (availableAngles.length === 0) {
+        if (!openingRoundComplete) {
+            lines.push('- (waiting for each planned guest to respond to the opening)');
+        } else if (visibleAngles.length === 0) {
             lines.push('- (none)');
         } else {
-            for (const angle of availableAngles) {
+            for (const angle of visibleAngles) {
                 lines.push(`- ${angle.id}: ${angle.description || angle.title}`);
             }
+        }
+
+        if (!openingRoundComplete) {
+            lines.push(
+                '',
+                'Opening round:',
+                'Alpha-Clawd has introduced the episode. Let each planned guest respond once before asking the first planned-angle question.',
+                `Guests heard in opening round: ${this.formatOpeningGuestSpeakers() || '(none yet)'}.`
+            );
         }
 
         const timing = this.formatRecentTurnTiming();
@@ -183,8 +211,43 @@ class EpisodePlanTracker {
             currentAngleHostTurns: this.currentAngleHostTurns,
             completedAngles: Array.from(this.completedAngles),
             activeAngles: Array.from(this.activeAngles),
-            recentTurns: this.recentTurns.slice()
+            recentTurns: this.recentTurns.slice(),
+            openingHostSpoken: this.openingHostSpoken,
+            openingGuestSpeakers: Array.from(this.openingGuestSpeakers)
         };
+    }
+
+    isOpeningRoundComplete() {
+        if (!this.openingHostSpoken) {
+            return false;
+        }
+
+        const expected = this.getExpectedGuestNames();
+        if (expected.length === 0) {
+            return this.openingGuestSpeakers.size > 0;
+        }
+
+        for (const name of expected) {
+            if (this.openingGuestSpeakers.has(name)) {
+                continue;
+            }
+            const matched = Array.from(this.openingGuestSpeakers)
+                .some((speaker) => speaker.includes(name) || name.includes(speaker));
+            if (!matched) {
+                return this.openingGuestSpeakers.size >= expected.length;
+            }
+        }
+        return true;
+    }
+
+    getExpectedGuestNames() {
+        return (Array.isArray(this.plan.guests) ? this.plan.guests : [])
+            .map((guest) => normalizeSpeakerName(guest.name))
+            .filter(Boolean);
+    }
+
+    formatOpeningGuestSpeakers() {
+        return Array.from(this.openingGuestSpeakers).join(', ');
     }
 }
 
@@ -231,6 +294,10 @@ function formatDuration(ms) {
 
 function cleanText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSpeakerName(value) {
+    return cleanText(value).toLowerCase();
 }
 
 module.exports = {
