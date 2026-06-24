@@ -60,14 +60,13 @@ class ConversationBuffer {
             ? config.gracePeriod
             : (envGracePeriod !== null ? envGracePeriod : DEFAULT_GRACE_PERIOD);
 
-        // dynamicGrace: explicit arg wins, then env, then implicit "true unless
-        // the caller pinned a gracePeriod". An env grace period is the fallback
-        // for untimed speech, not a production-wide opt-out from duration-aware
-        // turn-boundary grace.
-        const hasPinnedGracePeriod = explicitGracePeriod;
+        // dynamicGrace: explicit arg wins, then env, then fixed grace by
+        // default. The duration-aware grace ladder is useful for experiments
+        // but should be opt-in so long utterances do not silently change the
+        // turn-boundary latency profile.
         const dynamicGrace = explicitDynamicGrace
             ? config.dynamicGrace
-            : (envDynamicGrace !== null ? envDynamicGrace : !hasPinnedGracePeriod);
+            : (envDynamicGrace !== null ? envDynamicGrace : false);
 
         this.config = {
             gracePeriod,

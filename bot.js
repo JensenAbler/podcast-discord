@@ -225,10 +225,7 @@ class AlphaClawdVoiceBot {
         this.planningAudioDownloadTimeoutMs = Number(options.planningAudioDownloadTimeoutMs || process.env.PODCAST_PLANNING_AUDIO_DOWNLOAD_TIMEOUT_MS || 30000);
         this.planningAudioDecodeTimeoutMs = Number(options.planningAudioDecodeTimeoutMs || process.env.PODCAST_PLANNING_AUDIO_DECODE_TIMEOUT_MS || 30000);
         this.episodePlanTrackers = new Map(); // guildId -> EpisodePlanTracker
-        this.autonomousLeaveInFlight = new Set(); // guildId -> planned ending leave routine in progress
-        this.autonomousLeaveDelayMs = Number.isFinite(Number(options.autonomousLeaveDelayMs))
-            ? Math.max(0, Number(options.autonomousLeaveDelayMs))
-            : 250;
+        this.autonomousLeaveInFlight = new Set(); // guildId -> model-requested ending leave routine in progress
         this.bigBrainAwarenessSelectionEnabled = options.bigBrainAwarenessSelectionEnabled !== undefined
             ? Boolean(options.bigBrainAwarenessSelectionEnabled)
             : process.env.PODCAST_BIG_BRAIN_AWARENESS_SELECTION_ENABLED === 'true';
@@ -931,40 +928,11 @@ class AlphaClawdVoiceBot {
         try {
             tracker.observeTranscriptEntry(entry);
             const snapshot = tracker.snapshot();
-            this.maybeScheduleAutonomousPlanLeave(guildId, tracker);
             return snapshot;
         } catch (error) {
             console.warn(`[Bot] Episode plan tracker transcript entry failed: ${error.message}`);
             return null;
         }
-    }
-
-    maybeScheduleAutonomousPlanLeave(guildId, tracker) {
-        if (!tracker?.shouldAutoLeaveAfterClosingThoughts?.()) {
-            return false;
-        }
-        if (!this.isRecordingActive(guildId)) {
-            return false;
-        }
-        if (!this.autonomousLeaveInFlight) {
-            this.autonomousLeaveInFlight = new Set();
-        }
-        if (this.autonomousLeaveInFlight.has(guildId)) {
-            return false;
-        }
-
-        this.autonomousLeaveInFlight.add(guildId);
-        tracker.markAutoLeaveTriggered?.();
-        const delayMs = Number.isFinite(Number(this.autonomousLeaveDelayMs))
-            ? Math.max(0, Number(this.autonomousLeaveDelayMs))
-            : 250;
-        console.log(`[Bot] Episode plan closing thoughts received; scheduling autonomous podcast leave in ${delayMs}ms`);
-        setTimeout(() => {
-            this.handleAutonomousPodcastLeave(guildId).catch((error) => {
-                console.error('[Bot] Autonomous podcast leave failed:', error);
-            });
-        }, delayMs);
-        return true;
     }
 
     setInternalThoughtUserSpeaking(guildId, userId, speaking) {
@@ -1157,7 +1125,8 @@ class AlphaClawdVoiceBot {
                 text: speech,
                 chosenAngle,
                 bigBrain: { requested: false, reason: '', consumedRunId: '' },
-                bigHeart: { requested: false, reason: '', consumedRunId: '' }
+                bigHeart: { requested: false, reason: '', consumedRunId: '' },
+                podcastLeave: { requested: false, reason: '' }
             }
         };
     }
@@ -1229,7 +1198,8 @@ class AlphaClawdVoiceBot {
                 speech: plannedOpeningText,
                 chosenAngle: opening.chosenAngle || '',
                 bigBrain: { requested: false, reason: '', consumedRunId: '' },
-                bigHeart: { requested: false, reason: '', consumedRunId: '' }
+                bigHeart: { requested: false, reason: '', consumedRunId: '' },
+                podcastLeave: { requested: false, reason: '' }
             };
             this.applyEpisodePlanResponse(guildId, plannedOpeningResponse, {
                 playbackStartedAt: timing?.playbackStartedAt || generatedAt,
@@ -4565,32 +4535,14 @@ class AlphaClawdVoiceBot {
     }
 
     buildLeaveMessage(options = {}) {
-        let cleanMessage = options.reason === 'episode_plan_complete'
-            ? 'Episode plan complete. Closing thoughts received, so I ended the recording.'
+        let cleanMessage = options.reason === 'model_requested'
+            ? 'Alpha-Clawd ended the recording.'
             : 'Left the voice channel.';
         if (options.wasRecording && options.recordingPath) {
             cleanMessage += `\n\nEpisode saved to:\n\`\`\`${options.recordingPath}\`\`\``;
         }
         cleanMessage += '\n\nSee you next time!';
         return cleanMessage;
-    }
-
-    async handleAutonomousPodcastLeave(guildId) {
-        try {
-            if (!this.isRecordingActive(guildId)) {
-                this.autonomousLeaveInFlight?.delete?.(guildId);
-                return null;
-            }
-
-            console.log(`[Bot] Running autonomous /podcast-leave for guild ${guildId}`);
-            const result = await this.leavePodcastSession(guildId, {
-                reason: 'episode_plan_complete'
-            });
-            await this.sendAutonomousLeaveMessage(result);
-            return result;
-        } finally {
-            this.autonomousLeaveInFlight?.delete?.(guildId);
-        }
     }
 
     async sendAutonomousLeaveMessage(result = {}) {
@@ -4866,7 +4818,8 @@ class AlphaClawdVoiceBot {
                     speech: '',
                     chosenAngle: '',
                     bigBrain: { requested: false, reason: '', consumedRunId: '' },
-                    bigHeart: { requested: false, reason: '', consumedRunId: '' }
+                    bigHeart: { requested: false, reason: '', consumedRunId: '' },
+                    podcastLeave: { requested: false, reason: '' }
                 });
                 console.log('[Bot] Direct generator requested bigBrain while one is already pending; suppressing duplicate stall');
                 return;
@@ -4878,7 +4831,8 @@ class AlphaClawdVoiceBot {
                     speech: '',
                     chosenAngle: '',
                     bigBrain: { requested: false, reason: '', consumedRunId: '' },
-                    bigHeart: { requested: false, reason: '', consumedRunId: '' }
+                    bigHeart: { requested: false, reason: '', consumedRunId: '' },
+                    podcastLeave: { requested: false, reason: '' }
                 });
                 console.log('[Bot] Direct generator requested bigHeart while one is already pending; suppressing duplicate stall');
                 return;
@@ -5025,6 +4979,32 @@ class AlphaClawdVoiceBot {
         return true;
     }
 
+    discardDirectResponseForPendingRawVad(guildId, options = {}, stage = 'before playback') {
+        if (!this.isRecordingActive(guildId)) {
+            return this.discardStaleDirectResponse(guildId, options, stage);
+        }
+
+        const pending = this.getPendingUnconfirmedParticipantSignals(guildId);
+        if (pending.length === 0) {
+            return false;
+        }
+
+        const source = options.source || 'buffer';
+        console.log(
+            `[Bot] Direct generator response (${source}) discarded ${stage} because ` +
+            `${pending.length} raw participant VAD signal(s) were still unresolved`
+        );
+
+        if (Array.isArray(options.flushedUtterances) && options.flushedUtterances.length > 0) {
+            this.conversationBuffer?.requeueUtterances?.(
+                options.flushedUtterances,
+                'pending participant speech before host playback'
+            );
+        }
+
+        return true;
+    }
+
     disposeUnusedAudio(audio) {
         if (this.isReadableAudio(audio) && typeof audio.destroy === 'function') {
             audio.destroy();
@@ -5158,6 +5138,7 @@ class AlphaClawdVoiceBot {
             text: '',
             bigBrain: { requested: false, reason: '', consumedRunId: '' },
             bigHeart: { requested: false, reason: '', consumedRunId: '' },
+            podcastLeave: { requested: false, reason: '' },
             speechStream: stream.speechStream,
             completed: stream.completed,
             isStreaming: true
@@ -6311,7 +6292,8 @@ class AlphaClawdVoiceBot {
                 text: '',
                 chosenAngle: '',
                 bigBrain: { requested: false, reason: '', consumedRunId: '' },
-                bigHeart: { requested: false, reason: '', consumedRunId: '' }
+                bigHeart: { requested: false, reason: '', consumedRunId: '' },
+                podcastLeave: { requested: false, reason: '' }
             };
         }
     }
@@ -6505,7 +6487,18 @@ class AlphaClawdVoiceBot {
                 };
             }
 
-            await this.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
+            const speechEvidenceWait = await this.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
+            if (
+                speechEvidenceWait.timedOut &&
+                this.discardDirectResponseForPendingRawVad(guildId, options, 'after speech-evidence wait timeout')
+            ) {
+                this.disposeUnusedAudio(audio);
+                return {
+                    played: false,
+                    stale: true,
+                    finalResponse: await this.settleGeneratorResponse(response, 'stale response after unresolved raw VAD')
+                };
+            }
             if (this.discardStaleDirectResponse(guildId, options, 'after speech-evidence wait')) {
                 this.disposeUnusedAudio(audio);
                 return {
@@ -6517,11 +6510,18 @@ class AlphaClawdVoiceBot {
 
             this.markIdleDecisionHandled(guildId);
             const playbackResult = await this.playTtsAndRecord(guildId, audio, {
-                shouldAbortPlaybackStart: () => this.discardStaleDirectResponse(
-                    guildId,
-                    { ...options, includeCurrentFloor: true },
-                    'at playback start'
-                )
+                shouldAbortPlaybackStart: () => {
+                    const playbackOptions = { ...options, includeCurrentFloor: true };
+                    return this.discardStaleDirectResponse(
+                        guildId,
+                        playbackOptions,
+                        'at playback start'
+                    ) || this.discardDirectResponseForPendingRawVad(
+                        guildId,
+                        playbackOptions,
+                        'at playback start'
+                    );
+                }
             });
 
             if (playbackResult.abortedBeforePlayback) {
@@ -6606,6 +6606,12 @@ class AlphaClawdVoiceBot {
                 this.podcastGenerator.rememberAssistantResponse?.(finalResponse);
             }
 
+            if (finalResponse?.podcastLeave?.requested) {
+                console.log(`[Bot] Podcast generator requested /podcast-leave. reason="${finalResponse.podcastLeave.reason || ''}"`);
+                const leaveResult = await this.handleModelRequestedPodcastLeave(guildId, finalResponse);
+                return { played: true, stale: false, finalResponse, leaveResult };
+            }
+
             console.log(`[Bot] Direct generator playback complete (${source}), starting cooldown`);
             this.conversationBuffer.startCooldown();
             return { played: true, stale: false, finalResponse };
@@ -6631,6 +6637,31 @@ class AlphaClawdVoiceBot {
         } catch (error) {
             console.warn(`[Bot] Episode plan tracker response update failed: ${error.message}`);
             return null;
+        }
+    }
+
+    async handleModelRequestedPodcastLeave(guildId, response = {}) {
+        if (!this.isRecordingActive(guildId)) {
+            return null;
+        }
+
+        if (!this.autonomousLeaveInFlight) {
+            this.autonomousLeaveInFlight = new Set();
+        }
+        if (this.autonomousLeaveInFlight.has(guildId)) {
+            return null;
+        }
+
+        this.autonomousLeaveInFlight.add(guildId);
+        try {
+            const result = await this.leavePodcastSession(guildId, {
+                reason: 'model_requested',
+                modelReason: response?.podcastLeave?.reason || ''
+            });
+            await this.sendAutonomousLeaveMessage(result);
+            return result;
+        } finally {
+            this.autonomousLeaveInFlight?.delete?.(guildId);
         }
     }
 
@@ -6708,7 +6739,14 @@ class AlphaClawdVoiceBot {
                 return { played: false, stale: true };
             }
 
-            await this.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
+            const speechEvidenceWait = await this.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
+            if (
+                speechEvidenceWait.timedOut &&
+                this.discardDirectResponseForPendingRawVad(guildId, options, 'after fallback speech-evidence wait timeout')
+            ) {
+                this.disposeUnusedAudio(audioBuffer);
+                return { played: false, stale: true };
+            }
             if (this.discardStaleDirectResponse(guildId, options, 'after fallback speech-evidence wait')) {
                 this.disposeUnusedAudio(audioBuffer);
                 return { played: false, stale: true };
@@ -6716,11 +6754,18 @@ class AlphaClawdVoiceBot {
 
             this.markIdleDecisionHandled(guildId);
             const playbackResult = await this.playTtsAndRecord(guildId, audioBuffer, {
-                shouldAbortPlaybackStart: () => this.discardStaleDirectResponse(
-                    guildId,
-                    { ...options, includeCurrentFloor: true },
-                    'at fallback playback start'
-                )
+                shouldAbortPlaybackStart: () => {
+                    const playbackOptions = { ...options, includeCurrentFloor: true };
+                    return this.discardStaleDirectResponse(
+                        guildId,
+                        playbackOptions,
+                        'at fallback playback start'
+                    ) || this.discardDirectResponseForPendingRawVad(
+                        guildId,
+                        playbackOptions,
+                        'at fallback playback start'
+                    );
+                }
             });
 
             if (playbackResult.abortedBeforePlayback) {

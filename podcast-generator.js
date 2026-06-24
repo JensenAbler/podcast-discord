@@ -7,6 +7,7 @@
  * - shouldRespond: whether Alpha-Clawd should speak at all
  * - chosenAngle: episode-plan angle id currently being worked
  * - bigBrain: escape-hatch handoff to the deeper agent (see schema)
+ * - podcastLeave: model-owned request to end the live episode after a closing signoff
  */
 const {
     DEFAULT_ANTHROPIC_VERSION,
@@ -23,7 +24,7 @@ const {
  * speech field out token-by-token, so we can hand characters to Fish TTS
  * before the full payload has finished generating.
  *
- * Intended for the schema { speech, shouldRespond, chosenAngle, bigBrain, bigHeart }. Tolerates
+ * Intended for the schema { speech, shouldRespond, chosenAngle, bigBrain, bigHeart, podcastLeave }. Tolerates
  * keys arriving in any order, but requires the speech value to be a JSON
  * string. JSON escapes (\", \n, \uXXXX, etc.) are decoded incrementally;
  * if a chunk lands mid-escape we wait for the rest of the bytes before
@@ -140,7 +141,8 @@ class IncrementalSpeechReader {
                 speech: this.fullSpeech,
                 chosenAngle: '',
                 bigBrain: { requested: false, reason: '', consumedRunId: '' },
-                bigHeart: { requested: false, reason: '', consumedRunId: '' }
+                bigHeart: { requested: false, reason: '', consumedRunId: '' },
+                podcastLeave: { requested: false, reason: '' }
             };
         }
     }
@@ -870,10 +872,11 @@ class PodcastGenerator {
             'Your job is to decide whether to speak.',
             '',
             'Hard contract:',
-            '- Return one JSON object with fields in this exact order: speech, shouldRespond, chosenAngle, bigBrain, bigHeart. This order also applies when only JSON mode is available and no schema is provided.',
+            '- Return one JSON object with fields in this exact order: speech, shouldRespond, chosenAngle, bigBrain, bigHeart, podcastLeave. This order also applies when only JSON mode is available and no schema is provided.',
             '- Emit speech first. Use an empty string when shouldRespond is false.',
             '- If humans are acknowledging, thinking aloud, talking amongst themselves, or developing a thought, usually set shouldRespond=false. If a response is needed only to show presence, Minimal backchannel is allowed but should be rare because delayed bare acknowledgements can feel awkward; do not ask a question.',
             '- If shouldRespond=true, speech is exactly what the TTS should say out loud.',
+            '- podcastLeave lets you end the live recording after the episode has socially landed. Default { requested: false, reason: "" }. Set requested=true only when you are saying the final signoff in speech and want the backend to run /podcast-leave after that audio plays. Do not use it for ordinary topic closure.',
             ...this.buildSpeechControlGuidance(),
             '- Keep speech to 1-3 natural sentences unless a direct question needs slightly more.',
             '- Do not use slash-delimited line breaks. If reciting a poem, lyric-like passage, or list-like text, use speakable punctuation instead of visual separators like " / ".',
@@ -934,7 +937,7 @@ class PodcastGenerator {
                 'Do not ask the first planned-angle question in this opening turn.',
                 'Use the episode plan structure and background as source material, but do not read or summarize the plan.',
                 'Keep it very short: one or two natural spoken sentences, about 20-45 words.',
-                'Set shouldRespond=true. Set chosenAngle to an empty string. Do not request bigBrain or bigHeart.'
+                'Set shouldRespond=true. Set chosenAngle to an empty string. Do not request bigBrain, bigHeart, or podcastLeave.'
             );
             if (preferredOpeningAngle) {
                 lines.push(`First planned angle after the opening round: ${preferredOpeningAngle}`);
@@ -1082,7 +1085,7 @@ class PodcastGenerator {
     }
 
     buildDecisionPrompt() {
-        return 'Produce the host turn now. Emit speech first, then shouldRespond, followed by chosenAngle, bigBrain, and bigHeart.';
+        return 'Produce the host turn now. Emit speech first, then shouldRespond, followed by chosenAngle, bigBrain, bigHeart, and podcastLeave.';
     }
 
     formatStagedBigBrain(items = [], options = {}) {
@@ -1790,7 +1793,8 @@ class PodcastGenerator {
                         shouldRespond: false,
                         chosenAngle: '',
                         bigBrain: { requested: false, reason: '', consumedRunId: '' },
-                        bigHeart: { requested: false, reason: '', consumedRunId: '' }
+                        bigHeart: { requested: false, reason: '', consumedRunId: '' },
+                        podcastLeave: { requested: false, reason: '' }
                     })
                 }
             }]
@@ -2055,7 +2059,7 @@ class PodcastGenerator {
         return {
             type: 'object',
             additionalProperties: false,
-            required: ['speech', 'shouldRespond', 'chosenAngle', 'bigBrain', 'bigHeart'],
+            required: ['speech', 'shouldRespond', 'chosenAngle', 'bigBrain', 'bigHeart', 'podcastLeave'],
             properties: {
                 speech: {
                     type: 'string',
@@ -2108,6 +2112,22 @@ class PodcastGenerator {
                             description: 'If this speech integrates a staged bigHeart answer, set this to that staged runId. Otherwise empty string.'
                         }
                     }
+                },
+                podcastLeave: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['requested', 'reason'],
+                    description: 'Request the backend to end the live podcast after this spoken signoff finishes playing. Default { requested: false, reason: "" }.',
+                    properties: {
+                        requested: {
+                            type: 'boolean',
+                            description: 'Set true only when the episode has socially landed and this speech is the final signoff.'
+                        },
+                        reason: {
+                            type: 'string',
+                            description: 'Short reason for ending the podcast now. Empty string when requested is false.'
+                        }
+                    }
                 }
             }
         };
@@ -2119,13 +2139,15 @@ class PodcastGenerator {
             : Boolean(output?.shouldRespond);
         const speech = shouldRespond ? this.sanitizeSpeech(output?.speech || '') : '';
 
+        const podcastLeave = this.normalizePodcastLeave(output?.podcastLeave, shouldRespond && speech.length > 0);
         return {
             speech,
             shouldRespond: shouldRespond && speech.length > 0,
             chosenAngle: shouldRespond && speech.length > 0 ? this.cleanText(output?.chosenAngle || '') : '',
             text: speech,
-            bigBrain: this.normalizeBigBrain(output?.bigBrain),
-            bigHeart: this.normalizeBigHeart(output?.bigHeart)
+            bigBrain: podcastLeave.requested ? this.normalizeBigBrain(null) : this.normalizeBigBrain(output?.bigBrain),
+            bigHeart: podcastLeave.requested ? this.normalizeBigHeart(null) : this.normalizeBigHeart(output?.bigHeart),
+            podcastLeave
         };
     }
 
@@ -2141,6 +2163,12 @@ class PodcastGenerator {
         const reason = requested ? String(value?.reason || '').trim() : '';
         const consumedRunId = requested ? '' : String(value?.consumedRunId || '').trim();
         return { requested, reason, consumedRunId };
+    }
+
+    normalizePodcastLeave(value, spoken = false) {
+        const requested = Boolean(spoken && value && value.requested === true);
+        const reason = requested ? this.cleanText(value?.reason || '') : '';
+        return { requested, reason };
     }
 
     sanitizeSpeech(text) {

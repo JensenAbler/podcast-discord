@@ -1384,7 +1384,7 @@ async function runTests() {
             userMessage.role === 'user' &&
             !userMessage.content.includes('Emit speech first') &&
             decisionMessage.role === 'system' &&
-            decisionMessage.content === 'Produce the host turn now. Emit speech first, then shouldRespond, followed by chosenAngle, bigBrain, and bigHeart.'
+            decisionMessage.content === 'Produce the host turn now. Emit speech first, then shouldRespond, followed by chosenAngle, bigBrain, bigHeart, and podcastLeave.'
         ) {
             console.log('  Turn decision prompt is sent as a trailing system message');
             passed++;
@@ -1395,7 +1395,7 @@ async function runTests() {
         const systemPrompt = generator.buildSystemPrompt();
         if (
             systemPrompt.includes('Live speech is provisional:') &&
-            systemPrompt.includes('fields in this exact order: speech, shouldRespond, chosenAngle, bigBrain, bigHeart') &&
+            systemPrompt.includes('fields in this exact order: speech, shouldRespond, chosenAngle, bigBrain, bigHeart, podcastLeave') &&
             systemPrompt.includes('This order also applies when only JSON mode is available') &&
             systemPrompt.includes('not a polished chat message') &&
             systemPrompt.includes('Read the latest utterance first:') &&
@@ -1830,7 +1830,10 @@ async function runTests() {
         if (
             budgetEstimate > budgetGenerator.getPromptTokenBudget() ||
             budgetMessages.some(message => /older context/.test(message.content)) ||
-            !budgetMessages.some(message => message.content.includes('[trimmed for prompt budget]'))
+            !budgetMessages.some(message => (
+                message.content.includes('[trimmed for prompt budget]') ||
+                message.content.includes('[older prompt context omitted to stay within generator budget]')
+            ))
         ) {
             throw new Error(`Prompt budget guard did not compact oversized context: ${JSON.stringify({ budgetEstimate, budget: budgetGenerator.getPromptTokenBudget(), messages: budgetMessages })}`);
         }
@@ -2213,7 +2216,7 @@ async function runTests() {
             fallbackCalls[0].body.response_format?.type !== 'json_schema' ||
             fallbackCalls[1].body.response_format?.type !== 'json_object' ||
             fallbackCalls[1].body.reasoning_format !== 'hidden' ||
-            !fallbackCalls[1].body.messages?.[0]?.content.includes('fields in this exact order: speech, shouldRespond, chosenAngle, bigBrain, bigHeart') ||
+            !fallbackCalls[1].body.messages?.[0]?.content.includes('fields in this exact order: speech, shouldRespond, chosenAngle, bigBrain, bigHeart, podcastLeave') ||
             fallbackOutput.speech !== 'Qwen JSON fallback works.'
         ) {
             throw new Error(`JSON object fallback did not run as expected: ${JSON.stringify({ fallbackCalls, fallbackOutput })}`);
@@ -2225,21 +2228,25 @@ async function runTests() {
 
         const bigBrainSchema = handoffGenerator.getResponseSchema();
         if (
-            bigBrainSchema.required.join(',') !== 'speech,shouldRespond,chosenAngle,bigBrain,bigHeart' ||
-            Object.keys(bigBrainSchema.properties).join(',') !== 'speech,shouldRespond,chosenAngle,bigBrain,bigHeart' ||
+            bigBrainSchema.required.join(',') !== 'speech,shouldRespond,chosenAngle,bigBrain,bigHeart,podcastLeave' ||
+            Object.keys(bigBrainSchema.properties).join(',') !== 'speech,shouldRespond,chosenAngle,bigBrain,bigHeart,podcastLeave' ||
             !bigBrainSchema.properties.chosenAngle ||
             !bigBrainSchema.required.includes('bigHeart') ||
             !bigBrainSchema.required.includes('bigBrain') ||
+            !bigBrainSchema.required.includes('podcastLeave') ||
             !bigBrainSchema.properties.bigBrain ||
             bigBrainSchema.properties.bigBrain.required.join(',') !== 'requested,reason,consumedRunId' ||
             !bigBrainSchema.properties.bigHeart ||
-            bigBrainSchema.properties.bigHeart.required.join(',') !== 'requested,reason,consumedRunId'
+            bigBrainSchema.properties.bigHeart.required.join(',') !== 'requested,reason,consumedRunId' ||
+            !bigBrainSchema.properties.podcastLeave ||
+            bigBrainSchema.properties.podcastLeave.required.join(',') !== 'requested,reason'
         ) {
             throw new Error(`handoff schema is missing or malformed: ${JSON.stringify({
                 required: bigBrainSchema.required,
                 properties: Object.keys(bigBrainSchema.properties),
                 bigBrain: bigBrainSchema.properties.bigBrain,
-                bigHeart: bigBrainSchema.properties.bigHeart
+                bigHeart: bigBrainSchema.properties.bigHeart,
+                podcastLeave: bigBrainSchema.properties.podcastLeave
             })}`);
         }
 
@@ -2252,6 +2259,9 @@ async function runTests() {
         }
         if (defaultOut.bigHeart.requested !== false || defaultOut.bigHeart.reason !== '' || defaultOut.bigHeart.consumedRunId !== '') {
             throw new Error(`Missing bigHeart should default to {requested:false, reason:"", consumedRunId:""}: ${JSON.stringify(defaultOut.bigHeart)}`);
+        }
+        if (defaultOut.podcastLeave.requested !== false || defaultOut.podcastLeave.reason !== '') {
+            throw new Error(`Missing podcastLeave should default to {requested:false, reason:""}: ${JSON.stringify(defaultOut.podcastLeave)}`);
         }
 
         const requestedOut = handoffGenerator.normalizeOutput({
@@ -2296,8 +2306,27 @@ async function runTests() {
         if (garbageOut.bigHeart.requested !== false || garbageOut.bigHeart.reason !== '' || garbageOut.bigHeart.consumedRunId !== '123') {
             throw new Error(`Malformed bigHeart payload was not normalized: ${JSON.stringify(garbageOut.bigHeart)}`);
         }
+        if (garbageOut.podcastLeave.requested !== false || garbageOut.podcastLeave.reason !== '') {
+            throw new Error(`Malformed/silent podcastLeave should not request leave: ${JSON.stringify(garbageOut.podcastLeave)}`);
+        }
 
-        console.log('  bigBrain and bigHeart fields default safely and pass valid payloads through');
+        const leaveOut = handoffGenerator.normalizeOutput({
+            shouldRespond: true,
+            speech: 'Thank you, everyone. We will leave it there.',
+            bigBrain: { requested: true, reason: 'should be suppressed' },
+            bigHeart: { requested: true, reason: 'should be suppressed' },
+            podcastLeave: { requested: true, reason: 'episode landed' }
+        });
+        if (
+            leaveOut.podcastLeave.requested !== true ||
+            leaveOut.podcastLeave.reason !== 'episode landed' ||
+            leaveOut.bigBrain.requested ||
+            leaveOut.bigHeart.requested
+        ) {
+            throw new Error(`podcastLeave did not normalize as exclusive spoken leave request: ${JSON.stringify(leaveOut)}`);
+        }
+
+        console.log('  bigBrain, bigHeart, and podcastLeave fields default safely and pass valid payloads through');
     } catch (error) {
         console.log(`  Podcast generator failed: ${error.message}`);
         failed++;
@@ -3330,36 +3359,37 @@ async function runTests() {
             timestamp: '2026-05-15T00:06:00.000Z',
             duration: 1
         });
-        const prematureLeaveReady = finalTracker.shouldAutoLeaveAfterClosingThoughts();
         finalTracker.applySpokenResponse({
             shouldRespond: true,
             speech: 'Before we wrap, Jensen, any closing thoughts before we end the episode?',
             chosenAngle: 'closing-message'
         }, { now: '2026-05-15T00:06:30.000Z' });
         const closingRequestedSnapshot = finalTracker.snapshot();
+        const closingRequestedBlock = finalTracker.getStructureBlock('2026-05-15T00:06:30.000Z');
         finalTracker.observeTranscriptEntry({
             speaker: 'Jensen',
             speakerRole: 'guest',
             timestamp: '2026-05-15T00:07:00.000Z',
             duration: 1
         });
-        const readyToLeave = finalTracker.shouldAutoLeaveAfterClosingThoughts();
-        finalTracker.markAutoLeaveTriggered();
+        const afterClosingThoughtSnapshot = finalTracker.snapshot();
         if (
             finalQueuedSnapshot.closingThoughtsQueued !== true ||
             finalQueuedSnapshot.closingThoughtsRequested !== false ||
             !finalQueuedBlock.includes('Closing routine queued:') ||
             !finalQueuedBlock.includes('The final scheduled planned angle has been started') ||
-            prematureLeaveReady !== false ||
             closingRequestedSnapshot.closingThoughtsRequested !== true ||
             closingRequestedSnapshot.closingThoughtsQueued !== true ||
             closingRequestedSnapshot.lastChosenAngle !== '' ||
             !closingRequestedSnapshot.completedAngles.includes('closing-message') ||
-            readyToLeave !== true ||
-            finalTracker.shouldAutoLeaveAfterClosingThoughts() !== false ||
-            finalTracker.snapshot().autoLeaveTriggered !== true
+            !closingRequestedBlock.includes('When you judge the episode has genuinely landed') ||
+            closingRequestedBlock.includes('Closing thoughts are complete') ||
+            closingRequestedBlock.includes('complete automatically') ||
+            closingRequestedBlock.includes('bot will end the recording automatically') ||
+            !afterClosingThoughtSnapshot.closingThoughtSpeakers.includes('jensen') ||
+            Object.prototype.hasOwnProperty.call(afterClosingThoughtSnapshot, 'autoLeaveTriggered')
         ) {
-            throw new Error(`Episode plan tracker did not queue and complete autonomous closing correctly: ${JSON.stringify({ finalQueuedBlock, finalQueuedSnapshot, prematureLeaveReady, closingRequestedSnapshot, readyToLeave, snapshot: finalTracker.snapshot() })}`);
+            throw new Error(`Episode plan tracker did not leave closing completion to the model: ${JSON.stringify({ finalQueuedBlock, closingRequestedBlock, finalQueuedSnapshot, closingRequestedSnapshot, afterClosingThoughtSnapshot })}`);
         }
 
         const socialCloseTracker = new EpisodePlanTracker(generated.plan, {
@@ -3389,7 +3419,7 @@ async function runTests() {
         });
         if (
             socialCloseTracker.snapshot().closingThoughtsRequested !== true ||
-            socialCloseTracker.shouldAutoLeaveAfterClosingThoughts() !== true
+            !socialCloseTracker.getStructureBlock('2026-05-15T00:06:30.000Z').includes('set podcastLeave.requested=true')
         ) {
             throw new Error(`Episode plan tracker did not treat queued social signoff as closing prompt: ${JSON.stringify(socialCloseTracker.snapshot())}`);
         }
@@ -3996,16 +4026,16 @@ async function runTests() {
             throw new Error(`Invalid plan was not rejected before voice join/consent: ${JSON.stringify({ deferred, editReply, joinCalled, consent: Array.from(joinBot.consentWaiters.entries()) })}`);
         }
 
-        const autoLeaveGuildId = 'guild-auto-leave';
+        const autoLeaveGuildId = 'guild-model-leave';
         const autoLeaveBot = Object.create(AlphaClawdVoiceBot.prototype);
         autoLeaveBot.RecordingState = { RECORDING: 'RECORDING', STOPPING: 'STOPPING' };
         autoLeaveBot.recordingState = new Map([[autoLeaveGuildId, 'RECORDING']]);
-        autoLeaveBot.recordingTextChannels = new Map([[autoLeaveGuildId, 'channel-auto-leave']]);
+        autoLeaveBot.recordingTextChannels = new Map([[autoLeaveGuildId, 'channel-model-leave']]);
         autoLeaveBot.consentWaiters = new Map([[autoLeaveGuildId, {}]]);
         autoLeaveBot.sessionHostModes = new Map([[autoLeaveGuildId, 'current']]);
         autoLeaveBot.discordContextProcessing = new Map([[autoLeaveGuildId, Promise.resolve()]]);
         autoLeaveBot.consecutiveGeneratorSilences = new Map([[autoLeaveGuildId, 2]]);
-        autoLeaveBot.autonomousLeaveInFlight = new Set([autoLeaveGuildId]);
+        autoLeaveBot.autonomousLeaveInFlight = new Set();
         autoLeaveBot.disabledCronJobs = [];
         let autoBufferCleared = false;
         let autoIdleStopped = false;
@@ -4036,15 +4066,17 @@ async function runTests() {
         autoLeaveBot.client = {
             channels: {
                 cache: {
-                    get: (channelId) => channelId === 'channel-auto-leave'
+                    get: (channelId) => channelId === 'channel-model-leave'
                         ? { send: async (message) => { autoChannelMessage = message; } }
                         : null
                 }
             }
         };
-        const autoLeaveResult = await autoLeaveBot.handleAutonomousPodcastLeave(autoLeaveGuildId);
+        const autoLeaveResult = await autoLeaveBot.handleModelRequestedPodcastLeave(autoLeaveGuildId, {
+            podcastLeave: { requested: true, reason: 'model judged the episode complete' }
+        });
         if (
-            !autoLeaveResult?.message?.includes('Episode plan complete') ||
+            !autoLeaveResult?.message?.includes('Alpha-Clawd ended the recording') ||
             !autoBufferCleared ||
             !autoIdleStopped ||
             !autoGeminiStopped ||
@@ -4062,7 +4094,7 @@ async function runTests() {
             autoLeaveBot.autonomousLeaveInFlight.has(autoLeaveGuildId) ||
             !autoChannelMessage.includes('Episode saved to:')
         ) {
-            throw new Error(`Autonomous planned leave did not reuse podcast leave cleanup: ${JSON.stringify({ autoLeaveResult, autoBufferCleared, autoIdleStopped, autoGeminiStopped, autoGeneratorEnded, autoPlanEnded, autoThoughtsEnded, autoRecordingStopped, autoVoiceLeft, autoChannelMessage, recordingState: Array.from(autoLeaveBot.recordingState.entries()) })}`);
+            throw new Error(`Model-requested leave did not reuse podcast leave cleanup: ${JSON.stringify({ autoLeaveResult, autoBufferCleared, autoIdleStopped, autoGeminiStopped, autoGeneratorEnded, autoPlanEnded, autoThoughtsEnded, autoRecordingStopped, autoVoiceLeft, autoChannelMessage, recordingState: Array.from(autoLeaveBot.recordingState.entries()) })}`);
         }
 
         fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -4788,9 +4820,15 @@ async function runTests() {
         delete process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS;
         delete process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE;
 
-        const dynamicGraceProbe = new ConversationBuffer();
-        if (dynamicGraceProbe.config.cooldownPeriod !== 50) {
-            throw new Error(`Default post-host cooldown should be 50ms, got ${dynamicGraceProbe.config.cooldownPeriod}ms`);
+        const defaultGraceProbe = new ConversationBuffer();
+        if (defaultGraceProbe.config.cooldownPeriod !== 50) {
+            throw new Error(`Default post-host cooldown should be 50ms, got ${defaultGraceProbe.config.cooldownPeriod}ms`);
+        }
+        const defaultLongGrace = defaultGraceProbe.calculateGracePeriod([
+            { speaker: 'Jensen', transcription: 'long timed speech', speechDuration: 20000 }
+        ]);
+        if (defaultGraceProbe.getState().dynamicGrace || defaultLongGrace !== 50) {
+            throw new Error(`Default grace should be fixed at 50ms: ${JSON.stringify({ state: defaultGraceProbe.getState(), defaultLongGrace })}`);
         }
 
         process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS = '75';
@@ -4809,8 +4847,23 @@ async function runTests() {
         const envFallbackGrace = envGraceProbe.calculateGracePeriod([
             { speaker: 'Jensen', transcription: 'untimed speech' }
         ]);
-        if (envGraceProbe.config.gracePeriod !== 25 || !envGraceProbe.getState().dynamicGrace || envDynamicGrace !== 700 || envFallbackGrace !== 25) {
-            throw new Error(`Env grace should be dynamic fallback only: ${JSON.stringify({ config: envGraceProbe.config, envDynamicGrace, envFallbackGrace })}`);
+        if (envGraceProbe.config.gracePeriod !== 25 || envGraceProbe.getState().dynamicGrace || envDynamicGrace !== 25 || envFallbackGrace !== 25) {
+            throw new Error(`Env grace should stay fixed unless dynamic grace is explicitly enabled: ${JSON.stringify({ config: envGraceProbe.config, envDynamicGrace, envFallbackGrace })}`);
+        }
+
+        process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS = '25';
+        process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE = 'true';
+        const dynamicGraceProbe = new ConversationBuffer();
+        delete process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS;
+        delete process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE;
+        const optInDynamicGrace = dynamicGraceProbe.calculateGracePeriod([
+            { speaker: 'Jensen', transcription: 'long timed speech', speechDuration: 20000 }
+        ]);
+        const optInFallbackGrace = dynamicGraceProbe.calculateGracePeriod([
+            { speaker: 'Jensen', transcription: 'untimed speech' }
+        ]);
+        if (dynamicGraceProbe.config.gracePeriod !== 25 || !dynamicGraceProbe.getState().dynamicGrace || optInDynamicGrace !== 700 || optInFallbackGrace !== 25) {
+            throw new Error(`Dynamic grace should be opt-in with grace env as untimed fallback: ${JSON.stringify({ config: dynamicGraceProbe.config, optInDynamicGrace, optInFallbackGrace })}`);
         }
 
         const graceCases = [
@@ -4842,8 +4895,8 @@ async function runTests() {
                 transcription: 'timing unavailable'
             }
         ]);
-        if (unknownDurationGrace !== 50) {
-            throw new Error(`Missing speech timing should use 50ms fallback grace, got ${unknownDurationGrace}ms`);
+        if (unknownDurationGrace !== 25) {
+            throw new Error(`Missing speech timing should use configured fallback grace, got ${unknownDurationGrace}ms`);
         }
 
         const spanGrace = dynamicGraceProbe.calculateGracePeriod([
@@ -7982,6 +8035,71 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Endpoint debounce cancel failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 11b.1: Resumed utterance emits fresh segment speech evidence');
+    try {
+        const speechEvidence = [];
+        const dispatched = [];
+        const utterances = [];
+
+        const receiver = new AudioReceiver({
+            botUserId: 'bot-user',
+            endpointingDebounce: 80,
+            stt: {
+                transcribe: async () => ({ text: 'merged resumed speech', confidence: 0.9, words: [] })
+            },
+            onSpeechEvidence: (userId, metadata) => speechEvidence.push({ userId, metadata }),
+            onAsrDispatched: (userId, metadata) => dispatched.push({ userId, metadata }),
+            onUtterance: (u) => utterances.push(u)
+        });
+
+        receiver.start({
+            receiver: {
+                speaking: { on: () => {} },
+                subscribe: () => new PassThrough()
+            }
+        });
+
+        receiver.handleUserStartSpeaking('user-segment');
+        receiver.handleAudioChunk('user-segment', createSpeechPcm(200));
+        if (speechEvidence.length !== 1) {
+            throw new Error(`Initial segment did not emit speech evidence: ${JSON.stringify(speechEvidence)}`);
+        }
+
+        receiver.handleUserStopSpeaking('user-segment');
+        await sleep(20);
+        receiver.handleUserStartSpeaking('user-segment');
+        receiver.handleAudioChunk('user-segment', createSpeechPcm(200));
+
+        if (speechEvidence.length !== 2) {
+            throw new Error(`Resumed segment did not emit fresh speech evidence: ${JSON.stringify(speechEvidence)}`);
+        }
+        if (speechEvidence[1].metadata.speakingFrames <= 0) {
+            throw new Error(`Resumed segment evidence did not use segment speech frames: ${JSON.stringify(speechEvidence[1])}`);
+        }
+        if (speechEvidence[1].metadata.cumulativeSpeakingFrames <= speechEvidence[1].metadata.speakingFrames) {
+            throw new Error(`Resumed segment evidence did not preserve cumulative frame context: ${JSON.stringify(speechEvidence[1])}`);
+        }
+        if (dispatched.length !== 0 || utterances.length !== 0) {
+            throw new Error(`Fresh segment evidence should not flush the utterance early: ${JSON.stringify({ dispatched, utterances })}`);
+        }
+
+        receiver.handleUserStopSpeaking('user-segment');
+        await sleep(120);
+        await receiver.waitForPendingUtterances();
+
+        if (dispatched.length !== 1 || utterances.length !== 1) {
+            throw new Error(`Merged resumed utterance did not dispatch once at the end: ${JSON.stringify({ dispatched, utterances })}`);
+        }
+
+        receiver.destroy();
+
+        console.log('  Same utterance can emit fresh proof for a resumed speech segment');
+        passed++;
+    } catch (error) {
+        console.log(`  Resumed segment speech evidence failed: ${error.message}`);
         failed++;
     }
 

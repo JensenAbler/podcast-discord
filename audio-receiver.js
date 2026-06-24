@@ -106,6 +106,9 @@ class AudioReceiver {
             return;
         }
 
+        const buffer = this.ensureUserBuffer(userId);
+        this.startSpeechEvidenceSegment(buffer);
+
         // User resumed within the debounce window — same utterance, keep accumulating.
         this.cancelEndpointTimer(userId, 'speaker resumed');
 
@@ -229,11 +232,25 @@ class AudioReceiver {
             speakerInfo: speakerInfo,
             detector: silenceDetector,
             endpointTimer: null,
-            speechEvidenceEmitted: false
+            speechEvidenceEmitted: false,
+            segmentSpeechEvidenceEmitted: false,
+            segmentStartStats: null
         };
 
         this.speakerBuffers.set(userId, buffer);
         return buffer;
+    }
+
+    startSpeechEvidenceSegment(buffer) {
+        if (!buffer) return;
+
+        const stats = buffer.detector?.getStats?.() || {};
+        buffer.segmentSpeechEvidenceEmitted = false;
+        buffer.segmentStartStats = {
+            speakingFrames: stats.speakingFrames || 0,
+            silentFrames: stats.silentFrames || 0,
+            totalFrames: stats.totalFrames || 0
+        };
     }
 
     /**
@@ -341,32 +358,50 @@ class AudioReceiver {
     }
 
     maybeEmitSpeechEvidence(userId, buffer) {
-        if (!buffer || buffer.speechEvidenceEmitted) return;
+        if (!buffer || (buffer.speechEvidenceEmitted && buffer.segmentSpeechEvidenceEmitted)) return;
 
         const stats = buffer.detector?.getStats?.();
         if (!stats) return;
 
+        const segmentStats = this.getSegmentSpeechStats(buffer, stats);
         const audioBytes = this.getBufferedAudioBytes(buffer);
-        const threshold = this.getSpeechEvidenceFrameThreshold(userId, stats, {
+        const threshold = this.getSpeechEvidenceFrameThreshold(userId, segmentStats, {
             audioBytes,
-            chunkCount: buffer.chunks.length
+            chunkCount: buffer.chunks.length,
+            cumulativeSpeakingFrames: stats.speakingFrames || 0,
+            cumulativeSilentFrames: stats.silentFrames || 0,
+            cumulativeTotalFrames: stats.totalFrames || 0
         });
 
-        if ((stats.speakingFrames || 0) < threshold) {
+        if ((segmentStats.speakingFrames || 0) < threshold) {
             return;
         }
 
         buffer.speechEvidenceEmitted = true;
+        buffer.segmentSpeechEvidenceEmitted = true;
         this.options.onSpeechEvidence(userId, {
             threshold,
             audioBytes,
             chunkCount: buffer.chunks.length,
-            speakingFrames: stats.speakingFrames || 0,
-            silentFrames: stats.silentFrames || 0,
-            totalFrames: stats.totalFrames || 0,
+            speakingFrames: segmentStats.speakingFrames || 0,
+            silentFrames: segmentStats.silentFrames || 0,
+            totalFrames: segmentStats.totalFrames || 0,
+            cumulativeSpeakingFrames: stats.speakingFrames || 0,
+            cumulativeSilentFrames: stats.silentFrames || 0,
+            cumulativeTotalFrames: stats.totalFrames || 0,
             firstSpeechAtMs: stats.firstSpeechAtMs || null,
             lastSpeechAtMs: stats.lastSpeechAtMs || null
         });
+    }
+
+    getSegmentSpeechStats(buffer, stats = {}) {
+        const baseline = buffer?.segmentStartStats || {};
+        return {
+            ...stats,
+            speakingFrames: Math.max(0, (stats.speakingFrames || 0) - (baseline.speakingFrames || 0)),
+            silentFrames: Math.max(0, (stats.silentFrames || 0) - (baseline.silentFrames || 0)),
+            totalFrames: Math.max(0, (stats.totalFrames || 0) - (baseline.totalFrames || 0))
+        };
     }
 
     /**
@@ -386,6 +421,8 @@ class AudioReceiver {
         buffer.chunks = [];
         buffer.startTime = null;
         buffer.speechEvidenceEmitted = false;
+        buffer.segmentSpeechEvidenceEmitted = false;
+        buffer.segmentStartStats = null;
 
         if (buffer.endpointTimer) {
             clearTimeout(buffer.endpointTimer);
@@ -492,6 +529,8 @@ class AudioReceiver {
             buffer.chunks = [];
             buffer.startTime = null;
             buffer.speechEvidenceEmitted = false;
+            buffer.segmentSpeechEvidenceEmitted = false;
+            buffer.segmentStartStats = null;
             if (buffer.detector) {
                 buffer.detector.reset();
             }
@@ -506,6 +545,8 @@ class AudioReceiver {
         buffer.chunks = [];
         buffer.startTime = null;
         buffer.speechEvidenceEmitted = false;
+        buffer.segmentSpeechEvidenceEmitted = false;
+        buffer.segmentStartStats = null;
 
         if (buffer.detector) {
             buffer.detector.reset();

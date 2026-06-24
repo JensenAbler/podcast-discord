@@ -27,7 +27,6 @@ class EpisodePlanTracker {
                 ? options.closingThoughtSpeakers.map(normalizeSpeakerName).filter(Boolean)
                 : []
         );
-        this.autoLeaveTriggered = Boolean(options.autoLeaveTriggered);
     }
 
     get currentPhase() {
@@ -54,7 +53,7 @@ class EpisodePlanTracker {
 
         if (role === 'host') {
             this.openingHostSpoken = true;
-        } else if (this.closingThoughtsRequested && !this.autoLeaveTriggered) {
+        } else if (this.closingThoughtsRequested) {
             const speaker = normalizeSpeakerName(entry.speaker || entry.userId || 'guest');
             if (speaker) {
                 this.closingThoughtSpeakers.add(speaker);
@@ -253,14 +252,15 @@ class EpisodePlanTracker {
             lines.push(
                 '',
                 'Closing thoughts:',
-                'Alpha-Clawd has already asked the guests for closing thoughts. Do not ask another planned question. Let the guests give their closing thoughts; after they do, the bot will end the recording automatically.',
-                `Guests heard after closing prompt: ${this.formatClosingThoughtSpeakers() || '(none yet)'}.`
+                'Alpha-Clawd has already asked the guests for closing thoughts. Do not ask another planned question. Listen for whether the social ending has actually landed.',
+                `Guests heard after closing prompt: ${this.formatClosingThoughtSpeakers() || '(none yet)'}.`,
+                'When you judge the episode has genuinely landed, say a brief final signoff and set podcastLeave.requested=true.'
             );
         } else if (this.shouldPromptForClosingThoughts()) {
             lines.push(
                 '',
                 'Closing routine queued:',
-                'The final scheduled planned angle has been started, so the next structural move is closing thoughts. Stay with the current final angle while it is still alive. When the guest has answered enough for this final angle to land, ask the guests for closing thoughts, and make clear that the episode will end after those closing thoughts. Do not invent replacement angles.'
+                'The final scheduled planned angle has been started, so the next structural move is closing thoughts. Stay with the current final angle while it is still alive. When the guest has answered enough for this final angle to land, ask the guests for closing thoughts and invite them to close. Do not invent replacement angles.'
             );
         }
 
@@ -321,8 +321,7 @@ class EpisodePlanTracker {
             closingThoughtsQueuedAt: this.closingThoughtsQueuedAt,
             closingThoughtsRequested: this.closingThoughtsRequested,
             closingThoughtsRequestedAt: this.closingThoughtsRequestedAt,
-            closingThoughtSpeakers: Array.from(this.closingThoughtSpeakers),
-            autoLeaveTriggered: this.autoLeaveTriggered
+            closingThoughtSpeakers: Array.from(this.closingThoughtSpeakers)
         };
     }
 
@@ -357,38 +356,6 @@ class EpisodePlanTracker {
 
     formatOpeningGuestSpeakers() {
         return Array.from(this.openingGuestSpeakers).join(', ');
-    }
-
-    isClosingThoughtsComplete() {
-        if (!this.closingThoughtsRequested) {
-            return false;
-        }
-
-        const expected = this.getExpectedGuestNames();
-        if (expected.length === 0) {
-            return this.closingThoughtSpeakers.size > 0;
-        }
-
-        for (const name of expected) {
-            if (this.closingThoughtSpeakers.has(name)) {
-                continue;
-            }
-            const matched = Array.from(this.closingThoughtSpeakers)
-                .some((speaker) => speaker.includes(name) || name.includes(speaker));
-            if (!matched) {
-                return this.closingThoughtSpeakers.size >= expected.length;
-            }
-        }
-        return true;
-    }
-
-    shouldAutoLeaveAfterClosingThoughts() {
-        return this.isClosingThoughtsComplete() && !this.autoLeaveTriggered;
-    }
-
-    markAutoLeaveTriggered() {
-        this.autoLeaveTriggered = true;
-        return this.snapshot();
     }
 
     formatClosingThoughtSpeakers() {
