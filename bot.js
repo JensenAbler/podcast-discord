@@ -218,7 +218,17 @@ class AlphaClawdVoiceBot {
         this.showRunnerGenerator = options.showRunnerGenerator || new ShowRunnerGenerator(options.showRunnerOptions || {});
         this.episodePlanStore = options.episodePlanStore || new EpisodePlanStore(options.episodePlanStoreOptions || {});
         this.planningSessions = new Map(); // channelId -> planning session
+        this.planningAudioTranscriptionEnabled = options.planningAudioTranscriptionEnabled !== undefined
+            ? Boolean(options.planningAudioTranscriptionEnabled)
+            : process.env.PODCAST_PLANNING_AUDIO_TRANSCRIPTION_ENABLED !== 'false';
+        this.planningAudioMaxBytes = Number(options.planningAudioMaxBytes || process.env.PODCAST_PLANNING_AUDIO_MAX_BYTES || 25 * 1024 * 1024);
+        this.planningAudioDownloadTimeoutMs = Number(options.planningAudioDownloadTimeoutMs || process.env.PODCAST_PLANNING_AUDIO_DOWNLOAD_TIMEOUT_MS || 30000);
+        this.planningAudioDecodeTimeoutMs = Number(options.planningAudioDecodeTimeoutMs || process.env.PODCAST_PLANNING_AUDIO_DECODE_TIMEOUT_MS || 30000);
         this.episodePlanTrackers = new Map(); // guildId -> EpisodePlanTracker
+        this.autonomousLeaveInFlight = new Set(); // guildId -> planned ending leave routine in progress
+        this.autonomousLeaveDelayMs = Number.isFinite(Number(options.autonomousLeaveDelayMs))
+            ? Math.max(0, Number(options.autonomousLeaveDelayMs))
+            : 250;
         this.bigBrainAwarenessSelectionEnabled = options.bigBrainAwarenessSelectionEnabled !== undefined
             ? Boolean(options.bigBrainAwarenessSelectionEnabled)
             : process.env.PODCAST_BIG_BRAIN_AWARENESS_SELECTION_ENABLED === 'true';
@@ -920,11 +930,41 @@ class AlphaClawdVoiceBot {
         }
         try {
             tracker.observeTranscriptEntry(entry);
-            return tracker.snapshot();
+            const snapshot = tracker.snapshot();
+            this.maybeScheduleAutonomousPlanLeave(guildId, tracker);
+            return snapshot;
         } catch (error) {
             console.warn(`[Bot] Episode plan tracker transcript entry failed: ${error.message}`);
             return null;
         }
+    }
+
+    maybeScheduleAutonomousPlanLeave(guildId, tracker) {
+        if (!tracker?.shouldAutoLeaveAfterClosingThoughts?.()) {
+            return false;
+        }
+        if (!this.isRecordingActive(guildId)) {
+            return false;
+        }
+        if (!this.autonomousLeaveInFlight) {
+            this.autonomousLeaveInFlight = new Set();
+        }
+        if (this.autonomousLeaveInFlight.has(guildId)) {
+            return false;
+        }
+
+        this.autonomousLeaveInFlight.add(guildId);
+        tracker.markAutoLeaveTriggered?.();
+        const delayMs = Number.isFinite(Number(this.autonomousLeaveDelayMs))
+            ? Math.max(0, Number(this.autonomousLeaveDelayMs))
+            : 250;
+        console.log(`[Bot] Episode plan closing thoughts received; scheduling autonomous podcast leave in ${delayMs}ms`);
+        setTimeout(() => {
+            this.handleAutonomousPodcastLeave(guildId).catch((error) => {
+                console.error('[Bot] Autonomous podcast leave failed:', error);
+            });
+        }, delayMs);
+        return true;
     }
 
     setInternalThoughtUserSpeaking(guildId, userId, speaking) {
@@ -2676,7 +2716,7 @@ class AlphaClawdVoiceBot {
             return true;
         }
 
-        const record = this.buildPlanningMessageRecord(message);
+        const record = await this.buildPlanningMessageRecord(message);
         if (!record.text) {
             console.log(`[Bot] Podcast planning ignored empty message: channel=${channelId}, author=${message.author?.id || 'unknown'}`);
             return true;
@@ -2710,14 +2750,162 @@ class AlphaClawdVoiceBot {
         return true;
     }
 
-    buildPlanningMessageRecord(message) {
+    async buildPlanningMessageRecord(message) {
         const memberName = message.member?.displayName || message.author?.globalName || message.author?.username || 'Human';
+        const baseText = String(message.content || '').trim();
+        const audioTranscriptions = await this.transcribePlanningAudioAttachments(message);
+        const parts = [baseText, ...audioTranscriptions.map((item) => item.text)].filter(Boolean);
         return {
             speaker: memberName,
             userId: message.author?.id || null,
             timestamp: message.createdAt instanceof Date ? message.createdAt.toISOString() : new Date().toISOString(),
-            text: String(message.content || '').trim()
+            text: parts.join('\n\n')
         };
+    }
+
+    async transcribePlanningAudioAttachments(message) {
+        if (!this.planningAudioTranscriptionEnabled) {
+            return [];
+        }
+        const attachments = this.getDiscordMessageAttachments(message)
+            .filter((attachment) => this.isPlanningAudioAttachment(attachment));
+        if (attachments.length === 0) {
+            return [];
+        }
+
+        const results = [];
+        for (const attachment of attachments) {
+            const name = attachment.name || 'audio attachment';
+            try {
+                console.log(
+                    `[Bot] Podcast planning transcribing audio attachment: ` +
+                    `channel=${message.channelId || message.channel?.id || 'unknown'}, name=${name}, ` +
+                    `contentType=${attachment.contentType || 'unknown'}, size=${attachment.size || 'unknown'}`
+                );
+                const compressed = await this.downloadPlanningAudioAttachment(attachment);
+                const pcm = await this.decodePlanningAudioToPcm(compressed, attachment);
+                const transcript = await this.voiceProvider.transcribe(pcm, {
+                    sampleRate: 48000,
+                    channels: 2,
+                    filename: `${path.basename(name, path.extname(name)) || 'planning-audio'}.wav`,
+                    language: process.env.WHISPER_LANGUAGE || 'en'
+                });
+                const text = String(transcript?.text || '').trim();
+                if (!text) {
+                    console.log(`[Bot] Podcast planning audio attachment produced empty transcript: ${name}`);
+                    continue;
+                }
+                results.push({
+                    attachment,
+                    text: `[Audio attachment transcription: ${name}]\n${text}`
+                });
+                console.log(`[Bot] Podcast planning audio attachment transcribed: name=${name}, chars=${text.length}`);
+            } catch (error) {
+                console.warn(`[Bot] Podcast planning audio attachment transcription failed for ${name}: ${error.message}`);
+                results.push({
+                    attachment,
+                    text: `[Audio attachment transcription failed: ${name} - ${error.message}]`
+                });
+            }
+        }
+        return results;
+    }
+
+    isPlanningAudioAttachment(attachment = {}) {
+        const contentType = String(attachment.contentType || '').toLowerCase();
+        const name = String(attachment.name || '').toLowerCase();
+        return contentType.startsWith('audio/') ||
+            /\.(ogg|oga|opus|mp3|wav|m4a|aac|flac|webm|mp4)$/i.test(name);
+    }
+
+    async downloadPlanningAudioAttachment(attachment = {}) {
+        const url = String(attachment.url || attachment.proxyURL || '').trim();
+        if (!url) {
+            throw new Error('attachment has no download URL');
+        }
+        const declaredSize = Number(attachment.size || 0);
+        const maxBytes = Number.isFinite(this.planningAudioMaxBytes) && this.planningAudioMaxBytes > 0
+            ? this.planningAudioMaxBytes
+            : 25 * 1024 * 1024;
+        if (Number.isFinite(declaredSize) && declaredSize > maxBytes) {
+            throw new Error(`attachment is too large (${declaredSize} bytes)`);
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), this.planningAudioDownloadTimeoutMs || 30000);
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            if (!response.ok) {
+                throw new Error(`download failed: ${response.status}`);
+            }
+            const buffer = Buffer.from(await response.arrayBuffer());
+            if (buffer.byteLength > maxBytes) {
+                throw new Error(`attachment is too large (${buffer.byteLength} bytes)`);
+            }
+            return buffer;
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    async decodePlanningAudioToPcm(audioBuffer, attachment = {}) {
+        if (!Buffer.isBuffer(audioBuffer) || audioBuffer.length === 0) {
+            throw new Error('audio attachment was empty');
+        }
+
+        return await new Promise((resolve, reject) => {
+            const args = [
+                '-hide_banner',
+                '-loglevel', 'error',
+                '-i', 'pipe:0',
+                '-f', 's16le',
+                '-acodec', 'pcm_s16le',
+                '-ac', '2',
+                '-ar', '48000',
+                'pipe:1'
+            ];
+            const ffmpeg = spawn('ffmpeg', args, { windowsHide: true });
+            const stdout = [];
+            const stderr = [];
+            let settled = false;
+            const timeout = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                ffmpeg.kill('SIGKILL');
+                reject(new Error('audio decode timed out'));
+            }, this.planningAudioDecodeTimeoutMs || 30000);
+
+            ffmpeg.stdout.on('data', (chunk) => stdout.push(chunk));
+            ffmpeg.stderr.on('data', (chunk) => stderr.push(chunk));
+            ffmpeg.on('error', (error) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                reject(error);
+            });
+            ffmpeg.on('close', (code) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                if (code !== 0) {
+                    const detail = Buffer.concat(stderr).toString('utf8').trim();
+                    reject(new Error(`audio decode failed${detail ? `: ${detail}` : ''}`));
+                    return;
+                }
+                const pcm = Buffer.concat(stdout);
+                if (pcm.length === 0) {
+                    reject(new Error('audio decode produced no PCM data'));
+                    return;
+                }
+                console.log(
+                    `[Bot] Podcast planning decoded audio attachment: ` +
+                    `name=${attachment.name || 'audio'}, inputBytes=${audioBuffer.length}, pcmBytes=${pcm.length}`
+                );
+                resolve(pcm);
+            });
+
+            ffmpeg.stdin.end(audioBuffer);
+        });
     }
 
     describePlanningSession(session) {
@@ -4278,84 +4466,152 @@ class AlphaClawdVoiceBot {
         console.log(`[Bot] Leave command received for guild ${guildId}`);
 
         try {
-            if (!this.voiceManager.isConnected(guildId)) {
-                console.log(`[Bot] Not connected to voice in guild ${guildId}`);
-                return await interaction.editReply({
-                    content: 'I\'m not in a voice channel.'
-                });
-            }
-
-            const wasRecording = this.recordingState.get(guildId) === this.RecordingState.RECORDING;
-            let recordingPath = null;
-
-            if (wasRecording) {
-                this.recordingState.set(guildId, this.RecordingState.STOPPING);
-                this.conversationBuffer?.clear?.();
-                this.stopIdleDecisionLoop(guildId);
-                await this.stopGeminiLiveSession(guildId);
-                this.podcastGenerator.endSession();
-                this.consecutiveGeneratorSilences?.delete?.(guildId);
-            }
-
-            // Notify Gateway/OpenClaw when it is driving responses, mirroring is enabled,
-            // or bigBrain handoff may need session context.
-            if (wasRecording && this.wsClient.isAuthenticated && this.shouldConnectGatewayWs() && this.wsClient.canInjectMessages?.()) {
-                try {
-                    await this.wsClient.injectPodcastEvent({
-                        event: 'session_end',
-                        recording: false
-                    });
-                    console.log('[Bot] Injected podcast session_end event');
-                } catch (err) {
-                    console.error('[Bot] Failed to notify agent of session end:', err.message);
-                }
-            }
-
-            // Re-enable cron jobs that were disabled
-            if (this.disabledCronJobs.length > 0) {
-                try {
-                    await this.gatewayBridge.enableAllCronJobs();
-                    console.log(`[Bot] Re-enabled ${this.disabledCronJobs.length} cron job(s)`);
-                } catch (error) {
-                    console.error('[Bot] Failed to re-enable cron jobs:', error.message);
-                }
-                this.disabledCronJobs = [];
-            }
-
-            // Stop recording if active
-            if (wasRecording) {
-                let result = null;
-                try {
-                    result = await this.voiceManager.stopRecording(guildId);
-                    recordingPath = result?.recordingPath;
-                } finally {
-                    this.endEpisodePlanTracker(guildId);
-                    await this.endInternalThoughtSession(guildId);
-                }
-            }
-
-            // Clean up recording state
-            this.recordingState.delete(guildId);
-            this.consentWaiters.delete(guildId);
-            this.sessionHostModes.delete(guildId);
-            this.recordingTextChannels.delete(guildId);
-            this.discordContextProcessing.delete(guildId);
-
-            // Leave voice channel
-            await this.voiceManager.leaveChannel(guildId);
-
-            // Build response message
-            let message = '👋 Left the voice channel.';
-            if (wasRecording && recordingPath) {
-                message += `\n\n✅ **Episode saved to:**\n\`\`\`${recordingPath}\`\`\``;
-            }
-            message += '\n\nSee you next time!';
-
-            await interaction.editReply(message);
-
+            const result = await this.leavePodcastSession(guildId, {
+                reason: 'slash_command'
+            });
+            await interaction.editReply(result.message);
+            return;
         } catch (error) {
             console.error('[Bot] Leave error:', error);
-            await interaction.editReply(`❌ Error: ${error.message}`);
+            await interaction.editReply(`Error: ${error.message}`);
+        }
+    }
+
+    async leavePodcastSession(guildId, options = {}) {
+        const wasRecording = this.recordingState.get(guildId) === this.RecordingState.RECORDING;
+        const wasConnected = this.voiceManager.isConnected(guildId);
+        const channelId = this.recordingTextChannels.get(guildId) || options.channelId || null;
+        let recordingPath = null;
+
+        if (!wasConnected && !wasRecording) {
+            console.log(`[Bot] Not connected to voice in guild ${guildId}`);
+            return {
+                wasRecording,
+                recordingPath,
+                channelId,
+                message: 'I\'m not in a voice channel.'
+            };
+        }
+
+        if (wasRecording) {
+            this.recordingState.set(guildId, this.RecordingState.STOPPING);
+            this.conversationBuffer?.clear?.();
+            this.stopIdleDecisionLoop(guildId);
+            await this.stopGeminiLiveSession(guildId);
+            this.podcastGenerator.endSession();
+            this.consecutiveGeneratorSilences?.delete?.(guildId);
+        }
+
+        // Notify Gateway/OpenClaw when it is driving responses, mirroring is enabled,
+        // or bigBrain handoff may need session context.
+        if (wasRecording && this.wsClient?.isAuthenticated && this.shouldConnectGatewayWs() && this.wsClient.canInjectMessages?.()) {
+            try {
+                await this.wsClient.injectPodcastEvent({
+                    event: 'session_end',
+                    recording: false
+                });
+                console.log('[Bot] Injected podcast session_end event');
+            } catch (err) {
+                console.error('[Bot] Failed to notify agent of session end:', err.message);
+            }
+        }
+
+        // Re-enable cron jobs that were disabled
+        if (this.disabledCronJobs.length > 0) {
+            try {
+                await this.gatewayBridge.enableAllCronJobs();
+                console.log(`[Bot] Re-enabled ${this.disabledCronJobs.length} cron job(s)`);
+            } catch (error) {
+                console.error('[Bot] Failed to re-enable cron jobs:', error.message);
+            }
+            this.disabledCronJobs = [];
+        }
+
+        // Stop recording if active
+        if (wasRecording) {
+            let result = null;
+            try {
+                result = await this.voiceManager.stopRecording(guildId);
+                recordingPath = result?.recordingPath;
+            } finally {
+                this.endEpisodePlanTracker(guildId);
+                await this.endInternalThoughtSession(guildId);
+            }
+        }
+
+        // Clean up recording state
+        this.recordingState.delete(guildId);
+        this.consentWaiters.delete(guildId);
+        this.sessionHostModes.delete(guildId);
+        this.recordingTextChannels.delete(guildId);
+        this.discordContextProcessing.delete(guildId);
+        this.autonomousLeaveInFlight?.delete?.(guildId);
+
+        // Leave voice channel
+        if (wasConnected) {
+            await this.voiceManager.leaveChannel(guildId);
+        }
+
+        return {
+            wasRecording,
+            recordingPath,
+            channelId,
+            message: this.buildLeaveMessage({
+                wasRecording,
+                recordingPath,
+                reason: options.reason
+            })
+        };
+    }
+
+    buildLeaveMessage(options = {}) {
+        let cleanMessage = options.reason === 'episode_plan_complete'
+            ? 'Episode plan complete. Closing thoughts received, so I ended the recording.'
+            : 'Left the voice channel.';
+        if (options.wasRecording && options.recordingPath) {
+            cleanMessage += `\n\nEpisode saved to:\n\`\`\`${options.recordingPath}\`\`\``;
+        }
+        cleanMessage += '\n\nSee you next time!';
+        return cleanMessage;
+    }
+
+    async handleAutonomousPodcastLeave(guildId) {
+        try {
+            if (!this.isRecordingActive(guildId)) {
+                this.autonomousLeaveInFlight?.delete?.(guildId);
+                return null;
+            }
+
+            console.log(`[Bot] Running autonomous /podcast-leave for guild ${guildId}`);
+            const result = await this.leavePodcastSession(guildId, {
+                reason: 'episode_plan_complete'
+            });
+            await this.sendAutonomousLeaveMessage(result);
+            return result;
+        } finally {
+            this.autonomousLeaveInFlight?.delete?.(guildId);
+        }
+    }
+
+    async sendAutonomousLeaveMessage(result = {}) {
+        const channelId = result.channelId;
+        if (!channelId || !result.message) {
+            return false;
+        }
+
+        try {
+            let channel = this.client?.channels?.cache?.get?.(channelId) || null;
+            if (!channel && this.client?.channels?.fetch) {
+                channel = await this.client.channels.fetch(channelId).catch(() => null);
+            }
+            if (!channel?.send) {
+                return false;
+            }
+            await channel.send(result.message);
+            return true;
+        } catch (error) {
+            console.warn(`[Bot] Failed to send autonomous leave message: ${error.message}`);
+            return false;
         }
     }
 

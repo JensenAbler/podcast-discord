@@ -3304,6 +3304,96 @@ async function runTests() {
             throw new Error(`Episode plan tracker did not move chosen angles correctly: ${JSON.stringify({ initialBlock, afterExpansion, afterChoice, afterDeepening, afterMove, snapshot: tracker.snapshot() })}`);
         }
 
+        const finalTracker = new EpisodePlanTracker(generated.plan, {
+            startedAt: '2026-05-15T00:00:00.000Z',
+            openingHostSpoken: true,
+            openingGuestSpeakers: ['Jensen']
+        });
+        [
+            ['guest-background', 'Let us establish the background first.', '2026-05-15T00:01:00.000Z'],
+            ['internal-thoughts', 'Let us go into internal thoughts.', '2026-05-15T00:02:00.000Z'],
+            ['live-structure', 'Now the live structure piece.', '2026-05-15T00:03:00.000Z'],
+            ['listener-value', 'What does this give the listener?', '2026-05-15T00:04:00.000Z'],
+            ['closing-message', 'Let us land the episode cleanly.', '2026-05-15T00:05:00.000Z']
+        ].forEach(([chosenAngle, speech, now]) => {
+            finalTracker.applySpokenResponse({
+                shouldRespond: true,
+                speech,
+                chosenAngle
+            }, { now });
+        });
+        const finalQueuedBlock = finalTracker.getStructureBlock('2026-05-15T00:05:30.000Z');
+        const finalQueuedSnapshot = finalTracker.snapshot();
+        finalTracker.observeTranscriptEntry({
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            timestamp: '2026-05-15T00:06:00.000Z',
+            duration: 1
+        });
+        const prematureLeaveReady = finalTracker.shouldAutoLeaveAfterClosingThoughts();
+        finalTracker.applySpokenResponse({
+            shouldRespond: true,
+            speech: 'Before we wrap, Jensen, any closing thoughts before we end the episode?',
+            chosenAngle: 'closing-message'
+        }, { now: '2026-05-15T00:06:30.000Z' });
+        const closingRequestedSnapshot = finalTracker.snapshot();
+        finalTracker.observeTranscriptEntry({
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            timestamp: '2026-05-15T00:07:00.000Z',
+            duration: 1
+        });
+        const readyToLeave = finalTracker.shouldAutoLeaveAfterClosingThoughts();
+        finalTracker.markAutoLeaveTriggered();
+        if (
+            finalQueuedSnapshot.closingThoughtsQueued !== true ||
+            finalQueuedSnapshot.closingThoughtsRequested !== false ||
+            !finalQueuedBlock.includes('Closing routine queued:') ||
+            !finalQueuedBlock.includes('The final scheduled planned angle has been started') ||
+            prematureLeaveReady !== false ||
+            closingRequestedSnapshot.closingThoughtsRequested !== true ||
+            closingRequestedSnapshot.closingThoughtsQueued !== true ||
+            closingRequestedSnapshot.lastChosenAngle !== '' ||
+            !closingRequestedSnapshot.completedAngles.includes('closing-message') ||
+            readyToLeave !== true ||
+            finalTracker.shouldAutoLeaveAfterClosingThoughts() !== false ||
+            finalTracker.snapshot().autoLeaveTriggered !== true
+        ) {
+            throw new Error(`Episode plan tracker did not queue and complete autonomous closing correctly: ${JSON.stringify({ finalQueuedBlock, finalQueuedSnapshot, prematureLeaveReady, closingRequestedSnapshot, readyToLeave, snapshot: finalTracker.snapshot() })}`);
+        }
+
+        const socialCloseTracker = new EpisodePlanTracker(generated.plan, {
+            startedAt: '2026-05-15T00:00:00.000Z',
+            openingHostSpoken: true,
+            openingGuestSpeakers: ['Jensen']
+        });
+        [
+            ['guest-background', 'Let us establish the background first.', '2026-05-15T00:01:00.000Z'],
+            ['internal-thoughts', 'Let us go into internal thoughts.', '2026-05-15T00:02:00.000Z'],
+            ['live-structure', 'Now the live structure piece.', '2026-05-15T00:03:00.000Z'],
+            ['listener-value', 'What does this give the listener?', '2026-05-15T00:04:00.000Z'],
+            ['closing-message', 'Let us land the episode cleanly.', '2026-05-15T00:05:00.000Z']
+        ].forEach(([chosenAngle, speech, now]) => {
+            socialCloseTracker.applySpokenResponse({ shouldRespond: true, speech, chosenAngle }, { now });
+        });
+        socialCloseTracker.applySpokenResponse({
+            shouldRespond: true,
+            speech: 'Jensen, thank you for letting tonight be vulnerable. I am grateful you brought it here.',
+            chosenAngle: 'closing-message'
+        }, { now: '2026-05-15T00:06:00.000Z' });
+        socialCloseTracker.observeTranscriptEntry({
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            timestamp: '2026-05-15T00:06:30.000Z',
+            duration: 1
+        });
+        if (
+            socialCloseTracker.snapshot().closingThoughtsRequested !== true ||
+            socialCloseTracker.shouldAutoLeaveAfterClosingThoughts() !== true
+        ) {
+            throw new Error(`Episode plan tracker did not treat queued social signoff as closing prompt: ${JSON.stringify(socialCloseTracker.snapshot())}`);
+        }
+
         const openingGuildId = 'guild-planned-opening';
         const openingTracker = new EpisodePlanTracker(generated.plan, {
             startedAt: '2026-05-15T00:00:00.000Z'
@@ -3619,6 +3709,91 @@ async function runTests() {
             throw new Error(`Planning revisions did not preserve basename/version history: ${JSON.stringify({ planningCalls, firstSaved, secondSaved, sentMessages })}`);
         }
 
+        const audioPlanningBot = Object.create(AlphaClawdVoiceBot.prototype);
+        audioPlanningBot.planningSessions = new Map();
+        audioPlanningBot.planningControllerEnabled = true;
+        audioPlanningBot.planningAudioTranscriptionEnabled = true;
+        audioPlanningBot.planningAudioMaxBytes = 1024 * 1024;
+        audioPlanningBot.planningAudioDownloadTimeoutMs = 1000;
+        audioPlanningBot.planningAudioDecodeTimeoutMs = 1000;
+        audioPlanningBot.episodePlanStore = store;
+        const audioPlanningCalls = [];
+        audioPlanningBot.showRunnerGenerator = {
+            generate: async (input) => {
+                audioPlanningCalls.push(input);
+                return {
+                    action: 'ask_followup',
+                    messageToChannel: 'I captured that voice note.',
+                    approved: false,
+                    plan: null
+                };
+            }
+        };
+        let downloadedPlanningAudio = null;
+        let decodedPlanningAudio = null;
+        let transcribedPlanningAudio = null;
+        audioPlanningBot.downloadPlanningAudioAttachment = async (attachment) => {
+            downloadedPlanningAudio = attachment;
+            return Buffer.from('encoded-ogg');
+        };
+        audioPlanningBot.decodePlanningAudioToPcm = async (buffer, attachment) => {
+            decodedPlanningAudio = { buffer, attachment };
+            return Buffer.from('decoded-pcm');
+        };
+        audioPlanningBot.voiceProvider = {
+            transcribe: async (buffer, options) => {
+                transcribedPlanningAudio = { buffer, options };
+                return { text: 'Jordan says the relic dream should be part of the background brief.' };
+            }
+        };
+        const audioPlanningMessages = [];
+        const audioPlanningChannel = {
+            id: 'channel-audio-plan',
+            send: async (content) => { audioPlanningMessages.push(content); },
+            sendTyping: async () => {}
+        };
+        await audioPlanningBot.handlePodcastPlanCommand({
+            channelId: 'channel-audio-plan',
+            guildId: 'guild-plan',
+            user: { id: 'planner' },
+            reply: async () => {}
+        });
+        await audioPlanningBot.handlePlanningMessage({
+            id: 'message-audio-plan',
+            channelId: 'channel-audio-plan',
+            channel: audioPlanningChannel,
+            guildId: 'guild-plan',
+            content: '',
+            createdAt: new Date('2026-05-15T00:01:30.000Z'),
+            author: { id: 'producer-audio', username: 'producer-audio', bot: false },
+            member: { displayName: 'producer-audio' },
+            attachments: new Map([[
+                'voice-note',
+                {
+                    id: 'voice-note',
+                    name: 'discord-voice-message.ogg',
+                    url: 'https://cdn.discord.test/voice.ogg',
+                    contentType: 'audio/ogg',
+                    size: 512
+                }
+            ]])
+        });
+        await audioPlanningBot.planningSessions.get('channel-audio-plan')?.processing;
+        const audioFeedback = audioPlanningCalls[0]?.latestFeedback || '';
+        if (
+            audioPlanningCalls.length !== 1 ||
+            !downloadedPlanningAudio ||
+            downloadedPlanningAudio.name !== 'discord-voice-message.ogg' ||
+            decodedPlanningAudio?.buffer.toString() !== 'encoded-ogg' ||
+            transcribedPlanningAudio?.buffer.toString() !== 'decoded-pcm' ||
+            transcribedPlanningAudio?.options.sampleRate !== 48000 ||
+            !audioFeedback.includes('[Audio attachment transcription: discord-voice-message.ogg]') ||
+            !audioFeedback.includes('relic dream should be part of the background brief') ||
+            audioPlanningMessages.at(-1) !== 'I captured that voice note.'
+        ) {
+            throw new Error(`Planning audio attachment was not transcribed into showrunner text: ${JSON.stringify({ audioPlanningCalls, downloadedPlanningAudio, decodedPlanningAudio, transcribedPlanningAudio, audioPlanningMessages })}`);
+        }
+
         const burstBot = Object.create(AlphaClawdVoiceBot.prototype);
         burstBot.planningSessions = new Map();
         burstBot.planningControllerEnabled = true;
@@ -3819,6 +3994,75 @@ async function runTests() {
         });
         if (!deferred || !editReply.includes('Error:') || joinCalled || joinBot.consentWaiters.has('guild-plan')) {
             throw new Error(`Invalid plan was not rejected before voice join/consent: ${JSON.stringify({ deferred, editReply, joinCalled, consent: Array.from(joinBot.consentWaiters.entries()) })}`);
+        }
+
+        const autoLeaveGuildId = 'guild-auto-leave';
+        const autoLeaveBot = Object.create(AlphaClawdVoiceBot.prototype);
+        autoLeaveBot.RecordingState = { RECORDING: 'RECORDING', STOPPING: 'STOPPING' };
+        autoLeaveBot.recordingState = new Map([[autoLeaveGuildId, 'RECORDING']]);
+        autoLeaveBot.recordingTextChannels = new Map([[autoLeaveGuildId, 'channel-auto-leave']]);
+        autoLeaveBot.consentWaiters = new Map([[autoLeaveGuildId, {}]]);
+        autoLeaveBot.sessionHostModes = new Map([[autoLeaveGuildId, 'current']]);
+        autoLeaveBot.discordContextProcessing = new Map([[autoLeaveGuildId, Promise.resolve()]]);
+        autoLeaveBot.consecutiveGeneratorSilences = new Map([[autoLeaveGuildId, 2]]);
+        autoLeaveBot.autonomousLeaveInFlight = new Set([autoLeaveGuildId]);
+        autoLeaveBot.disabledCronJobs = [];
+        let autoBufferCleared = false;
+        let autoIdleStopped = false;
+        let autoGeminiStopped = false;
+        let autoGeneratorEnded = false;
+        let autoPlanEnded = false;
+        let autoThoughtsEnded = false;
+        let autoRecordingStopped = false;
+        let autoVoiceLeft = false;
+        let autoChannelMessage = '';
+        autoLeaveBot.conversationBuffer = { clear: () => { autoBufferCleared = true; } };
+        autoLeaveBot.stopIdleDecisionLoop = () => { autoIdleStopped = true; };
+        autoLeaveBot.stopGeminiLiveSession = async () => { autoGeminiStopped = true; };
+        autoLeaveBot.podcastGenerator = { endSession: () => { autoGeneratorEnded = true; } };
+        autoLeaveBot.wsClient = { isAuthenticated: false };
+        autoLeaveBot.shouldConnectGatewayWs = () => false;
+        autoLeaveBot.gatewayBridge = { enableAllCronJobs: async () => {} };
+        autoLeaveBot.endEpisodePlanTracker = () => { autoPlanEnded = true; return {}; };
+        autoLeaveBot.endInternalThoughtSession = async () => { autoThoughtsEnded = true; };
+        autoLeaveBot.voiceManager = {
+            isConnected: () => true,
+            stopRecording: async () => {
+                autoRecordingStopped = true;
+                return { recordingPath: path.join(tempRoot, 'auto-recording') };
+            },
+            leaveChannel: async () => { autoVoiceLeft = true; }
+        };
+        autoLeaveBot.client = {
+            channels: {
+                cache: {
+                    get: (channelId) => channelId === 'channel-auto-leave'
+                        ? { send: async (message) => { autoChannelMessage = message; } }
+                        : null
+                }
+            }
+        };
+        const autoLeaveResult = await autoLeaveBot.handleAutonomousPodcastLeave(autoLeaveGuildId);
+        if (
+            !autoLeaveResult?.message?.includes('Episode plan complete') ||
+            !autoBufferCleared ||
+            !autoIdleStopped ||
+            !autoGeminiStopped ||
+            !autoGeneratorEnded ||
+            !autoPlanEnded ||
+            !autoThoughtsEnded ||
+            !autoRecordingStopped ||
+            !autoVoiceLeft ||
+            autoLeaveBot.recordingState.has(autoLeaveGuildId) ||
+            autoLeaveBot.recordingTextChannels.has(autoLeaveGuildId) ||
+            autoLeaveBot.consentWaiters.has(autoLeaveGuildId) ||
+            autoLeaveBot.sessionHostModes.has(autoLeaveGuildId) ||
+            autoLeaveBot.discordContextProcessing.has(autoLeaveGuildId) ||
+            autoLeaveBot.consecutiveGeneratorSilences.has(autoLeaveGuildId) ||
+            autoLeaveBot.autonomousLeaveInFlight.has(autoLeaveGuildId) ||
+            !autoChannelMessage.includes('Episode saved to:')
+        ) {
+            throw new Error(`Autonomous planned leave did not reuse podcast leave cleanup: ${JSON.stringify({ autoLeaveResult, autoBufferCleared, autoIdleStopped, autoGeminiStopped, autoGeneratorEnded, autoPlanEnded, autoThoughtsEnded, autoRecordingStopped, autoVoiceLeft, autoChannelMessage, recordingState: Array.from(autoLeaveBot.recordingState.entries()) })}`);
         }
 
         fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -4554,6 +4798,19 @@ async function runTests() {
         delete process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS;
         if (envCooldownProbe.config.cooldownPeriod !== 75) {
             throw new Error(`Cooldown env override should be 75ms, got ${envCooldownProbe.config.cooldownPeriod}ms`);
+        }
+
+        process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS = '25';
+        const envGraceProbe = new ConversationBuffer();
+        delete process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS;
+        const envDynamicGrace = envGraceProbe.calculateGracePeriod([
+            { speaker: 'Jensen', transcription: 'long timed speech', speechDuration: 20000 }
+        ]);
+        const envFallbackGrace = envGraceProbe.calculateGracePeriod([
+            { speaker: 'Jensen', transcription: 'untimed speech' }
+        ]);
+        if (envGraceProbe.config.gracePeriod !== 25 || !envGraceProbe.getState().dynamicGrace || envDynamicGrace !== 700 || envFallbackGrace !== 25) {
+            throw new Error(`Env grace should be dynamic fallback only: ${JSON.stringify({ config: envGraceProbe.config, envDynamicGrace, envFallbackGrace })}`);
         }
 
         const graceCases = [

@@ -61,9 +61,10 @@ class ConversationBuffer {
             : (envGracePeriod !== null ? envGracePeriod : DEFAULT_GRACE_PERIOD);
 
         // dynamicGrace: explicit arg wins, then env, then implicit "true unless
-        // someone pinned a gracePeriod" — preserving the legacy behavior where
-        // passing a gracePeriod silently switches off the dynamic ladder.
-        const hasPinnedGracePeriod = explicitGracePeriod || envGracePeriod !== null;
+        // the caller pinned a gracePeriod". An env grace period is the fallback
+        // for untimed speech, not a production-wide opt-out from duration-aware
+        // turn-boundary grace.
+        const hasPinnedGracePeriod = explicitGracePeriod;
         const dynamicGrace = explicitDynamicGrace
             ? config.dynamicGrace
             : (envDynamicGrace !== null ? envDynamicGrace : !hasPinnedGracePeriod);

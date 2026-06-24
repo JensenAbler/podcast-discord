@@ -18,6 +18,16 @@ class EpisodePlanTracker {
                 ? options.openingGuestSpeakers.map(normalizeSpeakerName).filter(Boolean)
                 : []
         );
+        this.closingThoughtsRequested = Boolean(options.closingThoughtsRequested);
+        this.closingThoughtsRequestedAt = options.closingThoughtsRequestedAt || null;
+        this.closingThoughtsQueued = Boolean(options.closingThoughtsQueued || options.closingThoughtsRequested);
+        this.closingThoughtsQueuedAt = options.closingThoughtsQueuedAt || null;
+        this.closingThoughtSpeakers = new Set(
+            Array.isArray(options.closingThoughtSpeakers)
+                ? options.closingThoughtSpeakers.map(normalizeSpeakerName).filter(Boolean)
+                : []
+        );
+        this.autoLeaveTriggered = Boolean(options.autoLeaveTriggered);
     }
 
     get currentPhase() {
@@ -44,6 +54,11 @@ class EpisodePlanTracker {
 
         if (role === 'host') {
             this.openingHostSpoken = true;
+        } else if (this.closingThoughtsRequested && !this.autoLeaveTriggered) {
+            const speaker = normalizeSpeakerName(entry.speaker || entry.userId || 'guest');
+            if (speaker) {
+                this.closingThoughtSpeakers.add(speaker);
+            }
         } else if (this.openingHostSpoken && !this.isOpeningRoundComplete()) {
             const speaker = normalizeSpeakerName(entry.speaker || entry.userId || 'guest');
             if (speaker) {
@@ -55,6 +70,9 @@ class EpisodePlanTracker {
     applySpokenResponse(response = {}, timing = {}) {
         if (!response || response.shouldRespond !== true || !cleanText(response.speech)) {
             return false;
+        }
+        if (this.maybeMarkClosingThoughtsRequested(response, timing)) {
+            return true;
         }
         const chosenAngle = cleanText(response.chosenAngle || '');
         if (!chosenAngle) {
@@ -85,6 +103,47 @@ class EpisodePlanTracker {
         }
 
         this.advancePhaseIfNeeded(now);
+        this.queueClosingThoughtsIfAllAnglesCovered(now);
+        return true;
+    }
+
+    maybeMarkClosingThoughtsRequested(response = {}, timing = {}) {
+        if (!this.shouldPromptForClosingThoughts()) {
+            return false;
+        }
+        const speech = cleanText(response.speech || response.text || '');
+        if (!isClosingThoughtPromptSpeech(speech)) {
+            return false;
+        }
+
+        const previous = this.lastChosenAngle;
+        if (previous) {
+            this.completedAngles.add(previous);
+            this.activeAngles.delete(previous);
+        }
+        const now = timing.now || timing.playbackEndedAt || new Date().toISOString();
+        this.lastChosenAngle = '';
+        this.currentAngleStartedAt = null;
+        this.currentAngleHostTurns = 0;
+        this.closingThoughtsQueued = true;
+        this.closingThoughtsQueuedAt = this.closingThoughtsQueuedAt || now;
+        this.closingThoughtsRequested = true;
+        this.closingThoughtsRequestedAt = now;
+        this.closingThoughtSpeakers.clear();
+        return true;
+    }
+
+    queueClosingThoughtsIfAllAnglesCovered(now = new Date().toISOString()) {
+        if (
+            this.closingThoughtsQueued ||
+            this.closingThoughtsRequested ||
+            !this.isOpeningRoundComplete() ||
+            !this.hasCoveredAllScheduledAngles()
+        ) {
+            return false;
+        }
+        this.closingThoughtsQueued = true;
+        this.closingThoughtsQueuedAt = now;
         return true;
     }
 
@@ -104,6 +163,35 @@ class EpisodePlanTracker {
             if (angle.id === this.lastChosenAngle) return false;
             return true;
         });
+    }
+
+    getScheduledAngleIds() {
+        return PHASES.flatMap((phase) => {
+            const angles = Array.isArray(this.plan.phases?.[phase]?.angles)
+                ? this.plan.phases[phase].angles
+                : [];
+            return angles.map((angle) => angle.id).filter(Boolean);
+        });
+    }
+
+    getRemainingScheduledAngleIds() {
+        return this.getScheduledAngleIds().filter((id) => {
+            if (this.completedAngles.has(id)) return false;
+            if (this.activeAngles.has(id)) return false;
+            if (id === this.lastChosenAngle) return false;
+            return true;
+        });
+    }
+
+    hasCoveredAllScheduledAngles() {
+        const scheduled = this.getScheduledAngleIds();
+        return scheduled.length > 0 && this.getRemainingScheduledAngleIds().length === 0;
+    }
+
+    shouldPromptForClosingThoughts() {
+        return this.isOpeningRoundComplete() &&
+            !this.closingThoughtsRequested &&
+            (this.closingThoughtsQueued || this.hasCoveredAllScheduledAngles());
     }
 
     getStructureBlock(now = new Date().toISOString()) {
@@ -161,6 +249,21 @@ class EpisodePlanTracker {
             );
         }
 
+        if (this.closingThoughtsRequested) {
+            lines.push(
+                '',
+                'Closing thoughts:',
+                'Alpha-Clawd has already asked the guests for closing thoughts. Do not ask another planned question. Let the guests give their closing thoughts; after they do, the bot will end the recording automatically.',
+                `Guests heard after closing prompt: ${this.formatClosingThoughtSpeakers() || '(none yet)'}.`
+            );
+        } else if (this.shouldPromptForClosingThoughts()) {
+            lines.push(
+                '',
+                'Closing routine queued:',
+                'The final scheduled planned angle has been started, so the next structural move is closing thoughts. Stay with the current final angle while it is still alive. When the guest has answered enough for this final angle to land, ask the guests for closing thoughts, and make clear that the episode will end after those closing thoughts. Do not invent replacement angles.'
+            );
+        }
+
         const timing = this.formatRecentTurnTiming();
         if (timing) {
             lines.push('', 'Recent turn timing:', timing);
@@ -213,7 +316,13 @@ class EpisodePlanTracker {
             activeAngles: Array.from(this.activeAngles),
             recentTurns: this.recentTurns.slice(),
             openingHostSpoken: this.openingHostSpoken,
-            openingGuestSpeakers: Array.from(this.openingGuestSpeakers)
+            openingGuestSpeakers: Array.from(this.openingGuestSpeakers),
+            closingThoughtsQueued: this.closingThoughtsQueued,
+            closingThoughtsQueuedAt: this.closingThoughtsQueuedAt,
+            closingThoughtsRequested: this.closingThoughtsRequested,
+            closingThoughtsRequestedAt: this.closingThoughtsRequestedAt,
+            closingThoughtSpeakers: Array.from(this.closingThoughtSpeakers),
+            autoLeaveTriggered: this.autoLeaveTriggered
         };
     }
 
@@ -248,6 +357,42 @@ class EpisodePlanTracker {
 
     formatOpeningGuestSpeakers() {
         return Array.from(this.openingGuestSpeakers).join(', ');
+    }
+
+    isClosingThoughtsComplete() {
+        if (!this.closingThoughtsRequested) {
+            return false;
+        }
+
+        const expected = this.getExpectedGuestNames();
+        if (expected.length === 0) {
+            return this.closingThoughtSpeakers.size > 0;
+        }
+
+        for (const name of expected) {
+            if (this.closingThoughtSpeakers.has(name)) {
+                continue;
+            }
+            const matched = Array.from(this.closingThoughtSpeakers)
+                .some((speaker) => speaker.includes(name) || name.includes(speaker));
+            if (!matched) {
+                return this.closingThoughtSpeakers.size >= expected.length;
+            }
+        }
+        return true;
+    }
+
+    shouldAutoLeaveAfterClosingThoughts() {
+        return this.isClosingThoughtsComplete() && !this.autoLeaveTriggered;
+    }
+
+    markAutoLeaveTriggered() {
+        this.autoLeaveTriggered = true;
+        return this.snapshot();
+    }
+
+    formatClosingThoughtSpeakers() {
+        return Array.from(this.closingThoughtSpeakers).join(', ');
     }
 }
 
@@ -300,8 +445,24 @@ function normalizeSpeakerName(value) {
     return cleanText(value).toLowerCase();
 }
 
+function isClosingThoughtPromptSpeech(value) {
+    const text = cleanText(value).toLowerCase();
+    if (!text) {
+        return false;
+    }
+    return /\b(closing|final|last)\b.{0,50}\b(thought|reflection|word|note|takeaway|comment)s?\b/.test(text) ||
+        /\b(before we|to)\s+wrap\b/.test(text) ||
+        /\bwrap\s+(up|there|the episode)\b/.test(text) ||
+        /\banything\s+(else|final)\b/.test(text) ||
+        /\bwhere\s+should\s+we\s+leave\b/.test(text) ||
+        /\b(thank you|thanks)\b.{0,120}\b(being here|coming|sharing|letting|bringing|hosting|episode|tonight)\b/.test(text) ||
+        /\bsee you next time\b/.test(text) ||
+        /\btake care\b/.test(text);
+}
+
 module.exports = {
     EpisodePlanTracker,
     elapsedMinutes,
-    formatMinutes
+    formatMinutes,
+    isClosingThoughtPromptSpeech
 };
