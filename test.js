@@ -4045,6 +4045,8 @@ async function runTests() {
         let autoThoughtsEnded = false;
         let autoRecordingStopped = false;
         let autoVoiceLeft = false;
+        let autoVoiceLeaveStopRecordingOption = null;
+        const autoLeaveOrder = [];
         let autoChannelMessage = '';
         autoLeaveBot.conversationBuffer = { clear: () => { autoBufferCleared = true; } };
         autoLeaveBot.stopIdleDecisionLoop = () => { autoIdleStopped = true; };
@@ -4058,10 +4060,15 @@ async function runTests() {
         autoLeaveBot.voiceManager = {
             isConnected: () => true,
             stopRecording: async () => {
+                autoLeaveOrder.push('stopRecording');
                 autoRecordingStopped = true;
                 return { recordingPath: path.join(tempRoot, 'auto-recording') };
             },
-            leaveChannel: async () => { autoVoiceLeft = true; }
+            leaveChannel: async (_guildId, options = {}) => {
+                autoLeaveOrder.push('leaveChannel');
+                autoVoiceLeft = true;
+                autoVoiceLeaveStopRecordingOption = options.stopRecording;
+            }
         };
         autoLeaveBot.client = {
             channels: {
@@ -4085,6 +4092,8 @@ async function runTests() {
             !autoThoughtsEnded ||
             !autoRecordingStopped ||
             !autoVoiceLeft ||
+            autoVoiceLeaveStopRecordingOption !== false ||
+            autoLeaveOrder.join(',') !== 'leaveChannel,stopRecording' ||
             autoLeaveBot.recordingState.has(autoLeaveGuildId) ||
             autoLeaveBot.recordingTextChannels.has(autoLeaveGuildId) ||
             autoLeaveBot.consentWaiters.has(autoLeaveGuildId) ||
@@ -4094,7 +4103,7 @@ async function runTests() {
             autoLeaveBot.autonomousLeaveInFlight.has(autoLeaveGuildId) ||
             !autoChannelMessage.includes('Episode saved to:')
         ) {
-            throw new Error(`Model-requested leave did not reuse podcast leave cleanup: ${JSON.stringify({ autoLeaveResult, autoBufferCleared, autoIdleStopped, autoGeminiStopped, autoGeneratorEnded, autoPlanEnded, autoThoughtsEnded, autoRecordingStopped, autoVoiceLeft, autoChannelMessage, recordingState: Array.from(autoLeaveBot.recordingState.entries()) })}`);
+            throw new Error(`Model-requested leave did not disconnect before recording finalization: ${JSON.stringify({ autoLeaveResult, autoBufferCleared, autoIdleStopped, autoGeminiStopped, autoGeneratorEnded, autoPlanEnded, autoThoughtsEnded, autoRecordingStopped, autoVoiceLeft, autoVoiceLeaveStopRecordingOption, autoLeaveOrder, autoChannelMessage, recordingState: Array.from(autoLeaveBot.recordingState.entries()) })}`);
         }
 
         fs.rmSync(tempRoot, { recursive: true, force: true });

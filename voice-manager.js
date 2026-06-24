@@ -304,12 +304,15 @@ class VoiceManager {
      * Leave a voice channel and clean up
      * @param {string} guildId - Discord guild ID
      */
-    async leaveChannel(guildId) {
+    async leaveChannel(guildId, options = {}) {
         console.log(`[VoiceManager] Leaving voice channel in guild ${guildId}`);
+        const shouldStopRecording = options.stopRecording !== false;
 
         // Stop recording if active
-        if (this.isRecording.get(guildId)) {
+        if (shouldStopRecording && this.isRecording.get(guildId)) {
             await this.stopRecording(guildId);
+        } else if (!shouldStopRecording && this.isRecording.get(guildId)) {
+            console.log(`[VoiceManager] Leaving voice channel before recording finalization for guild ${guildId}`);
         }
 
         // Clean up receiver
@@ -334,7 +337,7 @@ class VoiceManager {
         }
 
         // Clean up recorder
-        const recorder = this.recorders.get(guildId);
+        const recorder = shouldStopRecording ? this.recorders.get(guildId) : null;
         if (recorder) {
             recorder.destroy();
             this.recorders.delete(guildId);

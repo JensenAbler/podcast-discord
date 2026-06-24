@@ -4497,6 +4497,11 @@ class AlphaClawdVoiceBot {
             this.disabledCronJobs = [];
         }
 
+        const leaveBeforeFinalization = Boolean(options.leaveBeforeFinalization && wasRecording && wasConnected);
+        if (leaveBeforeFinalization) {
+            await this.voiceManager.leaveChannel(guildId, { stopRecording: false });
+        }
+
         // Stop recording if active
         if (wasRecording) {
             let result = null;
@@ -4518,7 +4523,7 @@ class AlphaClawdVoiceBot {
         this.autonomousLeaveInFlight?.delete?.(guildId);
 
         // Leave voice channel
-        if (wasConnected) {
+        if (wasConnected && !leaveBeforeFinalization) {
             await this.voiceManager.leaveChannel(guildId);
         }
 
@@ -6656,7 +6661,8 @@ class AlphaClawdVoiceBot {
         try {
             const result = await this.leavePodcastSession(guildId, {
                 reason: 'model_requested',
-                modelReason: response?.podcastLeave?.reason || ''
+                modelReason: response?.podcastLeave?.reason || '',
+                leaveBeforeFinalization: true
             });
             await this.sendAutonomousLeaveMessage(result);
             return result;
