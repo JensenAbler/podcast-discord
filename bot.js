@@ -10,6 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { PassThrough, Transform } = require('stream');
 const { spawn } = require('child_process');
 const { StreamType } = require('@discordjs/voice');
@@ -208,6 +209,17 @@ class AlphaClawdVoiceBot {
         });
         this.discordContextInterpreter = options.discordContextInterpreter || new DiscordContextInterpreter(options.discordContextInterpreterOptions || {});
         this.discordContextProcessing = new Map(); // guildId -> promise
+        this.recordingImageArchiveFetch = options.recordingImageArchiveFetch || globalThis.fetch?.bind(globalThis);
+        this.recordingImageArchiveMaxBytes = Number(
+            options.recordingImageArchiveMaxBytes ||
+            process.env.PODCAST_RECORDING_IMAGE_ARCHIVE_MAX_BYTES ||
+            25 * 1024 * 1024
+        );
+        this.recordingImageArchiveTimeoutMs = Number(
+            options.recordingImageArchiveTimeoutMs ||
+            process.env.PODCAST_RECORDING_IMAGE_ARCHIVE_TIMEOUT_MS ||
+            30000
+        );
         this.recordingTextChannels = new Map(); // guildId -> text channel id where /podcast-join was invoked
         this.showRunnerEnabled = options.showRunnerEnabled !== undefined
             ? Boolean(options.showRunnerEnabled)
@@ -3974,9 +3986,22 @@ class AlphaClawdVoiceBot {
             return null;
         }
 
+        const imageArchive = this.archiveDiscordContextImages(message, baseInput)
+            .catch((error) => {
+                console.warn(
+                    `[Bot] Discord recording image archive failed: guild=${guildId}, ` +
+                    `message=${message.id || 'unknown'}, error=${error.message}`
+                );
+                return [];
+            });
+
         const output = baseInput.attachments.length > 0
             ? await this.discordContextInterpreter.interpret(baseInput)
             : this.buildDiscordTextAwarenessOutput(baseInput);
+        const archivedImages = await imageArchive;
+        if (archivedImages.length > 0) {
+            baseInput.archivedImages = archivedImages;
+        }
 
         const text = String(output.awarenessText || '').trim();
         if (!text) {
@@ -4017,6 +4042,206 @@ class AlphaClawdVoiceBot {
             console.log(`[Bot] Discord context shelf add skipped: guild=${guildId}, message=${message.id || 'unknown'}`);
         }
         return item;
+    }
+
+    getActiveRecordingPath(guildId) {
+        const statusPath = this.voiceManager?.getStatus?.(guildId)?.recordingPath;
+        if (statusPath) return statusPath;
+        return this.voiceManager?.recordingPaths?.get?.(guildId) || null;
+    }
+
+    getRecordingImageArchiveLimits() {
+        const maxBytes = Number(this.recordingImageArchiveMaxBytes);
+        const timeoutMs = Number(this.recordingImageArchiveTimeoutMs);
+        return {
+            maxBytes: Number.isFinite(maxBytes) && maxBytes > 0 ? maxBytes : 25 * 1024 * 1024,
+            timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 30000
+        };
+    }
+
+    async archiveDiscordContextImages(message, baseInput = null) {
+        const guildId = message?.guildId;
+        const input = baseInput || this.buildDiscordContextBaseInput(message);
+        const images = (input.attachments || [])
+            .filter((attachment) => this.getDiscordAttachmentKind(attachment) === 'image');
+        if (!guildId || images.length === 0) {
+            return [];
+        }
+
+        const recordingPath = this.getActiveRecordingPath(guildId);
+        if (!recordingPath) {
+            console.warn(`[Bot] Cannot archive Discord image; no active recording path for guild=${guildId}`);
+            return [];
+        }
+
+        const imageDir = path.join(recordingPath, 'images');
+        const manifestPath = path.join(imageDir, 'manifest.json');
+        fs.mkdirSync(imageDir, { recursive: true });
+
+        const manifest = this.readRecordingImageManifest(manifestPath);
+        const existing = new Map(
+            (manifest.images || [])
+                .map((entry) => [String(entry.key || `${entry.messageId || ''}:${entry.attachmentId || ''}`), entry])
+        );
+        const archived = [];
+
+        for (let index = 0; index < images.length; index++) {
+            const attachment = images[index];
+            const key = `${input.messageId || message?.id || 'message'}:${attachment.id || index}`;
+            if (existing.has(key)) {
+                archived.push(existing.get(key));
+                continue;
+            }
+
+            let entry;
+            try {
+                entry = await this.archiveDiscordContextImageAttachment({
+                    recordingPath,
+                    imageDir,
+                    input,
+                    attachment,
+                    index,
+                    key
+                });
+            } catch (error) {
+                console.warn(
+                    `[Bot] Failed to archive Discord image attachment: guild=${guildId}, ` +
+                    `message=${input.messageId || message?.id || 'unknown'}, ` +
+                    `attachment=${attachment.id || attachment.name || index}, error=${error.message}`
+                );
+                continue;
+            }
+            manifest.images.push(entry);
+            existing.set(key, entry);
+            archived.push(entry);
+        }
+
+        if (archived.length > 0) {
+            manifest.updatedAt = new Date().toISOString();
+            fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+            console.log(
+                `[Bot] Archived Discord image attachment(s): guild=${guildId}, ` +
+                `message=${input.messageId || message?.id || 'unknown'}, count=${archived.length}, path=${manifestPath}`
+            );
+        }
+        return archived;
+    }
+
+    readRecordingImageManifest(manifestPath) {
+        const fallback = {
+            schemaVersion: 1,
+            createdAt: new Date().toISOString(),
+            updatedAt: null,
+            images: []
+        };
+        if (!fs.existsSync(manifestPath)) {
+            return fallback;
+        }
+        try {
+            const parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+            return {
+                schemaVersion: 1,
+                createdAt: parsed.createdAt || fallback.createdAt,
+                updatedAt: parsed.updatedAt || null,
+                images: Array.isArray(parsed.images) ? parsed.images : []
+            };
+        } catch (error) {
+            console.warn(`[Bot] Failed to read recording image manifest ${manifestPath}: ${error.message}`);
+            return fallback;
+        }
+    }
+
+    async archiveDiscordContextImageAttachment({ recordingPath, imageDir, input, attachment, index, key }) {
+        const { buffer, mediaType } = await this.downloadRecordingImageAttachment(attachment);
+        const extension = this.getRecordingImageExtension(attachment, mediaType);
+        const fileName = this.buildRecordingImageFileName(input, attachment, index, extension);
+        const filePath = path.join(imageDir, fileName);
+        fs.writeFileSync(filePath, buffer);
+        const relativePath = path.relative(recordingPath, filePath).replace(/\\/g, '/');
+        return {
+            key,
+            messageId: input.messageId || null,
+            channelId: input.channelId || null,
+            messageTimestamp: input.messageTimestamp || null,
+            senderName: input.senderName || null,
+            senderId: input.senderId || null,
+            attachmentId: attachment.id || null,
+            originalName: attachment.name || null,
+            fileName,
+            relativePath,
+            mediaType,
+            bytes: buffer.byteLength,
+            sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+            sourceUrl: attachment.url || null,
+            proxyUrl: attachment.proxyURL || null,
+            archivedAt: new Date().toISOString()
+        };
+    }
+
+    async downloadRecordingImageAttachment(attachment = {}) {
+        const url = String(attachment.url || attachment.proxyURL || '').trim();
+        if (!url) {
+            throw new Error(`image attachment ${attachment.name || attachment.id || 'unknown'} has no URL`);
+        }
+        if (!this.recordingImageArchiveFetch) {
+            throw new Error('global fetch is unavailable for recording image archive');
+        }
+
+        const { maxBytes, timeoutMs } = this.getRecordingImageArchiveLimits();
+        const declaredSize = Number(attachment.size || 0);
+        if (Number.isFinite(declaredSize) && declaredSize > maxBytes) {
+            throw new Error(`image attachment ${attachment.name || attachment.id || 'unknown'} is too large (${declaredSize} bytes)`);
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await this.recordingImageArchiveFetch(url, { signal: controller.signal });
+            if (!response?.ok) {
+                throw new Error(`image archive download failed: ${response?.status || 'unknown status'}`);
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            if (buffer.byteLength > maxBytes) {
+                throw new Error(`image attachment ${attachment.name || attachment.id || 'unknown'} is too large (${buffer.byteLength} bytes)`);
+            }
+            const mediaType = String(
+                response.headers?.get?.('content-type') ||
+                attachment.contentType ||
+                'application/octet-stream'
+            ).split(';')[0].trim().toLowerCase();
+            return { buffer, mediaType };
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    getRecordingImageExtension(attachment = {}, mediaType = '') {
+        const name = String(attachment.name || '').toLowerCase();
+        const fromName = name.match(/\.(png|jpe?g|webp|gif)$/i)?.[0]?.toLowerCase();
+        if (fromName) return fromName === '.jpeg' ? '.jpg' : fromName;
+        const normalized = String(mediaType || attachment.contentType || '').toLowerCase();
+        if (normalized.includes('png')) return '.png';
+        if (normalized.includes('jpeg') || normalized.includes('jpg')) return '.jpg';
+        if (normalized.includes('webp')) return '.webp';
+        if (normalized.includes('gif')) return '.gif';
+        return '.img';
+    }
+
+    buildRecordingImageFileName(input = {}, attachment = {}, index = 0, extension = '.img') {
+        const messageId = this.safeArchiveSegment(input.messageId || 'message');
+        const attachmentId = this.safeArchiveSegment(attachment.id || `image-${index + 1}`);
+        const originalBase = path.basename(String(attachment.name || `image${extension}`), path.extname(String(attachment.name || '')));
+        const original = this.safeArchiveSegment(originalBase || 'image').slice(0, 80) || 'image';
+        return `${messageId}-${attachmentId}-${original}${extension}`;
+    }
+
+    safeArchiveSegment(value) {
+        return String(value || '')
+            .normalize('NFKD')
+            .replace(/[^\w.-]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 120) || 'item';
     }
 
     buildDiscordContextBaseInput(message) {

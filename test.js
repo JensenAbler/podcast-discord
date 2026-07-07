@@ -574,12 +574,23 @@ async function runTests() {
         const attachmentInterpretation = new Promise((resolve) => {
             resolveAttachmentInterpretation = resolve;
         });
+        const archivedTimelineBytes = Buffer.from('archived-timeline-png');
         const bot = new AlphaClawdVoiceBot({
             token: 'test-token',
             clientId: 'test-client',
             fishAudioKey: 'test_fish_audio_key_placeholder',
             internalThoughtsEnabled: false,
             discordContextEnabled: true,
+            recordingImageArchiveFetch: async (url) => {
+                if (url !== 'https://cdn.example/timeline.png') {
+                    throw new Error(`Unexpected archive download URL: ${url}`);
+                }
+                return {
+                    ok: true,
+                    headers: { get: (name) => name.toLowerCase() === 'content-type' ? 'image/png' : null },
+                    arrayBuffer: async () => archivedTimelineBytes
+                };
+            },
             discordContextInterpreter: {
                 interpret: async (input) => {
                     await attachmentInterpretation;
@@ -617,12 +628,14 @@ async function runTests() {
         });
         const guildId = 'guild-discord-context';
         const channelId = 'channel-live-context';
+        const recordingPath = fs.mkdtempSync(path.join(os.tmpdir(), 'discord-context-session-'));
         const started = bot.startInternalThoughtSession(guildId, {
-            recordingPath: fs.mkdtempSync(path.join(os.tmpdir(), 'discord-context-session-')),
+            recordingPath,
             startedAt: '2026-06-20T10:00:00.000Z'
         });
         bot.recordingState.set(guildId, bot.RecordingState.RECORDING);
         bot.recordingTextChannels.set(guildId, channelId);
+        bot.voiceManager.recordingPaths.set(guildId, recordingPath);
         bot.podcastGenerator.session = {
             topic: 'orb research',
             recording: true,
@@ -691,6 +704,24 @@ async function runTests() {
             shelfAdds[1].expiresAfterTurns !== 6
         ) {
             throw new Error(`Discord context did not enter awareness shelf correctly: ${JSON.stringify(shelfAdds)}`);
+        }
+        const imageManifestPath = path.join(recordingPath, 'images', 'manifest.json');
+        if (!fs.existsSync(imageManifestPath)) {
+            throw new Error('Discord image archive manifest was not written');
+        }
+        const imageManifest = JSON.parse(fs.readFileSync(imageManifestPath, 'utf8'));
+        const archivedImage = imageManifest.images?.[0];
+        const archivedImagePath = archivedImage && path.join(recordingPath, archivedImage.relativePath);
+        if (
+            imageManifest.images?.length !== 1 ||
+            archivedImage.messageId !== 'message-attachment' ||
+            archivedImage.attachmentId !== 'attachment-1' ||
+            archivedImage.mediaType !== 'image/png' ||
+            archivedImage.bytes !== archivedTimelineBytes.byteLength ||
+            !fs.existsSync(archivedImagePath) ||
+            fs.readFileSync(archivedImagePath).toString('utf8') !== archivedTimelineBytes.toString('utf8')
+        ) {
+            throw new Error(`Discord image archive did not persist the attachment correctly: ${JSON.stringify(imageManifest)}`);
         }
 
         console.log('  Discord messages and interpreted image/PDF/txt attachments become awareness shelf background, with pending upload signal, without internal thoughts');
