@@ -4694,6 +4694,7 @@ class AlphaClawdVoiceBot {
         }
 
         if (wasRecording) {
+            this.voiceManager.stopTranscriptSaving?.(guildId, options.reason || 'podcast-leave');
             this.recordingState.set(guildId, this.RecordingState.STOPPING);
             this.conversationBuffer?.clear?.();
             this.stopIdleDecisionLoop(guildId);

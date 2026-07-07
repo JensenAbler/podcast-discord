@@ -7709,7 +7709,52 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 10a: Recording metadata stores selected episode plan pointer');
+    console.log('\nTest 10a: Podcast leave stops transcript saving immediately');
+    try {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'podcast-discord-transcript-stop-'));
+        const guildId = 'guild-transcript-stop';
+        const manager = new VoiceManager({ on: () => {} }, { recordingDir: tempDir });
+        manager.recordingPaths.set(guildId, tempDir);
+
+        manager.saveTranscriptEntry(guildId, {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            transcription: 'This was before leave.',
+            timestamp: '2026-05-03T00:00:01.000Z',
+            speechStartedAt: '2026-05-03T00:00:00.000Z',
+            speechEndedAt: '2026-05-03T00:00:01.000Z'
+        });
+
+        manager.stopTranscriptSaving(guildId, 'slash_command');
+
+        manager.saveTranscriptEntry(guildId, {
+            speaker: 'Jensen',
+            speakerRole: 'guest',
+            transcription: 'This arrived after leave.',
+            timestamp: '2026-05-03T00:00:03.000Z',
+            speechStartedAt: '2026-05-03T00:00:02.000Z',
+            speechEndedAt: '2026-05-03T00:00:03.000Z'
+        });
+
+        const transcriptPath = path.join(tempDir, 'transcript.jsonl');
+        const lines = fs.readFileSync(transcriptPath, 'utf8').trim().split(/\r?\n/);
+        if (lines.length !== 1 || !lines[0].includes('This was before leave') || lines[0].includes('This arrived after leave')) {
+            throw new Error(`Unexpected transcript rows after stop: ${lines.join('\n')}`);
+        }
+        if (!manager.isTranscriptSavingStopped(guildId)) {
+            throw new Error('Transcript stop state was not recorded');
+        }
+
+        fs.rmSync(tempDir, { recursive: true, force: true });
+
+        console.log('  Transcript rows after podcast leave are ignored');
+        passed++;
+    } catch (error) {
+        console.log(`  Transcript stop failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 10b: Recording metadata stores selected episode plan pointer');
     try {
         const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'episode-plan-recording-'));
         const guildId = 'guild-plan-recording';

@@ -35,6 +35,7 @@ class VoiceManager {
         this.isRecording = new Map(); // guildId -> boolean
         this.recordingPaths = new Map(); // guildId -> path
         this.recordingMetadata = new Map(); // guildId -> recording metadata
+        this.transcriptSaveStops = new Map(); // guildId -> { stoppedAt, reason }
         
         this.options = {
             recordingDir: options.recordingDir || getRecordingDir(),
@@ -651,6 +652,7 @@ class VoiceManager {
         this.recorders.set(guildId, recorder);
         this.isRecording.set(guildId, true);
         this.recordingPaths.set(guildId, recordingPath);
+        this.transcriptSaveStops.delete(guildId);
         const storedRecordingInfo = {
             ...recordingInfo,
             episodePlan
@@ -792,6 +794,23 @@ class VoiceManager {
         return recording;
     }
 
+    /**
+     * Stop saving transcript rows for a recording that is ending.
+     * Audio finalization may continue after this point, but post-leave ASR
+     * results should not extend the transcript beyond the audible episode.
+     * @param {string} guildId - Discord guild ID
+     * @param {string} reason - Stop reason for logs
+     */
+    stopTranscriptSaving(guildId, reason = 'recording_stop') {
+        const stoppedAt = new Date().toISOString();
+        this.transcriptSaveStops.set(guildId, { stoppedAt, reason });
+        console.log(`[VoiceManager] Transcript saving stopped for guild ${guildId}: ${reason} at ${stoppedAt}`);
+    }
+
+    isTranscriptSavingStopped(guildId) {
+        return this.transcriptSaveStops.has(guildId);
+    }
+
     listRecordingFiles(recordingPath, additionalFiles = []) {
         const files = new Set(fs.existsSync(recordingPath) ? fs.readdirSync(recordingPath) : []);
         for (const file of additionalFiles) {
@@ -809,6 +828,13 @@ class VoiceManager {
     saveTranscriptEntry(guildId, utterance) {
         const recordingPath = this.recordingPaths.get(guildId);
         if (!recordingPath) return;
+        const stopped = this.transcriptSaveStops.get(guildId);
+        if (stopped) {
+            const speaker = utterance.speaker || 'Unknown';
+            const source = utterance.source || utterance.fallbackReason || 'unknown';
+            console.log(`[VoiceManager] Skipped transcript after stop (${stopped.reason}): ${speaker} source=${source}`);
+            return;
+        }
         const transcriptionText = (utterance.transcription || '').trim();
         const audioEvents = utterance.audioEvents || [];
         const providerError = utterance.providerError || null;
