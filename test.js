@@ -4036,6 +4036,7 @@ async function runTests() {
         autoLeaveBot.discordContextProcessing = new Map([[autoLeaveGuildId, Promise.resolve()]]);
         autoLeaveBot.consecutiveGeneratorSilences = new Map([[autoLeaveGuildId, 2]]);
         autoLeaveBot.autonomousLeaveInFlight = new Set();
+        autoLeaveBot.modelRequestedLeavePlaybackDrainMs = 25;
         autoLeaveBot.disabledCronJobs = [];
         let autoBufferCleared = false;
         let autoIdleStopped = false;
@@ -4047,6 +4048,7 @@ async function runTests() {
         let autoVoiceLeft = false;
         let autoVoiceLeaveStopRecordingOption = null;
         const autoLeaveOrder = [];
+        let autoVoiceLeftAt = 0;
         let autoChannelMessage = '';
         autoLeaveBot.conversationBuffer = { clear: () => { autoBufferCleared = true; } };
         autoLeaveBot.stopIdleDecisionLoop = () => { autoIdleStopped = true; };
@@ -4067,6 +4069,7 @@ async function runTests() {
             leaveChannel: async (_guildId, options = {}) => {
                 autoLeaveOrder.push('leaveChannel');
                 autoVoiceLeft = true;
+                autoVoiceLeftAt = Date.now();
                 autoVoiceLeaveStopRecordingOption = options.stopRecording;
             }
         };
@@ -4079,6 +4082,7 @@ async function runTests() {
                 }
             }
         };
+        const autoLeaveStartedAt = Date.now();
         const autoLeaveResult = await autoLeaveBot.handleModelRequestedPodcastLeave(autoLeaveGuildId, {
             podcastLeave: { requested: true, reason: 'model judged the episode complete' }
         });
@@ -4094,6 +4098,7 @@ async function runTests() {
             !autoVoiceLeft ||
             autoVoiceLeaveStopRecordingOption !== false ||
             autoLeaveOrder.join(',') !== 'leaveChannel,stopRecording' ||
+            autoVoiceLeftAt - autoLeaveStartedAt < 15 ||
             autoLeaveBot.recordingState.has(autoLeaveGuildId) ||
             autoLeaveBot.recordingTextChannels.has(autoLeaveGuildId) ||
             autoLeaveBot.consentWaiters.has(autoLeaveGuildId) ||
@@ -4103,7 +4108,7 @@ async function runTests() {
             autoLeaveBot.autonomousLeaveInFlight.has(autoLeaveGuildId) ||
             !autoChannelMessage.includes('Episode saved to:')
         ) {
-            throw new Error(`Model-requested leave did not disconnect before recording finalization: ${JSON.stringify({ autoLeaveResult, autoBufferCleared, autoIdleStopped, autoGeminiStopped, autoGeneratorEnded, autoPlanEnded, autoThoughtsEnded, autoRecordingStopped, autoVoiceLeft, autoVoiceLeaveStopRecordingOption, autoLeaveOrder, autoChannelMessage, recordingState: Array.from(autoLeaveBot.recordingState.entries()) })}`);
+            throw new Error(`Model-requested leave did not drain then disconnect before recording finalization: ${JSON.stringify({ autoLeaveResult, autoBufferCleared, autoIdleStopped, autoGeminiStopped, autoGeneratorEnded, autoPlanEnded, autoThoughtsEnded, autoRecordingStopped, autoVoiceLeft, autoVoiceLeaveStopRecordingOption, autoLeaveOrder, drainMs: autoVoiceLeftAt - autoLeaveStartedAt, autoChannelMessage, recordingState: Array.from(autoLeaveBot.recordingState.entries()) })}`);
         }
 
         fs.rmSync(tempRoot, { recursive: true, force: true });

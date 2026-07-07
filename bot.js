@@ -226,6 +226,11 @@ class AlphaClawdVoiceBot {
         this.planningAudioDecodeTimeoutMs = Number(options.planningAudioDecodeTimeoutMs || process.env.PODCAST_PLANNING_AUDIO_DECODE_TIMEOUT_MS || 30000);
         this.episodePlanTrackers = new Map(); // guildId -> EpisodePlanTracker
         this.autonomousLeaveInFlight = new Set(); // guildId -> model-requested ending leave routine in progress
+        const modelLeaveDrainOption = options.modelRequestedLeavePlaybackDrainMs ?? process.env.PODCAST_MODEL_LEAVE_PLAYBACK_DRAIN_MS;
+        const modelLeaveDrainMs = Number(modelLeaveDrainOption);
+        this.modelRequestedLeavePlaybackDrainMs = Number.isFinite(modelLeaveDrainMs)
+            ? Math.max(0, modelLeaveDrainMs)
+            : 1500;
         this.bigBrainAwarenessSelectionEnabled = options.bigBrainAwarenessSelectionEnabled !== undefined
             ? Boolean(options.bigBrainAwarenessSelectionEnabled)
             : process.env.PODCAST_BIG_BRAIN_AWARENESS_SELECTION_ENABLED === 'true';
@@ -4499,6 +4504,11 @@ class AlphaClawdVoiceBot {
 
         const leaveBeforeFinalization = Boolean(options.leaveBeforeFinalization && wasRecording && wasConnected);
         if (leaveBeforeFinalization) {
+            const drainMs = Number(options.leaveBeforeFinalizationDrainMs);
+            if (Number.isFinite(drainMs) && drainMs > 0) {
+                console.log(`[Bot] Waiting ${drainMs}ms for final host audio to drain before disconnecting`);
+                await new Promise(resolve => setTimeout(resolve, drainMs));
+            }
             await this.voiceManager.leaveChannel(guildId, { stopRecording: false });
         }
 
@@ -6662,7 +6672,8 @@ class AlphaClawdVoiceBot {
             const result = await this.leavePodcastSession(guildId, {
                 reason: 'model_requested',
                 modelReason: response?.podcastLeave?.reason || '',
-                leaveBeforeFinalization: true
+                leaveBeforeFinalization: true,
+                leaveBeforeFinalizationDrainMs: this.modelRequestedLeavePlaybackDrainMs
             });
             await this.sendAutonomousLeaveMessage(result);
             return result;
