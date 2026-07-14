@@ -2194,18 +2194,19 @@ class PodcastGenerator {
 
     formatTranscriptWithPauses(utterances = []) {
         const items = utterances
-            .map((utterance) => {
+            .map((utterance, index) => {
                 const text = String(utterance.transcription || utterance.text || '').trim();
                 if (!text) return null;
 
-                const startMs = this.getUtteranceStartMs(utterance);
-                const endMs = this.getUtteranceEndMs(utterance, startMs);
+                const speechSpan = this.getUtteranceSpeechSpanMs(utterance);
 
                 return {
+                    index,
                     speaker: utterance.speaker || 'Speaker',
                     text,
-                    startMs,
-                    endMs
+                    startMs: speechSpan?.startMs ?? null,
+                    endMs: speechSpan?.endMs ?? null,
+                    physicalSpanId: null
                 };
             })
             .filter(Boolean);
@@ -2214,29 +2215,153 @@ class PodcastGenerator {
             return '';
         }
 
+        const physicalSpans = this.buildPhysicalSpeechSpans(items);
+        const annotationsByItemIndex = this.buildSpeechTopologyAnnotations(physicalSpans);
+        this.addSpeechPauseAnnotations(physicalSpans, annotationsByItemIndex);
+
         const lines = [];
-        let previousEndMs = null;
 
         for (const item of items) {
-            if (Number.isFinite(item.startMs) && Number.isFinite(previousEndMs)) {
-                const gapMs = item.startMs - previousEndMs;
-                if (gapMs >= 100) {
-                    lines.push(`[pause ${this.formatDurationSeconds(gapMs)}]`);
-                } else if (gapMs <= -100) {
-                    lines.push(`[overlap ${this.formatDurationSeconds(Math.abs(gapMs))}]`);
-                }
+            const annotations = annotationsByItemIndex.get(item.index) || [];
+            for (const annotation of annotations) {
+                lines.push(annotation);
             }
 
             lines.push(`${item.speaker}: ${item.text}`);
-
-            if (Number.isFinite(item.endMs)) {
-                previousEndMs = item.endMs;
-            } else if (Number.isFinite(item.startMs)) {
-                previousEndMs = item.startMs;
-            }
         }
 
         return lines.join('\n');
+    }
+
+    getUtteranceSpeechSpanMs(utterance = {}) {
+        const startMs = this.parseTimestamp(utterance.speechStartedAt);
+        const endMs = this.parseTimestamp(utterance.speechEndedAt);
+
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+            return null;
+        }
+
+        return { startMs, endMs };
+    }
+
+    buildPhysicalSpeechSpans(items = []) {
+        const fragmentMergeGapMs = 250;
+        const spans = [];
+        const latestSpanBySpeaker = new Map();
+        const timedItems = items
+            .filter(item => Number.isFinite(item.startMs) && Number.isFinite(item.endMs) && item.endMs > item.startMs)
+            .sort((a, b) => (
+                a.startMs - b.startMs ||
+                a.endMs - b.endMs ||
+                a.index - b.index
+            ));
+
+        for (const item of timedItems) {
+            const previousSameSpeakerSpan = latestSpanBySpeaker.get(item.speaker);
+            if (
+                previousSameSpeakerSpan &&
+                item.startMs <= previousSameSpeakerSpan.endMs + fragmentMergeGapMs
+            ) {
+                previousSameSpeakerSpan.endMs = Math.max(previousSameSpeakerSpan.endMs, item.endMs);
+                previousSameSpeakerSpan.itemIndexes.push(item.index);
+                previousSameSpeakerSpan.firstItemIndex = Math.min(previousSameSpeakerSpan.firstItemIndex, item.index);
+                item.physicalSpanId = previousSameSpeakerSpan.id;
+                continue;
+            }
+
+            const span = {
+                id: spans.length,
+                speaker: item.speaker,
+                startMs: item.startMs,
+                endMs: item.endMs,
+                firstItemIndex: item.index,
+                itemIndexes: [item.index]
+            };
+            item.physicalSpanId = span.id;
+            spans.push(span);
+            latestSpanBySpeaker.set(item.speaker, span);
+        }
+
+        return spans;
+    }
+
+    buildSpeechTopologyAnnotations(spans = []) {
+        const annotationsByItemIndex = new Map();
+        const overlapThresholdMs = 100;
+        const orderedSpans = spans.slice().sort((a, b) => (
+            a.startMs - b.startMs ||
+            a.endMs - b.endMs ||
+            a.firstItemIndex - b.firstItemIndex
+        ));
+
+        const addAnnotation = (itemIndex, annotation) => {
+            if (!annotationsByItemIndex.has(itemIndex)) {
+                annotationsByItemIndex.set(itemIndex, []);
+            }
+            annotationsByItemIndex.get(itemIndex).push(annotation);
+        };
+
+        for (let i = 0; i < orderedSpans.length; i += 1) {
+            const current = orderedSpans[i];
+            for (let j = 0; j < i; j += 1) {
+                const earlier = orderedSpans[j];
+                if (earlier.speaker === current.speaker) continue;
+
+                const overlapStartMs = Math.max(earlier.startMs, current.startMs);
+                const overlapEndMs = Math.min(earlier.endMs, current.endMs);
+                const overlapMs = overlapEndMs - overlapStartMs;
+                if (overlapMs < overlapThresholdMs) continue;
+
+                const earlierContainsCurrent = earlier.startMs < current.startMs && earlier.endMs > current.endMs;
+                const currentContainsEarlier = current.startMs < earlier.startMs && current.endMs > earlier.endMs;
+
+                if (earlierContainsCurrent || currentContainsEarlier) {
+                    const container = earlierContainsCurrent ? earlier : current;
+                    const contained = earlierContainsCurrent ? current : earlier;
+                    addAnnotation(contained.firstItemIndex, `[embedded overlap: ${this.formatPossessiveSpeaker(contained.speaker)} complete ${this.formatDurationSeconds(contained.endMs - contained.startMs)} contribution was embedded in ${this.formatPossessiveSpeaker(container.speaker)} continuing speech.]`);
+                    continue;
+                }
+
+                const anchor = current.startMs > earlier.startMs
+                    ? current
+                    : (current.startMs < earlier.startMs ? earlier : (
+                        current.firstItemIndex > earlier.firstItemIndex ? current : earlier
+                    ));
+                addAnnotation(anchor.firstItemIndex, `[overlap: ${earlier.speaker} and ${current.speaker} spoke simultaneously for ${this.formatDurationSeconds(overlapMs)}.]`);
+            }
+        }
+
+        return annotationsByItemIndex;
+    }
+
+    addSpeechPauseAnnotations(spans = [], annotationsByItemIndex = new Map()) {
+        const pauseThresholdMs = 100;
+        let latestSpeechEndMs = null;
+        const orderedSpans = spans.slice().sort((a, b) => (
+            a.startMs - b.startMs ||
+            a.endMs - b.endMs ||
+            a.firstItemIndex - b.firstItemIndex
+        ));
+
+        for (const span of orderedSpans) {
+            if (Number.isFinite(latestSpeechEndMs)) {
+                const gapMs = span.startMs - latestSpeechEndMs;
+                if (gapMs >= pauseThresholdMs) {
+                    if (!annotationsByItemIndex.has(span.firstItemIndex)) {
+                        annotationsByItemIndex.set(span.firstItemIndex, []);
+                    }
+                    annotationsByItemIndex.get(span.firstItemIndex).unshift(`[pause ${this.formatDurationSeconds(gapMs)}]`);
+                }
+            }
+
+            latestSpeechEndMs = Number.isFinite(latestSpeechEndMs)
+                ? Math.max(latestSpeechEndMs, span.endMs)
+                : span.endMs;
+        }
+    }
+
+    formatPossessiveSpeaker(speaker = 'Speaker') {
+        return `${speaker || 'Speaker'}'s`;
     }
 
     formatCadenceQueue(utterances = []) {

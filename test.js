@@ -1584,6 +1584,181 @@ async function runTests() {
             throw new Error(`Inline pause prompt missing expected timing hints: ${cadencePrompt}`);
         }
 
+        const expectTimedTranscript = (label, utterances, expected) => {
+            const actual = generator.formatTranscriptWithPauses(utterances);
+            if (actual !== expected) {
+                throw new Error(`${label} transcript mismatch:\n${actual}`);
+            }
+        };
+
+        expectTimedTranscript('embedded overlap', [
+            {
+                speaker: 'Jensen',
+                transcription: 'I am building the thought',
+                speechStartedAt: '2026-05-03T00:00:00.000Z',
+                speechEndedAt: '2026-05-03T00:00:01.000Z'
+            },
+            {
+                speaker: 'Jensen',
+                transcription: 'and still continuing through it.',
+                speechStartedAt: '2026-05-03T00:00:01.050Z',
+                speechEndedAt: '2026-05-03T00:00:03.000Z'
+            },
+            {
+                speaker: 'Catherine',
+                transcription: 'So can I',
+                speechStartedAt: '2026-05-03T00:00:01.400Z',
+                speechEndedAt: '2026-05-03T00:00:02.000Z'
+            }
+        ], [
+            'Jensen: I am building the thought',
+            'Jensen: and still continuing through it.',
+            "[embedded overlap: Catherine's complete 0.6s contribution was embedded in Jensen's continuing speech.]",
+            'Catherine: So can I'
+        ].join('\n'));
+
+        expectTimedTranscript('partial overlap', [
+            {
+                speaker: 'Jensen',
+                transcription: 'First speaker keeps going.',
+                speechStartedAt: '2026-05-03T00:00:00.000Z',
+                speechEndedAt: '2026-05-03T00:00:02.000Z'
+            },
+            {
+                speaker: 'Catherine',
+                transcription: 'Second speaker starts before the first ends.',
+                speechStartedAt: '2026-05-03T00:00:01.500Z',
+                speechEndedAt: '2026-05-03T00:00:03.500Z'
+            }
+        ], [
+            'Jensen: First speaker keeps going.',
+            '[overlap: Jensen and Catherine spoke simultaneously for 0.5s.]',
+            'Catherine: Second speaker starts before the first ends.'
+        ].join('\n'));
+
+        expectTimedTranscript('nested containment', [
+            {
+                speaker: 'Jensen',
+                transcription: 'Outer span.',
+                speechStartedAt: '2026-05-03T00:00:00.000Z',
+                speechEndedAt: '2026-05-03T00:00:05.000Z'
+            },
+            {
+                speaker: 'Catherine',
+                transcription: 'Middle span.',
+                speechStartedAt: '2026-05-03T00:00:01.000Z',
+                speechEndedAt: '2026-05-03T00:00:04.000Z'
+            },
+            {
+                speaker: 'Morgan',
+                transcription: 'Inner span.',
+                speechStartedAt: '2026-05-03T00:00:02.000Z',
+                speechEndedAt: '2026-05-03T00:00:03.000Z'
+            }
+        ], [
+            'Jensen: Outer span.',
+            "[embedded overlap: Catherine's complete 3.0s contribution was embedded in Jensen's continuing speech.]",
+            'Catherine: Middle span.',
+            "[embedded overlap: Morgan's complete 1.0s contribution was embedded in Jensen's continuing speech.]",
+            "[embedded overlap: Morgan's complete 1.0s contribution was embedded in Catherine's continuing speech.]",
+            'Morgan: Inner span.'
+        ].join('\n'));
+
+        const fragmentedOverlap = generator.formatTranscriptWithPauses([
+            {
+                speaker: 'Jensen',
+                transcription: 'Fragment one.',
+                speechStartedAt: '2026-05-03T00:00:00.000Z',
+                speechEndedAt: '2026-05-03T00:00:01.300Z'
+            },
+            {
+                speaker: 'Catherine',
+                transcription: 'Contained across two fragments.',
+                speechStartedAt: '2026-05-03T00:00:00.800Z',
+                speechEndedAt: '2026-05-03T00:00:02.100Z'
+            },
+            {
+                speaker: 'Jensen',
+                transcription: 'Fragment two.',
+                speechStartedAt: '2026-05-03T00:00:01.350Z',
+                speechEndedAt: '2026-05-03T00:00:02.500Z'
+            }
+        ]);
+        const fragmentedEmbeddedCount = (fragmentedOverlap.match(/embedded overlap/g) || []).length;
+        if (
+            fragmentedEmbeddedCount !== 1 ||
+            !fragmentedOverlap.includes("[embedded overlap: Catherine's complete 1.3s contribution was embedded in Jensen's continuing speech.]") ||
+            fragmentedOverlap.includes('[overlap:')
+        ) {
+            throw new Error(`Fragmented same-speaker activity was not coalesced:\n${fragmentedOverlap}`);
+        }
+
+        const threeSpeakerOverlap = generator.formatTranscriptWithPauses([
+            {
+                speaker: 'Jensen',
+                transcription: 'First active speaker.',
+                speechStartedAt: '2026-05-03T00:00:00.000Z',
+                speechEndedAt: '2026-05-03T00:00:03.000Z'
+            },
+            {
+                speaker: 'Catherine',
+                transcription: 'Second active speaker.',
+                speechStartedAt: '2026-05-03T00:00:01.000Z',
+                speechEndedAt: '2026-05-03T00:00:04.000Z'
+            },
+            {
+                speaker: 'Morgan',
+                transcription: 'Third active speaker.',
+                speechStartedAt: '2026-05-03T00:00:02.000Z',
+                speechEndedAt: '2026-05-03T00:00:02.500Z'
+            }
+        ]);
+        if (
+            !threeSpeakerOverlap.includes('[overlap: Jensen and Catherine spoke simultaneously for 2.0s.]') ||
+            !threeSpeakerOverlap.includes("[embedded overlap: Morgan's complete 0.5s contribution was embedded in Jensen's continuing speech.]") ||
+            !threeSpeakerOverlap.includes("[embedded overlap: Morgan's complete 0.5s contribution was embedded in Catherine's continuing speech.]")
+        ) {
+            throw new Error(`Three-speaker overlap was not annotated:\n${threeSpeakerOverlap}`);
+        }
+
+        expectTimedTranscript('identical start overlap', [
+            {
+                speaker: 'Jensen',
+                transcription: 'Same start one.',
+                speechStartedAt: '2026-05-03T00:00:00.000Z',
+                speechEndedAt: '2026-05-03T00:00:01.000Z'
+            },
+            {
+                speaker: 'Catherine',
+                transcription: 'Same start two.',
+                speechStartedAt: '2026-05-03T00:00:00.000Z',
+                speechEndedAt: '2026-05-03T00:00:01.500Z'
+            }
+        ], [
+            'Jensen: Same start one.',
+            '[overlap: Jensen and Catherine spoke simultaneously for 1.0s.]',
+            'Catherine: Same start two.'
+        ].join('\n'));
+
+        expectTimedTranscript('missing timestamps', [
+            {
+                speaker: 'Jensen',
+                transcription: 'No speech timing here.',
+                timestamp: '2026-05-03T00:00:00.000Z'
+            },
+            {
+                speaker: 'Catherine',
+                transcription: 'Still no topology should be invented.',
+                speechStartedAt: '2026-05-03T00:00:01.000Z'
+            }
+        ], [
+            'Jensen: No speech timing here.',
+            'Catherine: Still no topology should be invented.'
+        ].join('\n'));
+
+        console.log('  Transcript formatter annotates span-aware speaker overlaps');
+        passed++;
+
         const awarenessMessages = generator.buildMessages({
             transcript: 'Jensen: I want Alpha-Clawd to feel more alive.',
             awarenessInjections: [{
