@@ -127,47 +127,23 @@ Then go to Step 11. You lose the diff-review checkpoint but save 5 clicks. Use P
 
 ---
 
-## Task B: Toggle the adaptive grace period
+## Task B: Adjust the conversation-buffer settling delay
 
-This is **env-only** on alpha — no code change, no PR. Three modes:
+This is **env-only** on alpha - no code change, no PR. The delay is now a fixed operational settling window after active speakers, endpoint debounce, and pending ASR have cleared. It is not adaptive and does not scale with speech duration.
 
-### Mode 1: Adaptive (dynamic ladder, original behavior)
-
-Removes the env var entirely. Grace scales 50–750ms based on speech length.
+### Set the fixed value
 
 ```
-ssh -i ~/.ssh/alphaclawd root@31.97.135.128 "sed -i '/^CONVERSATION_BUFFER_GRACE_PERIOD_MS=/d' /opt/podcast-discord/.env && /root/clawd/restart-clawcast-discord-bot-new.sh"
-```
-
-### Mode 2: Fixed value (whatever number you pick)
-
-Replaces the env var with a fixed millisecond value. This implicitly disables the dynamic ladder.
-
-```
-# 50ms (current)
-ssh -i ~/.ssh/alphaclawd root@31.97.135.128 "sed -i 's/^CONVERSATION_BUFFER_GRACE_PERIOD_MS=.*/CONVERSATION_BUFFER_GRACE_PERIOD_MS=50/' /opt/podcast-discord/.env && /root/clawd/restart-clawcast-discord-bot-new.sh"
+# 50ms (current default)
+ssh -i ~/.ssh/alphaclawd root@31.97.135.128 "sed -i '/^CONVERSATION_BUFFER_SETTLING_DELAY_MS=/d; /^CONVERSATION_BUFFER_GRACE_PERIOD_MS=/d' /opt/podcast-discord/.env && printf '\nCONVERSATION_BUFFER_SETTLING_DELAY_MS=50\n' >> /opt/podcast-discord/.env && /root/clawd/restart-clawcast-discord-bot-new.sh"
 
 # 150ms
-ssh -i ~/.ssh/alphaclawd root@31.97.135.128 "sed -i 's/^CONVERSATION_BUFFER_GRACE_PERIOD_MS=.*/CONVERSATION_BUFFER_GRACE_PERIOD_MS=150/' /opt/podcast-discord/.env && /root/clawd/restart-clawcast-discord-bot-new.sh"
+ssh -i ~/.ssh/alphaclawd root@31.97.135.128 "sed -i '/^CONVERSATION_BUFFER_SETTLING_DELAY_MS=/d; /^CONVERSATION_BUFFER_GRACE_PERIOD_MS=/d' /opt/podcast-discord/.env && printf '\nCONVERSATION_BUFFER_SETTLING_DELAY_MS=150\n' >> /opt/podcast-discord/.env && /root/clawd/restart-clawcast-discord-bot-new.sh"
 ```
 
-If the var isn't currently in `.env` and you want to add it (rather than replace), append it carefully — make sure the file already ends with a newline (`.env` did NOT earlier today, which mangled an adjacent var; it does now). Safe form:
+`CONVERSATION_BUFFER_GRACE_PERIOD_MS` remains accepted only as a deprecated compatibility alias for existing deployments. Prefer `CONVERSATION_BUFFER_SETTLING_DELAY_MS` for new changes.
 
-```
-ssh -i ~/.ssh/alphaclawd root@31.97.135.128 "printf '\nCONVERSATION_BUFFER_GRACE_PERIOD_MS=150\n' >> /opt/podcast-discord/.env && /root/clawd/restart-clawcast-discord-bot-new.sh"
-```
-
-The leading `\n` in `printf` is the safety net.
-
-### Mode 3: Explicit on/off (overrides whatever gracePeriod is set)
-
-```
-# Force adaptive ON regardless of gracePeriod
-ssh -i ~/.ssh/alphaclawd root@31.97.135.128 "printf 'CONVERSATION_BUFFER_DYNAMIC_GRACE=true\n' >> /opt/podcast-discord/.env && /root/clawd/restart-clawcast-discord-bot-new.sh"
-
-# Force adaptive OFF
-ssh -i ~/.ssh/alphaclawd root@31.97.135.128 "printf 'CONVERSATION_BUFFER_DYNAMIC_GRACE=false\n' >> /opt/podcast-discord/.env && /root/clawd/restart-clawcast-discord-bot-new.sh"
-```
+The adaptive/duration-based toggle has been removed. Long utterances do not extend the fixed operational settling delay.
 
 ### Verify what's active
 
@@ -178,10 +154,10 @@ ssh -i ~/.ssh/alphaclawd root@31.97.135.128 "grep -E '^CONVERSATION_BUFFER_' /op
 After any episode, you can confirm what the bot actually used:
 
 ```
-ssh -i ~/.ssh/alphaclawd root@31.97.135.128 "grep 'Starting grace period' /tmp/clawcast-discord-bot-new.log | tail -10"
+ssh -i ~/.ssh/alphaclawd root@31.97.135.128 "grep 'Starting operational settling delay' /tmp/clawcast-discord-bot-new.log | tail -10"
 ```
 
-You'll see lines like `Starting grace period after ASR completion (50ms)` — that's the value the bot is actually applying.
+You'll see lines like `Starting operational settling delay after ASR completion (50ms)` - that's the value the bot is actually applying.
 
 ---
 
@@ -190,8 +166,8 @@ You'll see lines like `Starting grace period after ASR completion (50ms)` — th
 |What you want|Where|How|
 |---|---|---|
 |Change system prompt|`podcast-generator.js` line 457, `buildSystemPrompt()`|PR workflow (Steps 1–11)|
-|Fix grace at 50ms|`/opt/podcast-discord/.env` on alpha|sed replace + restart|
-|Back to adaptive|same|sed delete the line + restart|
-|Different fixed value|same|sed replace with new number + restart|
+|Fix settling at 50ms|`/opt/podcast-discord/.env` on alpha|set `CONVERSATION_BUFFER_SETTLING_DELAY_MS=50` + restart|
+|Use default settling|same|delete settling/grace alias lines + restart|
+|Different fixed value|same|set `CONVERSATION_BUFFER_SETTLING_DELAY_MS` to the new number + restart|
 
-If anything goes sideways after a grace toggle, the safety net is `cp /opt/podcast-discord/.env.bak.pre-grace /opt/podcast-discord/.env && /root/clawd/restart-clawcast-discord-bot-new.sh`.
+If anything goes sideways after a settling-delay change, the safety net is `cp /opt/podcast-discord/.env.bak.pre-grace /opt/podcast-discord/.env && /root/clawd/restart-clawcast-discord-bot-new.sh`.

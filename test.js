@@ -61,6 +61,58 @@ const path = require('path');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+class ManualClock {
+    constructor() {
+        this.now = 0;
+        this.nextId = 1;
+        this.timers = new Map();
+    }
+
+    setTimeout(callback, delayMs = 0) {
+        const id = this.nextId++;
+        const delay = Math.max(0, Number(delayMs) || 0);
+        this.timers.set(id, {
+            callback,
+            dueAt: this.now + delay,
+            order: id
+        });
+        return id;
+    }
+
+    clearTimeout(id) {
+        this.timers.delete(id);
+    }
+
+    tick(ms) {
+        const target = this.now + Math.max(0, Number(ms) || 0);
+
+        while (true) {
+            let nextId = null;
+            let nextTimer = null;
+
+            for (const [id, timer] of this.timers.entries()) {
+                if (timer.dueAt > target) continue;
+                if (
+                    !nextTimer ||
+                    timer.dueAt < nextTimer.dueAt ||
+                    (timer.dueAt === nextTimer.dueAt && timer.order < nextTimer.order)
+                ) {
+                    nextId = id;
+                    nextTimer = timer;
+                }
+            }
+
+            if (!nextTimer) break;
+
+            this.now = nextTimer.dueAt;
+            this.timers.delete(nextId);
+            nextTimer.callback();
+        }
+
+        this.now = target;
+    }
+}
+
 function createSpeechPcm(durationMs = 200) {
     const sampleRate = 48000;
     const channels = 2;
@@ -5032,24 +5084,32 @@ async function runTests() {
 
     console.log('\nTest 6: Conversation Buffer ASR-aware state machine');
     const savedConversationBufferEnv = {
+        CONVERSATION_BUFFER_SETTLING_DELAY_MS: process.env.CONVERSATION_BUFFER_SETTLING_DELAY_MS,
         CONVERSATION_BUFFER_GRACE_PERIOD_MS: process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS,
-        CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS: process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS,
-        CONVERSATION_BUFFER_DYNAMIC_GRACE: process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE
+        CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS: process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS
     };
     try {
+        delete process.env.CONVERSATION_BUFFER_SETTLING_DELAY_MS;
         delete process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS;
         delete process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS;
-        delete process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE;
 
-        const defaultGraceProbe = new ConversationBuffer();
-        if (defaultGraceProbe.config.cooldownPeriod !== 50) {
-            throw new Error(`Default post-host cooldown should be 50ms, got ${defaultGraceProbe.config.cooldownPeriod}ms`);
+        const defaultProbe = new ConversationBuffer();
+        if (defaultProbe.config.settlingDelay !== 50 || defaultProbe.config.cooldownPeriod !== 50) {
+            throw new Error(`Default settling/cooldown should be fixed at 50ms: ${JSON.stringify(defaultProbe.config)}`);
         }
-        const defaultLongGrace = defaultGraceProbe.calculateGracePeriod([
-            { speaker: 'Jensen', transcription: 'long timed speech', speechDuration: 20000 }
-        ]);
-        if (defaultGraceProbe.getState().dynamicGrace || defaultLongGrace !== 50) {
-            throw new Error(`Default grace should be fixed at 50ms: ${JSON.stringify({ state: defaultGraceProbe.getState(), defaultLongGrace })}`);
+
+        process.env.CONVERSATION_BUFFER_SETTLING_DELAY_MS = '25';
+        const envSettlingProbe = new ConversationBuffer();
+        delete process.env.CONVERSATION_BUFFER_SETTLING_DELAY_MS;
+        if (envSettlingProbe.config.settlingDelay !== 25 || envSettlingProbe.config.gracePeriod !== 25) {
+            throw new Error(`Settling env override should be 25ms: ${JSON.stringify(envSettlingProbe.config)}`);
+        }
+
+        process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS = '35';
+        const legacyGraceProbe = new ConversationBuffer();
+        delete process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS;
+        if (legacyGraceProbe.config.settlingDelay !== 35 || legacyGraceProbe.config.gracePeriod !== 35) {
+            throw new Error(`Deprecated grace env alias should map to settling delay: ${JSON.stringify(legacyGraceProbe.config)}`);
         }
 
         process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS = '75';
@@ -5059,104 +5119,45 @@ async function runTests() {
             throw new Error(`Cooldown env override should be 75ms, got ${envCooldownProbe.config.cooldownPeriod}ms`);
         }
 
-        process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS = '25';
-        const envGraceProbe = new ConversationBuffer();
-        delete process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS;
-        const envDynamicGrace = envGraceProbe.calculateGracePeriod([
-            { speaker: 'Jensen', transcription: 'long timed speech', speechDuration: 20000 }
-        ]);
-        const envFallbackGrace = envGraceProbe.calculateGracePeriod([
-            { speaker: 'Jensen', transcription: 'untimed speech' }
-        ]);
-        if (envGraceProbe.config.gracePeriod !== 25 || envGraceProbe.getState().dynamicGrace || envDynamicGrace !== 25 || envFallbackGrace !== 25) {
-            throw new Error(`Env grace should stay fixed unless dynamic grace is explicitly enabled: ${JSON.stringify({ config: envGraceProbe.config, envDynamicGrace, envFallbackGrace })}`);
+        const longSpeechClock = new ManualClock();
+        const longSpeechFlushed = [];
+        const longSpeechBuffer = new ConversationBuffer({
+            settlingDelay: 25,
+            cooldownPeriod: 25,
+            pendingAsrTimeout: 100,
+            timers: longSpeechClock
+        });
+        longSpeechBuffer.onFlush((utterances) => longSpeechFlushed.push(utterances));
+        longSpeechBuffer.addUtterance({
+            userId: 'long-speaker',
+            speaker: 'Long Speaker',
+            transcription: 'A long timed utterance must not extend the operational settling delay',
+            speechDuration: 60000,
+            speechStartedAt: '2026-05-03T00:00:00.000Z',
+            speechEndedAt: '2026-05-03T00:01:00.000Z'
+        });
+        longSpeechClock.tick(24);
+        if (longSpeechFlushed.length !== 0) {
+            throw new Error('Long speech flushed before the fixed settling delay elapsed');
         }
-
-        process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS = '25';
-        process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE = 'true';
-        const dynamicGraceProbe = new ConversationBuffer();
-        delete process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS;
-        delete process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE;
-        const optInDynamicGrace = dynamicGraceProbe.calculateGracePeriod([
-            { speaker: 'Jensen', transcription: 'long timed speech', speechDuration: 20000 }
-        ]);
-        const optInFallbackGrace = dynamicGraceProbe.calculateGracePeriod([
-            { speaker: 'Jensen', transcription: 'untimed speech' }
-        ]);
-        if (dynamicGraceProbe.config.gracePeriod !== 25 || !dynamicGraceProbe.getState().dynamicGrace || optInDynamicGrace !== 700 || optInFallbackGrace !== 25) {
-            throw new Error(`Dynamic grace should be opt-in with grace env as untimed fallback: ${JSON.stringify({ config: dynamicGraceProbe.config, optInDynamicGrace, optInFallbackGrace })}`);
-        }
-
-        const graceCases = [
-            [100, 50],
-            [1000, 200],
-            [5000, 300],
-            [10000, 500],
-            [20000, 700],
-            [30000, 750],
-            [60000, 750]
-        ];
-
-        for (const [speechDuration, expectedGrace] of graceCases) {
-            const actualGrace = dynamicGraceProbe.calculateGracePeriod([
-                {
-                    speaker: 'Jensen',
-                    transcription: `duration ${speechDuration}`,
-                    speechDuration
-                }
-            ]);
-            if (actualGrace !== expectedGrace) {
-                throw new Error(`Dynamic grace for ${speechDuration}ms speech should be ${expectedGrace}ms, got ${actualGrace}ms`);
-            }
-        }
-
-        const unknownDurationGrace = dynamicGraceProbe.calculateGracePeriod([
-            {
-                speaker: 'Jensen',
-                transcription: 'timing unavailable'
-            }
-        ]);
-        if (unknownDurationGrace !== 25) {
-            throw new Error(`Missing speech timing should use configured fallback grace, got ${unknownDurationGrace}ms`);
-        }
-
-        const spanGrace = dynamicGraceProbe.calculateGracePeriod([
-            {
-                speaker: 'Jensen',
-                transcription: 'first timed chunk',
-                speechStartedAt: '2026-05-03T00:00:00.000Z',
-                speechEndedAt: '2026-05-03T00:00:04.000Z'
-            },
-            {
-                speaker: 'Jensen',
-                transcription: 'second timed chunk',
-                speechStartedAt: '2026-05-03T00:00:08.000Z',
-                speechEndedAt: '2026-05-03T00:00:10.000Z'
-            }
-        ]);
-        if (spanGrace !== 500) {
-            throw new Error(`Buffered speech span should drive dynamic grace, got ${spanGrace}ms`);
-        }
-
-        const fixedGraceProbe = new ConversationBuffer({ gracePeriod: 25 });
-        const fixedGrace = fixedGraceProbe.calculateGracePeriod([
-            { speaker: 'Jensen', transcription: 'fixed timing', speechDuration: 20000 }
-        ]);
-        if (fixedGrace !== 25 || fixedGraceProbe.getState().dynamicGrace) {
-            throw new Error(`Explicit fixed grace should stay fixed, got ${fixedGrace}`);
+        longSpeechClock.tick(1);
+        if (longSpeechFlushed.length !== 1 || longSpeechBuffer.getState().settlingDelay !== 25) {
+            throw new Error(`Long speech did not use the fixed settling delay: ${JSON.stringify({ flushed: longSpeechFlushed.length, state: longSpeechBuffer.getState() })}`);
         }
 
         const flushed = [];
+        const clock = new ManualClock();
         const buffer = new ConversationBuffer({
-            gracePeriod: 25,
+            settlingDelay: 25,
             cooldownPeriod: 25,
-            pendingAsrTimeout: 100
+            pendingAsrTimeout: 100,
+            timers: clock
         });
         buffer.onFlush((utterances) => flushed.push(utterances));
 
         buffer.setUserSpeaking('noise-only', true);
         buffer.setUserSpeaking('noise-only', false);
-        await sleep(40);
+        clock.tick(100);
 
         if (flushed.length !== 0 || buffer.getState().state !== BufferState.IDLE) {
             throw new Error('Raw speaking stop created pending ASR without a receiver candidate');
@@ -5165,7 +5166,7 @@ async function runTests() {
         buffer.setUserSpeaking('user-a', true);
         buffer.setUserSpeaking('user-a', false);
         buffer.markAsrPending('user-a', { reason: 'test candidate' });
-        await sleep(40);
+        clock.tick(99);
 
         if (flushed.length !== 0 || buffer.getState().state !== BufferState.AWAITING_ASR) {
             throw new Error('Buffer flushed before ASR completed');
@@ -5177,68 +5178,122 @@ async function runTests() {
             transcription: 'This should flush after ASR lands',
             words: [{ text: 'This' }]
         });
-        await sleep(40);
+        clock.tick(24);
+        if (flushed.length !== 0 || !buffer.getState().settlingPending) {
+            throw new Error(`Completed ASR flushed before fixed settling delay: ${JSON.stringify(buffer.getState())}`);
+        }
+        clock.tick(1);
 
         if (flushed.length !== 1 || flushed[0].length !== 1) {
-            throw new Error('Buffer did not flush after ASR-driven grace period');
+            throw new Error('Buffer did not flush after ASR-driven settling delay');
         }
 
-        buffer.setUserSpeaking('user-a', true);
-        buffer.setUserSpeaking('user-a', false);
-        buffer.markAsrPending('user-a', { reason: 'first candidate' });
+        buffer.setUserSpeaking('user-resume', true);
+        buffer.setUserSpeaking('user-resume', false);
+        buffer.addUtterance({
+            userId: 'user-resume',
+            speaker: 'Resumer',
+            transcription: 'I might continue'
+        });
+        clock.tick(10);
+        buffer.setUserSpeaking('user-resume', true);
+        clock.tick(100);
+        if (flushed.length !== 1 || buffer.getState().state !== BufferState.USER_SPEAKING) {
+            throw new Error('Resumed speech did not cancel a pending settling flush');
+        }
+        buffer.setUserSpeaking('user-resume', false);
+        clock.tick(24);
+        if (flushed.length !== 1) {
+            throw new Error('Resumed speech flush fired before the restarted settling delay elapsed');
+        }
+        clock.tick(1);
+        if (flushed.length !== 2 || flushed[1][0].speaker !== 'Resumer') {
+            throw new Error(`Resumed speech did not flush after restarting settling delay: ${JSON.stringify(flushed)}`);
+        }
+
         buffer.setUserSpeaking('user-b', true);
         buffer.setUserSpeaking('user-b', false);
-        buffer.markAsrPending('user-b', { reason: 'second candidate' });
+        buffer.markAsrPending('user-b', { reason: 'first candidate' });
+        buffer.setUserSpeaking('user-c', true);
+        buffer.setUserSpeaking('user-c', false);
+        buffer.markAsrPending('user-c', { reason: 'second candidate' });
         buffer.addUtterance({
-            userId: 'user-a',
+            userId: 'user-b',
             speaker: 'Jensen',
             transcription: 'First speaker ready'
         });
-        await sleep(40);
+        clock.tick(99);
 
-        if (flushed.length !== 1 || buffer.getState().state !== BufferState.AWAITING_ASR) {
+        if (flushed.length !== 2 || buffer.getState().state !== BufferState.AWAITING_ASR) {
             throw new Error('Buffer flushed before all speakers completed ASR');
         }
 
         buffer.addUtterance({
-            userId: 'user-b',
+            userId: 'user-c',
             speaker: 'Jade',
             transcription: 'Second speaker ready'
         });
-        await sleep(40);
+        clock.tick(25);
 
-        if (flushed.length !== 2 || flushed[1].length !== 2) {
+        if (flushed.length !== 3 || flushed[2].length !== 2) {
             throw new Error('Buffer did not flush once all speaker ASR completed');
         }
 
-        buffer.setUserSpeaking('user-c', true);
-        buffer.setUserSpeaking('user-c', false);
-        buffer.markAsrPending('user-c', { reason: 'empty candidate' });
+        const endpointClock = new ManualClock();
+        const endpointFlushed = [];
+        const endpointBuffer = new ConversationBuffer({
+            settlingDelay: 25,
+            cooldownPeriod: 25,
+            pendingAsrTimeout: 100,
+            timers: endpointClock
+        });
+        endpointBuffer.onFlush((utterances) => endpointFlushed.push(utterances));
+        endpointBuffer.markEndpointing('endpoint-user', true);
+        endpointBuffer.addUtterance({
+            userId: 'endpoint-user',
+            speaker: 'Endpoint',
+            transcription: 'wait until endpoint debounce clears'
+        });
+        endpointClock.tick(100);
+        if (endpointFlushed.length !== 0 || endpointBuffer.getState().state !== BufferState.USER_SPEAKING) {
+            throw new Error(`Endpointing did not prevent premature flushing: ${JSON.stringify(endpointBuffer.getState())}`);
+        }
+        endpointBuffer.markEndpointing('endpoint-user', false);
+        endpointClock.tick(25);
+        if (endpointFlushed.length !== 1) {
+            throw new Error(`Endpointing buffer did not flush after clearing: ${JSON.stringify(endpointFlushed)}`);
+        }
+
+        buffer.setUserSpeaking('user-empty', true);
+        buffer.setUserSpeaking('user-empty', false);
+        buffer.markAsrPending('user-empty', { reason: 'empty candidate' });
         buffer.addUtterance({
-            userId: 'user-c',
+            userId: 'user-empty',
             speaker: 'Quiet Guest',
             transcription: ''
         });
-        await sleep(40);
+        clock.tick(100);
 
-        if (flushed.length !== 2 || buffer.getState().state !== BufferState.IDLE) {
+        if (flushed.length !== 3 || buffer.getState().state !== BufferState.IDLE) {
             throw new Error('Empty ASR result did not clear pending state without flushing');
         }
 
-        buffer.setUserSpeaking('user-d', true);
-        buffer.setUserSpeaking('user-d', false);
-        buffer.markAsrPending('user-d', { reason: 'stuck candidate' });
-        await sleep(120);
+        buffer.setUserSpeaking('user-timeout', true);
+        buffer.setUserSpeaking('user-timeout', false);
+        buffer.markAsrPending('user-timeout', { reason: 'stuck candidate' });
+        clock.tick(100);
 
-        if (flushed.length !== 2 || buffer.getState().state !== BufferState.IDLE) {
+        if (flushed.length !== 3 || buffer.getState().state !== BufferState.IDLE) {
             throw new Error('Pending ASR timeout did not clear stuck state');
         }
 
+        const orderedClock = new ManualClock();
         const orderedFlushed = [];
         const orderingBuffer = new ConversationBuffer({
-            gracePeriod: 25,
+            settlingDelay: 25,
             cooldownPeriod: 25,
-            pendingAsrTimeout: 100
+            pendingAsrTimeout: 100,
+            timers: orderedClock
         });
         orderingBuffer.onFlush((utterances) => orderedFlushed.push(utterances));
         orderingBuffer.addUtterance({
@@ -5264,18 +5319,83 @@ async function runTests() {
             speechEndedAt: '2026-05-03T00:00:06.000Z',
             asrCompletedAt: '2026-05-03T00:00:06.200Z'
         });
-        await sleep(40);
+        orderedClock.tick(25);
 
         const orderedSpeakers = orderedFlushed[0]?.map(utterance => utterance.speaker).join(', ');
         if (orderedSpeakers !== 'First Speaker, Second Speaker, Fallback Speaker') {
             throw new Error(`Buffer did not flush by spoken timeline: ${orderedSpeakers}`);
         }
 
+        const holdClock = new ManualClock();
+        const holdFlushed = [];
+        const holdBuffer = new ConversationBuffer({
+            settlingDelay: 25,
+            cooldownPeriod: 25,
+            pendingAsrTimeout: 100,
+            timers: holdClock
+        });
+        holdBuffer.onFlush((utterances) => holdFlushed.push(utterances));
+        holdBuffer.setFlushHold('direct-response', true);
+        holdBuffer.addUtterance({
+            userId: 'held-user',
+            speaker: 'Held',
+            transcription: 'hold me until the direct response clears'
+        });
+        holdClock.tick(100);
+        if (holdFlushed.length !== 0 || holdBuffer.getState().flushHoldCount !== 1 || holdBuffer.getState().isReady) {
+            throw new Error(`Flush hold did not block readiness/flushing: ${JSON.stringify(holdBuffer.getState())}`);
+        }
+        holdBuffer.setFlushHold('direct-response', false);
+        holdClock.tick(25);
+        if (holdFlushed.length !== 1) {
+            throw new Error(`Flush hold did not release into settling flush: ${JSON.stringify(holdFlushed)}`);
+        }
+
+        const cooldownClock = new ManualClock();
+        const cooldownFlushed = [];
+        const cooldownBuffer = new ConversationBuffer({
+            settlingDelay: 25,
+            cooldownPeriod: 25,
+            pendingAsrTimeout: 100,
+            timers: cooldownClock
+        });
+        cooldownBuffer.onFlush((utterances) => cooldownFlushed.push(utterances));
+        cooldownBuffer.addUtterance({
+            userId: 'first-cooldown',
+            speaker: 'First Cooldown',
+            transcription: 'first turn'
+        });
+        cooldownClock.tick(25);
+        cooldownBuffer.startCooldown();
+        cooldownBuffer.addUtterance({
+            userId: 'second-cooldown',
+            speaker: 'Second Cooldown',
+            transcription: 'second turn waits through cooldown'
+        });
+        cooldownClock.tick(24);
+        if (cooldownFlushed.length !== 1 || !cooldownBuffer.getState().cooldownPending) {
+            throw new Error(`Cooldown did not block the next flush: ${JSON.stringify(cooldownBuffer.getState())}`);
+        }
+        cooldownClock.tick(1);
+        if (cooldownFlushed.length !== 1 || !cooldownBuffer.getState().settlingPending) {
+            throw new Error(`Cooldown completion did not start the settling delay: ${JSON.stringify(cooldownBuffer.getState())}`);
+        }
+        cooldownClock.tick(24);
+        if (cooldownFlushed.length !== 1) {
+            throw new Error('Cooldown-backed flush fired before the settling delay elapsed');
+        }
+        cooldownClock.tick(1);
+        if (cooldownFlushed.length !== 2 || cooldownFlushed[1][0].speaker !== 'Second Cooldown') {
+            throw new Error(`Cooldown-backed flush did not fire after settling: ${JSON.stringify(cooldownFlushed)}`);
+        }
+
+        const requeueClock = new ManualClock();
         const requeueFlushed = [];
         const requeueBuffer = new ConversationBuffer({
-            gracePeriod: 25,
+            settlingDelay: 25,
             cooldownPeriod: 25,
-            pendingAsrTimeout: 100
+            pendingAsrTimeout: 100,
+            timers: requeueClock
         });
         requeueBuffer.onFlush((utterances) => requeueFlushed.push(utterances));
         requeueBuffer.setFlushHold('host-response', true);
@@ -5291,21 +5411,21 @@ async function runTests() {
                 speechStartedAt: '2026-05-03T00:00:01.000Z'
             }
         ], 'restore stale host turn');
-        await sleep(40);
+        requeueClock.tick(100);
 
         if (requeueFlushed.length !== 0) {
             throw new Error('Requeued utterances flushed while a host-response hold was active');
         }
 
         requeueBuffer.setFlushHold('host-response', false);
-        await sleep(40);
+        requeueClock.tick(25);
 
         const requeuedSpeakers = requeueFlushed[0]?.map(utterance => utterance.speaker).join(', ');
         if (requeuedSpeakers !== 'Earlier Speaker, Later Speaker') {
             throw new Error(`Requeued utterances did not flush in spoken order: ${requeuedSpeakers}`);
         }
 
-        console.log('  Conversation buffer waits only for receiver ASR candidates and preserves restored utterances');
+        console.log('  Conversation buffer uses fixed operational settling and preserves ASR gates, holds, cooldown, and requeues');
         passed++;
     } catch (error) {
         console.log(`  Conversation buffer failed: ${error.message}`);
@@ -8497,7 +8617,7 @@ async function runTests() {
             throw new Error(`Expected flush after hold cleared: ${JSON.stringify(heldFlushed)}`);
         }
 
-        console.log('  Endpointing and direct-response holds block flush; clearing them lets grace timer proceed');
+        console.log('  Endpointing and direct-response holds block flush; clearing them lets settling proceed');
         passed++;
     } catch (error) {
         console.log(`  ConversationBuffer endpointing gate failed: ${error.message}`);

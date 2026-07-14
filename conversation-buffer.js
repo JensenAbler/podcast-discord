@@ -1,16 +1,17 @@
 /**
  * ConversationBuffer - ASR-aware utterance accumulation.
  *
- * The grace timer starts only after all active speakers have stopped and all
- * receiver-announced ASR candidates have completed. This keeps "user paused"
- * separate from "transcription landed" so slow ASR cannot orphan an utterance
- * in the buffer without treating every Discord speaking-stop flap as ASR work.
+ * The settling timer starts only after all active speakers have stopped and
+ * all receiver-announced ASR candidates have completed. This is an operational
+ * synchronization delay for receiver state, ASR completion, holds, cooldown,
+ * and stale-response requeues. It is not a duration-based turn inference
+ * heuristic.
  *
  * States:
  * - IDLE: ready, no active speakers, no pending ASR, empty buffer
  * - USER_SPEAKING: at least one speaker is actively talking
  * - AWAITING_ASR: everyone stopped, but one or more ASR jobs are still pending
- * - GRACE: ASR is complete and buffered text is waiting for a short resume window
+ * - GRACE: legacy state name; buffered text is in the fixed settling delay
  * - COOLDOWN: host response just played; hold before another response
  */
 
@@ -24,16 +25,8 @@ const BufferState = Object.freeze({
 
 const DEFAULT_USER_ID = '__default_user__';
 const DEFAULT_PENDING_ASR_TIMEOUT = 8000;
-const DEFAULT_GRACE_PERIOD = 50;        // fallback post-ASR hold when speech timing is missing
+const DEFAULT_SETTLING_DELAY = 50;      // fixed operational post-ASR settling delay
 const DEFAULT_COOLDOWN_PERIOD = 50;     // hold after a host turn before another response
-const DYNAMIC_GRACE_POINTS = Object.freeze([
-    { speechMs: 100, graceMs: 50 },
-    { speechMs: 1000, graceMs: 200 },
-    { speechMs: 5000, graceMs: 300 },
-    { speechMs: 10000, graceMs: 500 },
-    { speechMs: 20000, graceMs: 700 },
-    { speechMs: 30000, graceMs: 750 }
-]);
 
 function parseFiniteEnv(raw) {
     if (raw == null || raw === '') return null;
@@ -41,46 +34,42 @@ function parseFiniteEnv(raw) {
     return Number.isFinite(n) ? n : null;
 }
 
-function parseBoolEnv(raw) {
-    if (typeof raw !== 'string' || raw.length === 0) return null;
-    return !['false', '0', 'no', 'off'].includes(raw.toLowerCase());
-}
-
 class ConversationBuffer {
     constructor(config = {}) {
-        const envGracePeriod = parseFiniteEnv(process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS);
+        const envSettlingDelay = parseFiniteEnv(process.env.CONVERSATION_BUFFER_SETTLING_DELAY_MS);
+        const legacyEnvGracePeriod = parseFiniteEnv(process.env.CONVERSATION_BUFFER_GRACE_PERIOD_MS);
         const envCooldownPeriod = parseFiniteEnv(process.env.CONVERSATION_BUFFER_COOLDOWN_PERIOD_MS);
-        const envDynamicGrace = parseBoolEnv(process.env.CONVERSATION_BUFFER_DYNAMIC_GRACE);
 
-        const explicitGracePeriod = Object.prototype.hasOwnProperty.call(config, 'gracePeriod');
-        const explicitDynamicGrace = Object.prototype.hasOwnProperty.call(config, 'dynamicGrace');
+        const explicitSettlingDelay = Object.prototype.hasOwnProperty.call(config, 'settlingDelay');
+        const explicitLegacyGracePeriod = Object.prototype.hasOwnProperty.call(config, 'gracePeriod');
 
-        // gracePeriod: explicit arg wins, then env, then default.
-        const gracePeriod = explicitGracePeriod
-            ? config.gracePeriod
-            : (envGracePeriod !== null ? envGracePeriod : DEFAULT_GRACE_PERIOD);
-
-        // dynamicGrace: explicit arg wins, then env, then fixed grace by
-        // default. The duration-aware grace ladder is useful for experiments
-        // but should be opt-in so long utterances do not silently change the
-        // turn-boundary latency profile.
-        const dynamicGrace = explicitDynamicGrace
-            ? config.dynamicGrace
-            : (envDynamicGrace !== null ? envDynamicGrace : false);
+        // settlingDelay: explicit arg wins, then current env, then deprecated
+        // grace env alias, then default.
+        const settlingDelay = explicitSettlingDelay
+            ? config.settlingDelay
+            : (explicitLegacyGracePeriod
+                ? config.gracePeriod
+                : (envSettlingDelay !== null
+                    ? envSettlingDelay
+                    : (legacyEnvGracePeriod !== null ? legacyEnvGracePeriod : DEFAULT_SETTLING_DELAY)));
 
         this.config = {
-            gracePeriod,
+            settlingDelay,
+            gracePeriod: settlingDelay,
             cooldownPeriod: Object.prototype.hasOwnProperty.call(config, 'cooldownPeriod')
                 ? config.cooldownPeriod
                 : (envCooldownPeriod !== null ? envCooldownPeriod : DEFAULT_COOLDOWN_PERIOD),
             pendingAsrTimeout: Object.prototype.hasOwnProperty.call(config, 'pendingAsrTimeout')
                 ? config.pendingAsrTimeout
-                : DEFAULT_PENDING_ASR_TIMEOUT,
-            dynamicGrace
+                : DEFAULT_PENDING_ASR_TIMEOUT
         };
 
         this.buffer = []; // Stores {userId, speaker, transcription, timestamp, ...}
         this.flushCallback = null;
+        this.timers = config.timers || {
+            setTimeout,
+            clearTimeout
+        };
 
         // Explicit state machine state and per-user tracking.
         this.state = BufferState.IDLE;
@@ -96,9 +85,9 @@ class ConversationBuffer {
         this.flushHolds = new Set();
         this.nextInsertionOrder = 0;
 
-        this.graceTimer = null;
+        this.settlingTimer = null;
         this.cooldownTimer = null;
-        this.lastGracePeriod = this.config.gracePeriod;
+        this.lastSettlingDelay = this.config.settlingDelay;
 
         // Backwards-compatible status fields read by bot.js.
         this.isUserSpeaking = false;
@@ -149,7 +138,7 @@ class ConversationBuffer {
 
     /**
      * Set the flush callback.
-     * Called when grace period expires and buffer has content.
+     * Called when the fixed settling delay expires and buffer has content.
      */
     onFlush(callback) {
         this.flushCallback = callback;
@@ -171,7 +160,7 @@ class ConversationBuffer {
         if (isSpeaking) {
             this.activeSpeakers.add(userId);
             console.log(`[ConversationBuffer] User ${userId} speaking; active=${this.activeSpeakers.size}, pendingASR=${this.pendingASR.size}`);
-            this.clearGraceTimer();
+            this.clearSettlingTimer();
         } else {
             this.activeSpeakers.delete(userId);
             console.log(`[ConversationBuffer] User ${userId} stopped; active=${this.activeSpeakers.size}, pendingASR=${this.pendingASR.size}`);
@@ -181,10 +170,10 @@ class ConversationBuffer {
     }
 
     /**
-     * Start the grace period timer.
+     * Start the fixed operational settling timer.
      * The timer is valid only after ASR has completed for every stopped speaker.
      */
-    startGraceTimer(options = {}) {
+    startSettlingTimer(options = {}) {
         const restart = Boolean(options.restart);
 
         if (this.state === BufferState.COOLDOWN) {
@@ -198,37 +187,37 @@ class ConversationBuffer {
             this.flushHolds.size > 0 ||
             this.buffer.length === 0
         ) {
-            this.clearGraceTimer();
+            this.clearSettlingTimer();
             return;
         }
 
-        if (this.graceTimer && !restart) {
+        if (this.settlingTimer && !restart) {
             return;
         }
 
-        this.clearGraceTimer();
+        this.clearSettlingTimer();
 
-        const gracePeriod = this.calculateGracePeriod();
-        console.log(`[ConversationBuffer] Starting grace period after ASR completion (${gracePeriod}ms)`);
-        this.graceTimer = setTimeout(() => {
-            console.log('[ConversationBuffer] Grace period expired');
-            this.graceTimer = null;
+        const settlingDelay = this.calculateSettlingDelay();
+        console.log(`[ConversationBuffer] Starting operational settling delay after ASR completion (${settlingDelay}ms)`);
+        this.settlingTimer = this.timers.setTimeout(() => {
+            console.log('[ConversationBuffer] Operational settling delay expired');
+            this.settlingTimer = null;
             this.attemptFlush();
-        }, gracePeriod);
+        }, settlingDelay);
     }
 
     /**
-     * Clear the grace period timer.
+     * Clear the fixed operational settling timer.
      */
-    clearGraceTimer() {
-        if (this.graceTimer) {
-            clearTimeout(this.graceTimer);
-            this.graceTimer = null;
+    clearSettlingTimer() {
+        if (this.settlingTimer) {
+            this.timers.clearTimeout(this.settlingTimer);
+            this.settlingTimer = null;
         }
     }
 
     /**
-     * Attempt to flush the buffer after grace expires.
+     * Attempt to flush the buffer after the settling delay expires.
      */
     attemptFlush() {
         if (this.buffer.length === 0) {
@@ -270,7 +259,7 @@ class ConversationBuffer {
      */
     forceFlush() {
         if (this.buffer.length === 0) return;
-        this.clearGraceTimer();
+        this.clearSettlingTimer();
         this.doFlush();
     }
 
@@ -325,11 +314,11 @@ class ConversationBuffer {
      */
     startCooldown() {
         console.log(`[ConversationBuffer] Starting cooldown (${this.config.cooldownPeriod}ms)`);
-        this.clearGraceTimer();
+        this.clearSettlingTimer();
         this.clearCooldownTimer();
         this.transitionTo(BufferState.COOLDOWN, 'cooldown started');
 
-        this.cooldownTimer = setTimeout(() => {
+        this.cooldownTimer = this.timers.setTimeout(() => {
             console.log('[ConversationBuffer] Cooldown complete');
             this.cooldownTimer = null;
             this.transitionTo(BufferState.IDLE, 'cooldown complete');
@@ -342,7 +331,7 @@ class ConversationBuffer {
      */
     clearCooldownTimer() {
         if (this.cooldownTimer) {
-            clearTimeout(this.cooldownTimer);
+            this.timers.clearTimeout(this.cooldownTimer);
             this.cooldownTimer = null;
         }
     }
@@ -356,9 +345,10 @@ class ConversationBuffer {
             utteranceCount: this.buffer.length,
             isUserSpeaking: this.activeSpeakers.size > 0,
             isReady: this.state !== BufferState.COOLDOWN && this.flushHolds.size === 0,
-            gracePending: this.graceTimer !== null,
-            gracePeriod: this.lastGracePeriod,
-            dynamicGrace: Boolean(this.config.dynamicGrace),
+            settlingPending: this.settlingTimer !== null,
+            settlingDelay: this.lastSettlingDelay,
+            gracePending: this.settlingTimer !== null,
+            gracePeriod: this.lastSettlingDelay,
             cooldownPending: this.cooldownTimer !== null,
             activeSpeakerCount: this.activeSpeakers.size,
             endpointingSpeakerCount: this.endpointingSpeakers.size,
@@ -383,7 +373,7 @@ class ConversationBuffer {
         this.pendingAsrCounts.clear();
         this.pendingAsrReasons.clear();
         this.flushHolds.clear();
-        this.clearGraceTimer();
+        this.clearSettlingTimer();
         this.clearCooldownTimer();
         this.clearPendingAsrTimers();
         this.transitionTo(BufferState.IDLE, 'clear');
@@ -396,100 +386,9 @@ class ConversationBuffer {
         this.debugMode = enabled;
     }
 
-    calculateGracePeriod(utterances = this.getOrderedUtterances()) {
-        if (!this.config.dynamicGrace) {
-            this.lastGracePeriod = this.config.gracePeriod;
-            return this.lastGracePeriod;
-        }
-
-        const speechDurationMs = this.getBufferedSpeechDurationMs(utterances);
-        this.lastGracePeriod = this.mapSpeechDurationToGracePeriod(speechDurationMs);
-        return this.lastGracePeriod;
-    }
-
-    mapSpeechDurationToGracePeriod(speechDurationMs) {
-        if (!Number.isFinite(speechDurationMs)) {
-            return this.config.gracePeriod;
-        }
-
-        const durationMs = Math.max(0, speechDurationMs);
-        const firstPoint = DYNAMIC_GRACE_POINTS[0];
-        if (durationMs <= firstPoint.speechMs) {
-            return firstPoint.graceMs;
-        }
-
-        for (let index = 1; index < DYNAMIC_GRACE_POINTS.length; index++) {
-            const previous = DYNAMIC_GRACE_POINTS[index - 1];
-            const next = DYNAMIC_GRACE_POINTS[index];
-
-            if (durationMs <= next.speechMs) {
-                const progress = (durationMs - previous.speechMs) / (next.speechMs - previous.speechMs);
-                return Math.round(previous.graceMs + progress * (next.graceMs - previous.graceMs));
-            }
-        }
-
-        return DYNAMIC_GRACE_POINTS[DYNAMIC_GRACE_POINTS.length - 1].graceMs;
-    }
-
-    getBufferedSpeechDurationMs(utterances = []) {
-        const timings = utterances
-            .map(utterance => this.getUtteranceTiming(utterance))
-            .filter(Boolean);
-
-        if (timings.length === 0) {
-            return null;
-        }
-
-        const starts = timings.map(timing => timing.startMs).filter(Number.isFinite);
-        const ends = timings.map(timing => timing.endMs).filter(Number.isFinite);
-
-        if (starts.length > 0 && ends.length > 0) {
-            return Math.max(0, Math.max(...ends) - Math.min(...starts));
-        }
-
-        const durations = timings.map(timing => timing.durationMs).filter(Number.isFinite);
-        if (durations.length > 0) {
-            return durations.reduce((sum, duration) => sum + Math.max(0, duration), 0);
-        }
-
-        return null;
-    }
-
-    getUtteranceTiming(utterance = {}) {
-        const startMs = this.parseTimestamp(utterance.speechStartedAt)
-            ?? this.parseTimestamp(utterance.startTime)
-            ?? this.parseTimestamp(utterance.timestamp)
-            ?? this.parseTimestamp(utterance.asrCompletedAt);
-        const endMs = this.parseTimestamp(utterance.speechEndedAt);
-        const explicitDurationMs = this.getExplicitUtteranceDurationMs(utterance);
-        const inferredDurationMs = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs
-            ? endMs - startMs
-            : null;
-        const durationMs = Number.isFinite(explicitDurationMs)
-            ? explicitDurationMs
-            : inferredDurationMs;
-
-        return {
-            startMs,
-            endMs: Number.isFinite(endMs)
-                ? endMs
-                : (Number.isFinite(startMs) && Number.isFinite(durationMs) ? startMs + durationMs : null),
-            durationMs
-        };
-    }
-
-    getExplicitUtteranceDurationMs(utterance = {}) {
-        const speechDuration = Number(utterance.speechDuration);
-        if (Number.isFinite(speechDuration) && speechDuration >= 0) {
-            return speechDuration;
-        }
-
-        const duration = Number(utterance.duration);
-        if (Number.isFinite(duration) && duration >= 0) {
-            return duration;
-        }
-
-        return null;
+    calculateSettlingDelay() {
+        this.lastSettlingDelay = this.config.settlingDelay;
+        return this.lastSettlingDelay;
     }
 
     normalizeUserId(userId) {
@@ -566,7 +465,7 @@ class ConversationBuffer {
         if (isEndpointing) {
             this.endpointingSpeakers.add(normalizedUserId);
             console.log(`[ConversationBuffer] Endpointing for ${normalizedUserId}; active=${this.activeSpeakers.size}, endpointing=${this.endpointingSpeakers.size}, pendingASR=${this.pendingASR.size}`);
-            this.clearGraceTimer();
+            this.clearSettlingTimer();
             this.evaluateState('endpointing started');
             return;
         }
@@ -587,7 +486,7 @@ class ConversationBuffer {
 
         if (isHeld) {
             this.flushHolds.add(key);
-            this.clearGraceTimer();
+            this.clearSettlingTimer();
             this.evaluateState(`${key} hold started`);
             return;
         }
@@ -632,7 +531,7 @@ class ConversationBuffer {
 
         this.clearPendingAsrTimer(userId);
 
-        const timer = setTimeout(() => {
+        const timer = this.timers.setTimeout(() => {
             this.pendingAsrTimers.delete(userId);
             if (!this.pendingASR.delete(userId)) {
                 return;
@@ -688,14 +587,14 @@ class ConversationBuffer {
     clearPendingAsrTimer(userId) {
         const timer = this.pendingAsrTimers.get(userId);
         if (timer) {
-            clearTimeout(timer);
+            this.timers.clearTimeout(timer);
             this.pendingAsrTimers.delete(userId);
         }
     }
 
     clearPendingAsrTimers() {
         for (const timer of this.pendingAsrTimers.values()) {
-            clearTimeout(timer);
+            this.timers.clearTimeout(timer);
         }
         this.pendingAsrTimers.clear();
     }
@@ -711,24 +610,24 @@ class ConversationBuffer {
         this.isReady = this.flushHolds.size === 0;
 
         if (this.activeSpeakers.size > 0 || this.endpointingSpeakers.size > 0) {
-            this.clearGraceTimer();
+            this.clearSettlingTimer();
             this.transitionTo(BufferState.USER_SPEAKING, reason);
             return;
         }
 
         if (this.pendingASR.size > 0) {
-            this.clearGraceTimer();
+            this.clearSettlingTimer();
             this.transitionTo(BufferState.AWAITING_ASR, reason);
             return;
         }
 
         if (this.buffer.length > 0) {
             this.transitionTo(BufferState.GRACE, reason);
-            this.startGraceTimer();
+            this.startSettlingTimer();
             return;
         }
 
-        this.clearGraceTimer();
+        this.clearSettlingTimer();
         this.transitionTo(BufferState.IDLE, reason);
     }
 
