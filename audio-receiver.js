@@ -21,6 +21,7 @@ const { Writable } = require('stream');
 const { SilenceDetector } = require('./silence-detector');
 const { SpeakerTracker } = require('./speaker-tracker');
 const { ElevenLabsIntegration } = require('./elevenlabs-integration');
+const { EndpointStabilityProfile, ENDPOINT_DEBOUNCE_VALUES_MS } = require('./endpoint-stability-profile');
 
 class AudioReceiver {
     constructor(options = {}) {
@@ -34,6 +35,7 @@ class AudioReceiver {
             onSpeakingStop: options.onSpeakingStop || (() => {}),
             onSpeechEvidence: options.onSpeechEvidence || (() => {}),
             onEndpointing: options.onEndpointing || (() => {}), // (userId, { active, reason, debounceMs }) — Discord-stop debounce window
+            onEndpointStability: options.onEndpointStability || (() => {}),
             onAsrDispatched: options.onAsrDispatched || (() => {}), // (userId, { reason, audioBytes, speechDuration }) — fires immediately before stt.transcribe
             onVadDiscarded: options.onVadDiscarded || (() => {}),
             onAsrError: options.onAsrError || (() => {}),
@@ -53,6 +55,8 @@ class AudioReceiver {
 
         // Speaker audio buffers: userId -> { chunks: Buffer[], startTime, speakerInfo, detector }
         this.speakerBuffers = new Map();
+        this.endpointStabilityProfiles = new Map();
+        this.lastRawVoiceActivity = null;
 
         // Speaker tracker for conversation history
         this.speakerTracker = new SpeakerTracker();
@@ -107,10 +111,13 @@ class AudioReceiver {
         }
 
         const buffer = this.ensureUserBuffer(userId);
+        const startedAtMs = Date.now();
+        this.recordRawEndpointStart(userId, buffer, startedAtMs);
         this.startSpeechEvidenceSegment(buffer);
 
         // User resumed within the debounce window — same utterance, keep accumulating.
         this.cancelEndpointTimer(userId, 'speaker resumed');
+        this.recordRawVoiceActivity(userId, 'start', startedAtMs);
 
         if (!this.activeSpeakers.has(userId)) {
             this.activeSpeakers.add(userId);
@@ -234,7 +241,12 @@ class AudioReceiver {
             endpointTimer: null,
             speechEvidenceEmitted: false,
             segmentSpeechEvidenceEmitted: false,
-            segmentStartStats: null
+            segmentStartStats: null,
+            rawSpeechStartAtMs: null,
+            rawStartEvents: [],
+            rawStopEvents: [],
+            rawEndpointGaps: [],
+            pendingResumeCandidate: null
         };
 
         this.speakerBuffers.set(userId, buffer);
@@ -258,6 +270,7 @@ class AudioReceiver {
      * @param {string} userId - Discord user ID
      */
     handleUserStopSpeaking(userId) {
+        const stoppedAtMs = Date.now();
         if (this.activeSpeakers.delete(userId)) {
             console.log(`[AudioReceiver] User ${userId} stopped speaking`);
             this.options.onSpeakingStop(userId);
@@ -266,17 +279,20 @@ class AudioReceiver {
         const buffer = this.speakerBuffers.get(userId);
         if (buffer && buffer.detector) {
             buffer.detector.speakingStopped();
+            const isCandidate = this.hasAsrCandidate(userId, buffer);
+            this.recordRawEndpointStop(userId, buffer, stoppedAtMs, isCandidate);
             // Discord-stop is ambiguous (mid-sentence breath vs end-of-thought).
             // Arm a debounce; if the user resumes, the timer is canceled. If it
             // expires, flushUser snapshots and ASR is dispatched. The in-stream
             // SilenceDetector may also beat us to flushUser; either way the
             // endpoint timer is canceled by snapshotUserBuffer.
-            if (this.hasAsrCandidate(userId, buffer)) {
+            if (isCandidate) {
                 this.armEndpointTimer(userId, 'speaking stop with buffered audio');
             } else if (buffer.chunks.length > 0) {
                 this.discardUserBuffer(userId, 'non-speech VAD flap');
             }
         }
+        this.recordRawVoiceActivity(userId, 'stop', stoppedAtMs);
     }
 
     /**
@@ -404,6 +420,130 @@ class AudioReceiver {
         };
     }
 
+
+    getEndpointStabilityProfile(userId) {
+        let profile = this.endpointStabilityProfiles.get(userId);
+        if (!profile) {
+            profile = new EndpointStabilityProfile({
+                defaultDebounceMs: this.options.endpointingDebounce,
+                debounceValues: this.options.endpointingDebounceValues || ENDPOINT_DEBOUNCE_VALUES_MS,
+                upRunThreshold: this.options.endpointingUpRunThreshold,
+                downChunkThreshold: this.options.endpointingDownChunkThreshold
+            });
+            this.endpointStabilityProfiles.set(userId, profile);
+        }
+        return profile;
+    }
+
+    getEndpointDebounceMs(userId) {
+        return this.getEndpointStabilityProfile(userId).getDebounceMs();
+    }
+
+    getEndpointStabilitySnapshot(userId) {
+        return this.getEndpointStabilityProfile(userId).getSnapshot();
+    }
+
+    recordRawVoiceActivity(userId, type, atMs = Date.now()) {
+        this.lastRawVoiceActivity = { userId, type, atMs };
+    }
+
+    recordRawEndpointStart(userId, buffer, startedAtMs = Date.now()) {
+        if (!buffer) return null;
+
+        const noCrossSpeaker = !this.lastRawVoiceActivity ||
+            (this.lastRawVoiceActivity.userId === userId && this.lastRawVoiceActivity.type === 'stop');
+        const profile = this.getEndpointStabilityProfile(userId);
+        const result = profile.recordRawStart({
+            atMs: startedAtMs,
+            activeDebounceMs: this.getEndpointDebounceMs(userId),
+            noCrossSpeaker
+        });
+
+        if (!buffer.rawSpeechStartAtMs) {
+            buffer.rawSpeechStartAtMs = startedAtMs;
+        }
+        buffer.rawStartEvents.push(result.observation);
+        if (result.gap) {
+            buffer.rawEndpointGaps.push(result.gap);
+        }
+        if (result.resumeCandidate) {
+            buffer.pendingResumeCandidate = result.resumeCandidate;
+        }
+
+        return result;
+    }
+
+    recordRawEndpointStop(userId, buffer, stoppedAtMs = Date.now(), hasAsrCandidate = false) {
+        if (!buffer) return null;
+
+        const stats = buffer.detector?.getStats?.() || {};
+        const profile = this.getEndpointStabilityProfile(userId);
+        const observation = profile.recordRawStop({
+            atMs: stoppedAtMs,
+            activeDebounceMs: this.getEndpointDebounceMs(userId),
+            hasAsrCandidate,
+            speakingFrames: stats.speakingFrames || 0,
+            silentFrames: stats.silentFrames || 0,
+            totalFrames: stats.totalFrames || 0
+        });
+        buffer.rawStopEvents.push(observation);
+        return observation;
+    }
+
+    buildEndpointStabilityRaw(userId, buffer) {
+        const profile = this.getEndpointStabilityProfile(userId);
+        const starts = Array.isArray(buffer?.rawStartEvents) ? buffer.rawStartEvents.slice() : [];
+        const stops = Array.isArray(buffer?.rawStopEvents) ? buffer.rawStopEvents.slice() : [];
+        const gaps = Array.isArray(buffer?.rawEndpointGaps) ? buffer.rawEndpointGaps.slice() : [];
+        const lastStop = stops[stops.length - 1] || null;
+
+        return {
+            profile: profile.getSnapshot(),
+            activeDebounceMs: profile.getDebounceMs(),
+            startedAtMs: buffer?.rawSpeechStartAtMs || null,
+            starts,
+            stops,
+            gaps,
+            resumeCandidate: buffer?.pendingResumeCandidate || null,
+            lastStopId: lastStop?.id || null
+        };
+    }
+
+    resetEndpointStabilityBufferState(buffer) {
+        if (!buffer) return;
+        buffer.rawSpeechStartAtMs = null;
+        buffer.rawStartEvents = [];
+        buffer.rawStopEvents = [];
+        buffer.rawEndpointGaps = [];
+        buffer.pendingResumeCandidate = null;
+    }
+
+    emitEndpointStabilityTelemetry(userId, event) {
+        if (!event) return;
+
+        const snapshot = event.snapshot || this.getEndpointStabilitySnapshot(userId);
+        const adjustment = event.adjustment;
+        const evidence = event.evidence || {};
+        const label = adjustment
+            ? 'adjusted ' + adjustment.direction + ' ' + adjustment.fromMs + 'ms -> ' + adjustment.toMs + 'ms (' + adjustment.reason + ')'
+            : String(event.kind || 'evidence') + ': ' + String(evidence.type || 'evidence');
+
+        console.log(
+            '[AudioReceiver] Endpoint stability for ' + userId + ': ' + label + '; ' +
+            'active=' + snapshot.activeDebounceMs + 'ms, up=' + snapshot.upEvidenceCount + '/' + snapshot.upEvidenceNeeded + ', ' +
+            'down=' + snapshot.downEvidenceCount + '/' + snapshot.downEvidenceNeeded
+        );
+
+        try {
+            this.options.onEndpointStability(userId, {
+                ...event,
+                snapshot
+            });
+        } catch (error) {
+            console.error('[AudioReceiver] Endpoint stability handler failed:', error.message);
+        }
+    }
+
     /**
      * Drop buffered audio that never crossed the speech detector. Persistent
      * Discord subscriptions can receive tiny VAD blips; if we keep their PCM,
@@ -423,6 +563,7 @@ class AudioReceiver {
         buffer.speechEvidenceEmitted = false;
         buffer.segmentSpeechEvidenceEmitted = false;
         buffer.segmentStartStats = null;
+        this.resetEndpointStabilityBufferState(buffer);
 
         if (buffer.endpointTimer) {
             clearTimeout(buffer.endpointTimer);
@@ -459,14 +600,16 @@ class AudioReceiver {
         const buffer = this.speakerBuffers.get(userId);
         if (!buffer || buffer.endpointTimer) return;
 
-        const debounceMs = this.options.endpointingDebounce;
-        console.log(`[AudioReceiver] Endpoint debounce armed for ${userId} (${reason}, ${debounceMs}ms)`);
+        const debounceMs = this.getEndpointDebounceMs(userId);
+        const endpointStability = this.getEndpointStabilitySnapshot(userId);
+        console.log(`[AudioReceiver] Endpoint debounce armed for ${userId} (${reason}, ${debounceMs}ms; up=${endpointStability.upEvidenceCount}/${endpointStability.upEvidenceNeeded}, down=${endpointStability.downEvidenceCount}/${endpointStability.downEvidenceNeeded})`);
 
         const stats = buffer.detector?.getStats?.() || {};
         this.options.onEndpointing(userId, {
             active: true,
             reason,
             debounceMs,
+            endpointStability,
             chunkCount: buffer.chunks.length,
             speakingFrames: stats.speakingFrames || 0,
             silentFrames: stats.silentFrames || 0,
@@ -476,7 +619,7 @@ class AudioReceiver {
         buffer.endpointTimer = setTimeout(() => {
             buffer.endpointTimer = null;
             console.log(`[AudioReceiver] Endpoint debounce expired for ${userId} -> flushing for ASR`);
-            this.options.onEndpointing(userId, { active: false, reason: 'debounce expired' });
+            this.options.onEndpointing(userId, { active: false, reason: 'debounce expired', debounceMs, endpointStability: this.getEndpointStabilitySnapshot(userId) });
             this.flushUser(userId, 'endpoint debounce expired')
                 .catch((err) => this.options.onError && this.options.onError(err));
         }, debounceMs);
@@ -516,6 +659,7 @@ class AudioReceiver {
         const speechStartedAtMs = detectorStats.firstSpeechAtMs || startTime;
         const speechEndedAtMs = detectorStats.lastSpeechAtMs || snapshotAtMs;
         const speechDuration = Math.max(0, speechEndedAtMs - speechStartedAtMs);
+        const endpointStabilityRaw = this.buildEndpointStabilityRaw(userId, buffer);
 
         // Whatever caused this snapshot supersedes the endpoint debounce.
         if (buffer.endpointTimer) {
@@ -531,6 +675,7 @@ class AudioReceiver {
             buffer.speechEvidenceEmitted = false;
             buffer.segmentSpeechEvidenceEmitted = false;
             buffer.segmentStartStats = null;
+            this.resetEndpointStabilityBufferState(buffer);
             if (buffer.detector) {
                 buffer.detector.reset();
             }
@@ -547,6 +692,7 @@ class AudioReceiver {
         buffer.speechEvidenceEmitted = false;
         buffer.segmentSpeechEvidenceEmitted = false;
         buffer.segmentStartStats = null;
+        this.resetEndpointStabilityBufferState(buffer);
 
         if (buffer.detector) {
             buffer.detector.reset();
@@ -563,7 +709,8 @@ class AudioReceiver {
             speechDuration,
             timestamp: new Date(speechStartedAtMs).toISOString(),
             reason: reason,
-            detectorStats
+            detectorStats,
+            endpointStabilityRaw
         };
     }
 
@@ -667,6 +814,7 @@ class AudioReceiver {
             speechEndedAt,
             speechDuration,
             detectorStats = {},
+            endpointStabilityRaw = {},
             reason: snapshotReason
         } = snapshot;
 
@@ -769,7 +917,8 @@ class AudioReceiver {
                 asrCompletedAt,
                 providerError,
                 sampleRate: 48000,
-                channels: 2
+                channels: 2,
+                endpointStabilityRaw
             };
 
             // Keep audioBuffer for recording purposes (for mixed-audio.wav)
@@ -778,6 +927,20 @@ class AudioReceiver {
             // with the transcript (renderer also keys off speechStartedAt).
             // buffer.startTime tracks the first chunk, which can precede real
             // speech when Discord's voice activity opens on a breath or click.
+            const stabilityEvents = this.getEndpointStabilityProfile(userId).recordFinalizedTranscript({
+                transcription,
+                audioEvents,
+                providerError,
+                duration,
+                speechDuration,
+                detectorStats,
+                endpointStabilityRaw,
+                finalizedAtMs: Date.now()
+            });
+            for (const event of stabilityEvents) {
+                this.emitEndpointStabilityTelemetry(userId, event);
+            }
+
             const speechStartedAtMs = Date.parse(speechStartedAt);
             const utteranceForRecording = {
                 ...utterance,
@@ -971,6 +1134,7 @@ class AudioReceiver {
         }
 
         this.speakerBuffers.delete(userId);
+        this.endpointStabilityProfiles.delete(userId);
     }
 
     /**
@@ -1017,9 +1181,11 @@ class AudioReceiver {
 
         this.subscriptions.clear();
         this.speakerBuffers.clear();
+        this.endpointStabilityProfiles.clear();
+        this.lastRawVoiceActivity = null;
         this.activeSpeakers.clear();
         this.connection = null;
     }
 }
 
-module.exports = { AudioReceiver };
+module.exports = { AudioReceiver, EndpointStabilityProfile };

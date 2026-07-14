@@ -8,6 +8,7 @@ const {
     SilenceDetector,
     SpeakerTracker,
     AudioReceiver,
+    EndpointStabilityProfile,
     VoiceManager,
     FishAudioProvider,
     downmixStereo48kToMono16k,
@@ -8325,6 +8326,189 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  ConversationBuffer endpointing gate failed: ${error.message}`);
+        failed++;
+    }
+
+
+    console.log('\nTest 11e: Endpoint stability profile adapts from receiver-local evidence only');
+    try {
+        const makeFragmentRun = (profile, startedAtMs, firstText, secondText, options = {}) => {
+            let now = startedAtMs;
+            const firstStop = profile.recordRawStop({
+                atMs: now,
+                activeDebounceMs: profile.getDebounceMs(),
+                hasAsrCandidate: true,
+                speakingFrames: 8
+            });
+            profile.recordFinalizedTranscript({
+                transcription: firstText,
+                detectorStats: { speakingFrames: 8 },
+                endpointStabilityRaw: { lastStopId: firstStop.id },
+                finalizedAtMs: now + 1
+            });
+
+            now += options.gapMs || 60;
+            const resumed = profile.recordRawStart({
+                atMs: now,
+                activeDebounceMs: options.activeDebounceMs || profile.getDebounceMs(),
+                noCrossSpeaker: options.noCrossSpeaker !== false
+            });
+            const secondStop = profile.recordRawStop({
+                atMs: now + 20,
+                activeDebounceMs: profile.getDebounceMs(),
+                hasAsrCandidate: true,
+                speakingFrames: 8
+            });
+            return profile.recordFinalizedTranscript({
+                transcription: secondText,
+                audioEvents: options.audioEvents || [],
+                detectorStats: { speakingFrames: 8 },
+                endpointStabilityRaw: {
+                    lastStopId: secondStop.id,
+                    resumeCandidate: resumed.resumeCandidate
+                },
+                finalizedAtMs: now + 21
+            });
+        };
+
+        const profile = new EndpointStabilityProfile({ defaultDebounceMs: 50, upRunThreshold: 2, downChunkThreshold: 5 });
+        if (profile.getDebounceMs() !== 50) {
+            throw new Error('Profile did not keep the default debounce initially');
+        }
+
+        makeFragmentRun(profile, 1000, 'when the', 'thread breaks');
+        if (profile.getDebounceMs() !== 50 || profile.getSnapshot().upEvidenceCount !== 1) {
+            throw new Error('Single substantive fragmentation run should only collect evidence');
+        }
+        makeFragmentRun(profile, 4000, 'because the', 'timing splits');
+        if (profile.getDebounceMs() !== 75) {
+            throw new Error(
+                'Repeated substantive fragmentation runs did not raise debounce: ' +
+                JSON.stringify(profile.getSnapshot())
+            );
+        }
+
+        const phantomProfile = new EndpointStabilityProfile({ defaultDebounceMs: 50, upRunThreshold: 1 });
+        makeFragmentRun(phantomProfile, 1000, 'when the', 'ghost text', { audioEvents: ['phantom'] });
+        if (phantomProfile.getDebounceMs() !== 50) {
+            throw new Error('Phantom/empty transcript evidence raised debounce');
+        }
+
+        const isolatedProfile = new EndpointStabilityProfile({ defaultDebounceMs: 50, upRunThreshold: 1 });
+        makeFragmentRun(isolatedProfile, 1000, 'yes', 'yes');
+        if (isolatedProfile.getDebounceMs() !== 50) {
+            throw new Error('Isolated short acknowledgements raised debounce');
+        }
+
+        const crossSpeakerProfile = new EndpointStabilityProfile({ defaultDebounceMs: 50, upRunThreshold: 1 });
+        makeFragmentRun(crossSpeakerProfile, 1000, 'when the', 'thread breaks', { noCrossSpeaker: false });
+        if (crossSpeakerProfile.getDebounceMs() !== 50) {
+            throw new Error('Cross-speaker activity was counted as same-participant fragmentation');
+        }
+
+        const slowDownProfile = new EndpointStabilityProfile({ defaultDebounceMs: 75, downChunkThreshold: 3 });
+        for (let i = 0; i < 2; i++) {
+            slowDownProfile.recordFinalizedTranscript({
+                transcription: 'this long accepted chunk stayed together ' + i,
+                detectorStats: { speakingFrames: 60 },
+                endpointStabilityRaw: {
+                    lastStopId: i + 1,
+                    gaps: [{ gapMs: 40, noCrossSpeaker: true }]
+                },
+                finalizedAtMs: 1000 + i
+            });
+        }
+        if (slowDownProfile.getDebounceMs() !== 75 || slowDownProfile.getSnapshot().downEvidenceCount !== 2) {
+            throw new Error('Downward adaptation happened before slow evidence threshold');
+        }
+        slowDownProfile.recordFinalizedTranscript({
+            transcription: 'this long accepted chunk also stayed together',
+            detectorStats: { speakingFrames: 60 },
+            endpointStabilityRaw: {
+                lastStopId: 3,
+                gaps: [{ gapMs: 40, noCrossSpeaker: true }]
+            },
+            finalizedAtMs: 1003
+        });
+        if (slowDownProfile.getDebounceMs() !== 50) {
+            throw new Error('Repeated stable long chunks did not lower debounce slowly');
+        }
+        for (let i = 0; i < 5; i++) {
+            slowDownProfile.recordFinalizedTranscript({
+                transcription: 'still long and stable at lower bound ' + i,
+                detectorStats: { speakingFrames: 60 },
+                endpointStabilityRaw: {
+                    lastStopId: 10 + i,
+                    gaps: [{ gapMs: 20, noCrossSpeaker: true }]
+                },
+                finalizedAtMs: 2000 + i
+            });
+        }
+        if (slowDownProfile.getDebounceMs() !== 50) {
+            throw new Error('Debounce moved below configured lower bound');
+        }
+
+        const upperBoundProfile = new EndpointStabilityProfile({ defaultDebounceMs: 200, upRunThreshold: 1 });
+        makeFragmentRun(upperBoundProfile, 1000, 'when the', 'thread breaks', { gapMs: 220, activeDebounceMs: 200 });
+        if (upperBoundProfile.getDebounceMs() !== 200) {
+            throw new Error('Debounce moved above configured upper bound');
+        }
+
+        console.log('  Endpoint stability evidence excludes phantoms/isolated/cross-speaker cases and adapts with hysteresis/bounds');
+        passed++;
+    } catch (error) {
+        console.log('  Endpoint stability profile failed: ' + error.message);
+        failed++;
+    }
+
+    console.log('\nTest 11f: Receiver preserves swallowed raw START/STOP endpoint evidence');
+    try {
+        const utterances = [];
+        const receiver = new AudioReceiver({
+            botUserId: 'bot-user',
+            endpointingDebounce: 80,
+            stt: {
+                transcribe: async () => ({ text: 'merged raw evidence', confidence: 0.9, words: [] })
+            },
+            onUtterance: (u) => utterances.push(u)
+        });
+
+        receiver.start({
+            receiver: {
+                speaking: { on: () => {} },
+                subscribe: () => new PassThrough()
+            }
+        });
+
+        receiver.handleUserStartSpeaking('user-raw-evidence');
+        receiver.handleAudioChunk('user-raw-evidence', createSpeechPcm(200));
+        receiver.handleUserStopSpeaking('user-raw-evidence');
+        await sleep(20);
+        receiver.handleUserStartSpeaking('user-raw-evidence');
+        receiver.handleAudioChunk('user-raw-evidence', createSpeechPcm(200));
+        receiver.handleUserStopSpeaking('user-raw-evidence');
+        await receiver.flushUser('user-raw-evidence', 'test raw preservation');
+        await receiver.waitForPendingUtterances();
+
+        const raw = utterances[0]?.endpointStabilityRaw;
+        if (
+            utterances.length !== 1 ||
+            !raw ||
+            raw.starts?.length !== 2 ||
+            raw.gaps?.length !== 1 ||
+            raw.stops?.length !== 2 ||
+            raw.gaps[0].gapMs > 80 ||
+            raw.activeDebounceMs !== 80
+        ) {
+            throw new Error('Swallowed endpoint raw evidence was not preserved: ' + JSON.stringify(raw));
+        }
+
+        receiver.destroy();
+
+        console.log('  Swallowed same-speaker endpoint gaps are emitted with the final utterance');
+        passed++;
+    } catch (error) {
+        console.log('  Receiver raw endpoint preservation failed: ' + error.message);
         failed++;
     }
 

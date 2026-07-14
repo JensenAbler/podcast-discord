@@ -11,7 +11,7 @@
  */
 
 const { VoiceManager } = require('./voice-manager');
-const { AudioReceiver } = require('./audio-receiver');
+const { AudioReceiver, EndpointStabilityProfile } = require('./audio-receiver');
 const { AudioTransmitter } = require('./audio-transmitter');
 const { SilenceDetector } = require('./silence-detector');
 const { SpeakerTracker } = require('./speaker-tracker');
@@ -42,6 +42,7 @@ module.exports = {
     // Core voice components
     VoiceManager,
     AudioReceiver,
+    EndpointStabilityProfile,
     AudioTransmitter,
     SilenceDetector,
     SpeakerTracker,
