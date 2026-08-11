@@ -633,7 +633,7 @@ class VoiceManager {
         
         // Create AudioRecorder instance
         const recorder = new AudioRecorder({
-            outputFormat: 'wav',
+            outputFormat: 'mp3',
             sampleRate: 48000,
             channels: 2,
             onError: (error) => console.error('[VoiceManager] Recorder error:', error),

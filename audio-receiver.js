@@ -921,7 +921,7 @@ class AudioReceiver {
                 endpointStabilityRaw
             };
 
-            // Keep audioBuffer for recording purposes (for mixed-audio.wav)
+            // Keep audioBuffer for recording purposes (finalized as mixed-audio.mp3)
             // but DON'T include it in the utterance object for transcript.jsonl
             // Use detector-derived speech start so the recorder mix lines up
             // with the transcript (renderer also keys off speechStartedAt).

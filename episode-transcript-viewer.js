@@ -340,9 +340,9 @@ class EpisodeTranscriptStore {
         if (!fs.existsSync(episodePath)) return null;
 
         const files = fs.readdirSync(episodePath);
-        const preferred = ['mixed-audio.wav', 'recording.wav', 'episode.wav'];
+        const preferred = ['mixed-audio.mp3', 'recording.mp3', 'episode.mp3', 'mixed-audio.wav', 'recording.wav', 'episode.wav'];
         const filename = preferred.find((name) => files.includes(name)) ||
-            files.find((name) => /\.wav$/i.test(name));
+            files.find((name) => /\.(mp3|wav)$/i.test(name));
 
         if (!filename) return null;
 
@@ -544,7 +544,7 @@ function sendAudioFile(req, res, audio) {
     const range = req.headers.range || '';
     const commonHeaders = {
         'Accept-Ranges': 'bytes',
-        'Content-Type': 'audio/wav',
+        'Content-Type': getMimeType(audio.filePath),
         'Content-Disposition': `inline; filename="${audio.filename.replace(/"/g, '')}"`
     };
 
@@ -629,6 +629,7 @@ function getMimeType(filePath) {
         '.js': 'application/javascript; charset=utf-8',
         '.json': 'application/json; charset=utf-8',
         '.svg': 'image/svg+xml',
+        '.mp3': 'audio/mpeg',
         '.wav': 'audio/wav'
     }[ext] || 'application/octet-stream';
 }

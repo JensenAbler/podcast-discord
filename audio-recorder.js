@@ -5,7 +5,8 @@ const { AudioJournal } = require('./audio-journal');
 class AudioRecorder {
     constructor(options = {}) {
         this.options = {
-            outputFormat: options.outputFormat || 'wav',
+            outputFormat: this.normalizeOutputFormat(options.outputFormat || 'mp3'),
+            mp3Bitrate: options.mp3Bitrate || '192k',
             sampleRate: Number(options.sampleRate || 48000),
             channels: Number(options.channels || 2),
             bitDepth: Number(options.bitDepth || 16),
@@ -28,6 +29,15 @@ class AudioRecorder {
         this.stats = this.createEmptyStats();
     }
 
+    normalizeOutputFormat(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        return normalized === 'wav' ? 'wav' : 'mp3';
+    }
+
+    outputFileName() {
+        return `mixed-audio.${this.options.outputFormat}`;
+    }
+
     createEmptyStats() {
         return {
             totalBytesWritten: 0,
@@ -42,7 +52,7 @@ class AudioRecorder {
         if (this.isRecording) throw new Error('Already recording');
 
         this.outputPath = outputPath;
-        this.audioFilePath = path.join(outputPath, 'mixed-audio.wav');
+        this.audioFilePath = path.join(outputPath, this.outputFileName());
         this.startTime = Date.now();
         this.consentTimestamp = metadata.consentTimestamp || new Date(this.startTime).toISOString();
         this.consentGiven = Boolean(metadata.consentGiven);

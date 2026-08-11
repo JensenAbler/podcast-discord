@@ -8192,7 +8192,7 @@ async function runTests() {
             path.join(episodeDir, 'transcript.jsonl'),
             transcriptEntries.map((entry) => JSON.stringify(entry)).join('\n') + '\n'
         );
-        fs.writeFileSync(path.join(episodeDir, 'mixed-audio.wav'), Buffer.from('RIFF-test-audio-WAVE'));
+        fs.writeFileSync(path.join(episodeDir, 'mixed-audio.mp3'), Buffer.from('ID3-test-audio-MP3'));
 
         fs.writeFileSync(path.join(episodeDir, 'internal-thoughts.jsonl'), JSON.stringify({
             type: 'internal_thought',
@@ -8227,7 +8227,7 @@ async function runTests() {
             episodes.length !== 1 ||
             episodes[0].id !== episodeId ||
             episodes[0].hasAudio !== true ||
-            episodes[0].audioFile !== 'mixed-audio.wav' ||
+            episodes[0].audioFile !== 'mixed-audio.mp3' ||
             hostBeforeInjection.injectedThoughts.length !== 0 ||
             hostWithInjection.injectedThoughts[0]?.internalThought !== 'Jensen is asking Alpha-Clawd to stop generic question autocomplete and carry the thread.' ||
             hostWithInjection.injectedThoughts[0]?.awarenessInjection !== 'Do not ask another broad question; synthesize and bridge.' ||
@@ -8259,12 +8259,13 @@ async function runTests() {
             unauthorized.status !== 401 ||
             authorized.status !== 200 ||
             authorizedBody.episode?.hasAudio !== true ||
-            authorizedBody.episode?.audioFile !== 'mixed-audio.wav' ||
+            authorizedBody.episode?.audioFile !== 'mixed-audio.mp3' ||
             authorizedBody.utterances.find((entry) => entry.text.startsWith('Right.'))?.injectedThoughts?.length !== 1 ||
             unauthorizedAudio.status !== 401 ||
             rangedAudio.status !== 206 ||
-            rangedAudio.headers.get('content-range') !== 'bytes 0-3/20' ||
-            rangedAudioBody !== 'RIFF'
+            rangedAudio.headers.get('content-range') !== 'bytes 0-3/18' ||
+            rangedAudio.headers.get('content-type') !== 'audio/mpeg' ||
+            rangedAudioBody !== 'ID3-'
         ) {
             throw new Error(`Viewer server auth/API failed: ${JSON.stringify({
                 unauthorized: unauthorized.status,
@@ -8273,6 +8274,7 @@ async function runTests() {
                 unauthorizedAudio: unauthorizedAudio.status,
                 rangedAudio: rangedAudio.status,
                 contentRange: rangedAudio.headers.get('content-range'),
+                contentType: rangedAudio.headers.get('content-type'),
                 rangedAudioBody
             })}`);
         }
@@ -8865,7 +8867,7 @@ async function runTests() {
     try {
         const { AudioRecorder } = require('./audio-recorder');
         const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'audio-journal-test-'));
-        const recorder = new AudioRecorder({ outputFormat: 'wav' });
+        const recorder = new AudioRecorder();
         recorder.startRecording(tempDir, {
             consentGiven: true,
             episodeName: 'journal-test'
@@ -8912,6 +8914,61 @@ async function runTests() {
         passed++;
     } catch (error) {
         console.log(`  Audio Recorder journal failed: ${error.message}`);
+        failed++;
+    }
+
+    console.log('\nTest 12a: Audio Recorder finalizes durable audio as MP3 and cleans raw journal audio');
+    try {
+        const { AudioRecorder } = require('./audio-recorder');
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'audio-mp3-finalize-test-'));
+        const recorder = new AudioRecorder();
+        recorder.startRecording(tempDir, {
+            consentGiven: true,
+            episodeName: 'mp3-finalize-test'
+        });
+        recorder.addParticipantAudioChunk('guest-1', Buffer.alloc(48000 * 2 * 2), {
+            sampleRate: 48000,
+            channels: 2
+        });
+
+        const result = await recorder.stopRecording();
+        const metadata = JSON.parse(fs.readFileSync(path.join(tempDir, 'audio-recording-metadata.json'), 'utf8'));
+        const manifest = JSON.parse(fs.readFileSync(path.join(tempDir, 'audio-journal', 'manifest.json'), 'utf8'));
+        const sourceFiles = fs.readdirSync(path.join(tempDir, 'audio-journal', 'sources'));
+        const encodedFiles = fs.readdirSync(path.join(tempDir, 'audio-journal', 'encoded'));
+        const stemFiles = fs.existsSync(path.join(tempDir, 'stems'))
+            ? fs.readdirSync(path.join(tempDir, 'stems'))
+            : [];
+
+        if (
+            path.basename(result.audioFilePath) !== 'mixed-audio.mp3' ||
+            !fs.existsSync(result.audioFilePath) ||
+            fs.existsSync(path.join(tempDir, 'mixed-audio.wav')) ||
+            metadata.episode.format !== 'mp3' ||
+            metadata.files.mixedAudio !== 'mixed-audio.mp3' ||
+            manifest.outputFormat !== 'mp3' ||
+            manifest.mixedAudio !== 'mixed-audio.mp3' ||
+            manifest.stems.length !== 0 ||
+            sourceFiles.length !== 0 ||
+            encodedFiles.length !== 0 ||
+            stemFiles.length !== 0
+        ) {
+            throw new Error(`MP3 finalization policy failed: ${JSON.stringify({
+                result,
+                metadata: metadata.episode,
+                files: metadata.files,
+                manifest,
+                sourceFiles,
+                encodedFiles,
+                stemFiles
+            })}`);
+        }
+
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        console.log('  Finalized recordings use MP3 and leave no duplicate raw audio archive');
+        passed++;
+    } catch (error) {
+        console.log(`  MP3 finalization failed: ${error.message}`);
         failed++;
     }
 

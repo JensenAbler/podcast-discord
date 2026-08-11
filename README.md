@@ -5,6 +5,8 @@ Live Discord capture and playback for Alpha-Clawd.
 Writes recordings and transcript metadata to the shared ClawCast content root. By default that is `../clawcast-network/content`; override with `CLAWCAST_CONTENT_ROOT` or `PODCAST_ROOT`.
 
 Recording output belongs under `$CLAWCAST_CONTENT_ROOT/recordings/episode-<timestamp>/`.
+The durable mixed recording is stored as `mixed-audio.mp3`; the raw PCM journal
+is only for in-progress recording and crash recovery.
 If `RECORDING_DIR` is accidentally set to the old `$CLAWCAST_CONTENT_ROOT/episodes/recordings`
 path, the bot corrects it back to the contract path unless `ALLOW_LEGACY_RECORDING_DIR=true`
 is set for an intentional legacy recovery run.

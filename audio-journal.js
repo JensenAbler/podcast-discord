@@ -55,6 +55,10 @@ class AudioJournal {
         this.manifestPath = path.join(this.journalDir, 'manifest.json');
         this.eventsPath = path.join(this.journalDir, 'chunks.jsonl');
         this.options = {
+            outputFormat: this.normalizeOutputFormat(options.outputFormat || 'mp3'),
+            mp3Bitrate: options.mp3Bitrate || '192k',
+            preserveStems: Boolean(options.preserveStems),
+            preserveJournalAudio: Boolean(options.preserveJournalAudio),
             sampleRate: Number(options.sampleRate || 48000),
             channels: Number(options.channels || 2),
             bitDepth: Number(options.bitDepth || 16),
@@ -68,6 +72,29 @@ class AudioJournal {
         this.sequence = 0;
         this.lastSyncAt = 0;
         this.closed = true;
+    }
+
+    normalizeOutputFormat(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        return normalized === 'wav' ? 'wav' : 'mp3';
+    }
+
+    outputFileName() {
+        return `mixed-audio.${this.options.outputFormat}`;
+    }
+
+    outputCodecArgs() {
+        if (this.options.outputFormat === 'wav') {
+            return ['-c:a', 'pcm_s16le'];
+        }
+        return ['-c:a', 'libmp3lame', '-b:a', this.options.mp3Bitrate];
+    }
+
+    removeDirectoryContents(dirPath) {
+        if (!fs.existsSync(dirPath)) return;
+        for (const name of fs.readdirSync(dirPath)) {
+            fs.rmSync(path.join(dirPath, name), { recursive: true, force: true });
+        }
     }
 
     start(metadata = {}) {
@@ -85,6 +112,7 @@ class AudioJournal {
             sampleRate: this.options.sampleRate,
             channels: this.options.channels,
             bitDepth: this.options.bitDepth,
+            outputFormat: this.options.outputFormat,
             episodeName: metadata.episodeName || 'episode',
             consentGiven: Boolean(metadata.consentGiven),
             consentTimestamp: metadata.consentTimestamp || new Date(startedAt).toISOString()
@@ -414,7 +442,7 @@ class AudioJournal {
         args.push(
             '-filter_complex', `${filters.join(';')}`,
             '-map', '[out]',
-            '-c:a', 'pcm_s16le',
+            ...this.outputCodecArgs(),
             '-ar', String(this.options.sampleRate),
             '-ac', String(this.options.channels),
             outputPath
@@ -433,7 +461,7 @@ class AudioJournal {
 
         const events = this.readEvents();
         const stems = await this.renderPcmStems(events);
-        const outputPath = path.join(this.outputPath, 'mixed-audio.wav');
+        const outputPath = path.join(this.outputPath, this.outputFileName());
         const eventEndMs = events.reduce((latest, event) => {
             if (event.type === 'pcm') {
                 return Math.max(latest, Number(event.timelineOffsetMs || 0) + Number(event.durationMs || 0));
@@ -443,12 +471,28 @@ class AudioJournal {
         const wallDurationMs = Math.max(0, stoppedAtMs - this.manifest.startedAtMs);
         const durationMs = Math.max(eventEndMs, wallDurationMs, 100);
         await this.mix(stems, events, outputPath, durationMs / 1000);
+        if (!this.options.preserveStems) {
+            for (const stem of stems) {
+                try {
+                    if (stem.filePath && fs.existsSync(stem.filePath)) fs.unlinkSync(stem.filePath);
+                } catch {
+                    // Best-effort cleanup; the final MP3 is already written.
+                }
+            }
+        }
+        if (!this.options.preserveJournalAudio) {
+            this.removeDirectoryContents(this.sourceDir);
+            this.removeDirectoryContents(this.encodedDir);
+        }
 
         this.manifest.status = recovered ? 'recovered' : 'complete';
         this.manifest.updatedAt = new Date().toISOString();
         this.manifest.durationMs = durationMs;
+        this.manifest.outputFormat = this.options.outputFormat;
         this.manifest.mixedAudio = path.basename(outputPath);
-        this.manifest.stems = stems.map((stem) => path.relative(this.outputPath, stem.filePath).replace(/\\/g, '/'));
+        this.manifest.stems = this.options.preserveStems
+            ? stems.map((stem) => path.relative(this.outputPath, stem.filePath).replace(/\\/g, '/'))
+            : [];
         writeJsonAtomic(this.manifestPath, this.manifest);
         return {
             outputPath,
