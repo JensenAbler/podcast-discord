@@ -54,3 +54,10 @@ models use `(break)` and `(long-break)`. Other voice modes should use punctuatio
 and wording for pacing instead of Fish tags.
 
 Contract files live in `../clawcast-network/contracts`.
+
+## Recording durability
+
+Finalization renders to a pending file, decodes it to validate it, then flushes
+and atomically installs the recording. The completion manifest is committed
+before journal audio or stems are removed. Interrupted finalizations retain
+their recovery inputs; completed recordings are not remixed during recovery.

@@ -15,16 +15,21 @@ function safeName(value) {
 function writeJsonAtomic(filePath, value) {
     const tempPath = `${filePath}.tmp`;
     fs.writeFileSync(tempPath, JSON.stringify(value, null, 2));
-    try {
-        fs.renameSync(tempPath, filePath);
-    } catch (error) {
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-            fs.renameSync(tempPath, filePath);
-            return;
-        }
-        throw error;
-    }
+    syncFile(tempPath);
+    // Never unlink the old manifest: failed replacement must leave it intact.
+    fs.renameSync(tempPath, filePath);
+    syncDirectory(path.dirname(filePath));
+}
+
+function syncFile(filePath) {
+    const fd = fs.openSync(filePath, 'r+');
+    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+}
+
+function syncDirectory(directory) {
+    if (process.platform === 'win32') return;
+    const fd = fs.openSync(directory, 'r');
+    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
 
 function runFfmpeg(args) {
@@ -113,6 +118,9 @@ class AudioJournal {
             channels: this.options.channels,
             bitDepth: this.options.bitDepth,
             outputFormat: this.options.outputFormat,
+            mp3Bitrate: this.options.mp3Bitrate,
+            preserveStems: this.options.preserveStems,
+            preserveJournalAudio: this.options.preserveJournalAudio,
             episodeName: metadata.episodeName || 'episode',
             consentGiven: Boolean(metadata.consentGiven),
             consentTimestamp: metadata.consentTimestamp || new Date(startedAt).toISOString()
@@ -342,7 +350,7 @@ class AudioJournal {
             try {
                 for (const event of sourceEvents) {
                     const sourcePath = path.join(this.journalDir, event.file);
-                    if (!fs.existsSync(sourcePath)) continue;
+                    if (!fs.existsSync(sourcePath)) throw new Error(`Missing journal audio: ${sourcePath}; retaining existing recording`);
                     const sourceFd = fs.openSync(sourcePath, 'r');
                     const buffer = Buffer.alloc(Number(event.byteLength || 0));
                     let bytesRead = 0;
@@ -452,6 +460,17 @@ class AudioJournal {
 
     async finalize(options = {}) {
         this.close();
+        if (['complete', 'recovered'].includes(this.manifest.status)) {
+            const outputPath = path.join(this.outputPath, this.manifest.mixedAudio || this.outputFileName());
+            if (!fs.existsSync(outputPath)) throw new Error(`Completed recording is missing: ${outputPath}`);
+            return {
+                outputPath,
+                duration: this.manifest.durationMs / 1000,
+                recovered: this.manifest.status === 'recovered',
+                stems: this.manifest.stems || [],
+                events: this.readEvents().length
+            };
+        }
         const recovered = Boolean(options.recovered);
         const stoppedAtMs = Number(options.stoppedAt || Date.now());
         this.manifest.status = 'finalizing';
@@ -470,20 +489,14 @@ class AudioJournal {
         }, 0);
         const wallDurationMs = Math.max(0, stoppedAtMs - this.manifest.startedAtMs);
         const durationMs = Math.max(eventEndMs, wallDurationMs, 100);
-        await this.mix(stems, events, outputPath, durationMs / 1000);
-        if (!this.options.preserveStems) {
-            for (const stem of stems) {
-                try {
-                    if (stem.filePath && fs.existsSync(stem.filePath)) fs.unlinkSync(stem.filePath);
-                } catch {
-                    // Best-effort cleanup; the final MP3 is already written.
-                }
-            }
-        }
-        if (!this.options.preserveJournalAudio) {
-            this.removeDirectoryContents(this.sourceDir);
-            this.removeDirectoryContents(this.encodedDir);
-        }
+        const pendingPath = path.join(this.outputPath, `mixed-audio.pending.${this.options.outputFormat}`);
+        await this.mix(stems, events, pendingPath, durationMs / 1000);
+        // Decode the entire result before replacing the durable recording.
+        await runFfmpeg(['-v', 'error', '-xerror', '-i', pendingPath, '-f', 'null', '-']);
+        if (fs.statSync(pendingPath).size === 0) throw new Error('Final recording is empty');
+        syncFile(pendingPath);
+        fs.renameSync(pendingPath, outputPath);
+        syncDirectory(this.outputPath);
 
         this.manifest.status = recovered ? 'recovered' : 'complete';
         this.manifest.updatedAt = new Date().toISOString();
@@ -494,6 +507,24 @@ class AudioJournal {
             ? stems.map((stem) => path.relative(this.outputPath, stem.filePath).replace(/\\/g, '/'))
             : [];
         writeJsonAtomic(this.manifestPath, this.manifest);
+        // Cleanup is safe only after the completion manifest is durable.
+        try {
+            if (!this.options.preserveStems) {
+                for (const stem of stems) {
+                    try {
+                        if (stem.filePath && fs.existsSync(stem.filePath)) fs.unlinkSync(stem.filePath);
+                    } catch {
+                        // Best-effort cleanup; the final MP3 is already written.
+                    }
+                }
+            }
+            if (!this.options.preserveJournalAudio) {
+                this.removeDirectoryContents(this.sourceDir);
+                this.removeDirectoryContents(this.encodedDir);
+            }
+        } catch (error) {
+            console.warn(`[AudioJournal] Recording complete; cleanup deferred: ${error.message}`);
+        }
         return {
             outputPath,
             duration: durationMs / 1000,

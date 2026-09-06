@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node bot.js",
     "dev": "nodemon bot.js",
-    "test": "node test.js",
+    "test": "node test.js && node --test test-journal-recovery.js",
     "eval:podcast": "node prompt-eval.js",
     "view-transcripts": "node episode-transcript-viewer.js",
     "generate-cached-audio": "node generate-cached-audio.js"
