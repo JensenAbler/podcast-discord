@@ -7257,7 +7257,7 @@ class AlphaClawdVoiceBot {
         // Destroy Gateway bridge
         this.gatewayBridge.destroy();
 
-        this.client.destroy();
+        await this.client.destroy();
     }
 }
 
@@ -7328,10 +7328,6 @@ module.exports = { AlphaClawdVoiceBot };
 
 // Run if called directly
 if (require.main === module) {
-    const bot = new AlphaClawdVoiceBot();
-    
-    bot.start().catch((error) => {
-        log(`Bot failed to start: ${error.message}\n${error.stack}`, 'FATAL');
-        process.exit(1);
-    });
+    const { startStandaloneBot } = require('./standalone-shutdown');
+    startStandaloneBot(new AlphaClawdVoiceBot(), { log });
 }

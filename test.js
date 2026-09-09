@@ -128,6 +128,17 @@ function createSpeechPcm(durationMs = 200) {
 }
 
 async function runTests() {
+    // Run deterministic lifecycle tests before the custom suite, which exits
+    // explicitly and may stop npm test before the later journal tests.
+    const shutdownTests = require('node:child_process').spawnSync(
+        process.execPath,
+        ['--test', path.join(__dirname, 'test-shutdown.js')],
+        { stdio: 'inherit', timeout: 15_000 }
+    );
+    if (shutdownTests.error || shutdownTests.status !== 0) {
+        throw shutdownTests.error || new Error(`Shutdown tests failed: status=${shutdownTests.status}, signal=${shutdownTests.signal}`);
+    }
+
     console.log('Running Alpha-Clawd Voice Host smoke tests\n');
 
     let passed = 0;

@@ -31,6 +31,18 @@ npm install
 npm start
 ```
 
+## Standalone shutdown
+
+On `SIGTERM` or `SIGINT`, the standalone bot awaits its existing recording and
+voice cleanup once, even if more signals arrive. Successful cleanup exits with
+code 0; a cleanup error or the 25-second deadline logs a diagnostic and exits
+with code 1, leaving five seconds before the service's 30-second stop timeout.
+A startup failure during shutdown also retains exit code 1.
+
+Run the deterministic shutdown tests with `node --test test-shutdown.js`.
+They also run first in `npm test` and use mocks without connecting to Discord
+or providers.
+
 ## Response generator
 
 The live spoken reply generator defaults to `PODCAST_GENERATOR=direct`, which calls the configured model provider with a strict JSON schema for turn-taking:
