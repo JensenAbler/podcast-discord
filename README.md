@@ -128,3 +128,21 @@ Finalization renders to a pending file, decodes it to validate it, then flushes
 and atomically installs the recording. The completion manifest is committed
 before journal audio or stems are removed. Interrupted finalizations retain
 their recovery inputs; completed recordings are not remixed during recovery.
+
+### Voice receive diagnostics
+
+While connected to voice, `[VoiceReceiveDiagnostics]` records cumulative
+receive counters every 10 seconds, on connection/network/voice-state changes,
+and at teardown. It reports incoming UDP datagrams, short datagrams, known
+and unknown sender mappings, speaking starts, and decoded PCM chunk/byte
+counts. Per-user statistics and channel mute/deafen/suppression state are
+bounded to 64 entries. No packet contents, PCM samples, tokens, or keys are
+logged. The observer follows replacement network sockets and removes its
+listeners and timer when the audio receiver is destroyed.
+
+Use `udpObserverAttached` and receive-handler attachment flags before
+interpreting zero counts. Zero UDP suggests no observed incoming traffic;
+unknown-sender counts suggest missing mappings; known-sender traffic without
+PCM points further downstream. UDP counts include transport/control traffic,
+so they are not by themselves proof of human speech. State snapshots are
+observations, not proof that Discord or the user's microphone is healthy.

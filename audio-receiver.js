@@ -17,6 +17,7 @@
 
 const { EndBehaviorType } = require('@discordjs/voice');
 const prism = require('prism-media');
+const { VoiceReceiveDiagnostics } = require('./voice-receive-diagnostics');
 const { Writable } = require('stream');
 const { SilenceDetector } = require('./silence-detector');
 const { SpeakerTracker } = require('./speaker-tracker');
@@ -86,6 +87,7 @@ class AudioReceiver {
         this.isRunning = true;
 
         console.log('[AudioReceiver] Starting audio reception');
+        this.diagnostics = new VoiceReceiveDiagnostics(connection, { client: this.options.client, guildId: this.options.guildId });
 
         // Listen for users starting to speak
         connection.receiver.speaking.on('start', (userId) => {
@@ -301,6 +303,7 @@ class AudioReceiver {
      * @param {Buffer} chunk - PCM audio data
      */
     handleAudioChunk(userId, chunk) {
+        this.diagnostics?.pcm(userId, chunk.length);
         const buffer = this.speakerBuffers.get(userId);
         if (!buffer) return;
 
@@ -1166,6 +1169,8 @@ class AudioReceiver {
      * Stop receiving audio and clean up
      */
     destroy() {
+        this.diagnostics?.destroy();
+        this.diagnostics = null;
         console.log('[AudioReceiver] Destroying receiver');
 
         this.isRunning = false;
