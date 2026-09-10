@@ -5,6 +5,7 @@ const {
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-5-20250929';
 const DEFAULT_OPENAI_MODEL = 'gpt-4.1-mini';
+const { CodexImageContext } = require('./codex-image-context');
 
 function firstNonEmpty(...values) {
     for (const value of values) {
@@ -87,11 +88,12 @@ class DiscordContextInterpreter {
         this.anthropicBeta = firstNonEmpty(options.anthropicBeta, env.PODCAST_DISCORD_CONTEXT_ANTHROPIC_BETA);
         this.fetchImpl = options.fetch || fetch;
         this.now = options.now || (() => new Date().toISOString());
+        this.codexImageContext = options.codexImageContext || new CodexImageContext({ env });
     }
 
     validate() {
         const errors = [];
-        if (!this.apiKey) {
+        if (!this.apiKey && !this.codexImageContext.isEnabled()) {
             errors.push('PODCAST_DISCORD_CONTEXT_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY is not set');
         }
         if (!this.model) {
@@ -101,13 +103,14 @@ class DiscordContextInterpreter {
             valid: errors.length === 0,
             provider: this.provider,
             model: this.model,
+            imageProvider: this.codexImageContext.isEnabled() ? 'codex-chatgpt' : this.provider,
             errors
         };
     }
 
     async interpret(input = {}) {
         const attachments = Array.isArray(input.attachments) ? input.attachments : [];
-        if (!this.apiKey) {
+        if (!this.apiKey && !this.codexImageContext.isEnabled()) {
             throw new Error('Discord context interpreter API key not configured');
         }
         if (attachments.length === 0 && !String(input.messageText || '').trim()) {
@@ -115,6 +118,20 @@ class DiscordContextInterpreter {
         }
 
         const prepared = await this.prepareAttachments(attachments);
+        if (this.codexImageContext.isEnabled() && this.codexImageContext.canInterpret(prepared)) {
+            const result = await this.codexImageContext.interpret({
+                prepared,
+                systemPrompt: this.buildSystemPrompt(),
+                contextText: this.buildContextText(input),
+                schema: this.getResponseSchema()
+            });
+            const output = this.normalizeOutput(result, input);
+            console.log(`[DiscordContextInterpreter] Interpreted Discord context: provider=codex-chatgpt, attachments=${attachments.length}, chars=${output.awarenessText.length}`);
+            return output;
+        }
+        if (!this.apiKey) {
+            throw new Error('The configured text/PDF context interpreter API key is not set');
+        }
         if (this.provider !== 'anthropic' && prepared.hasPdf) {
             throw new Error('PDF interpretation requires Anthropic Messages-compatible Discord context configuration');
         }
@@ -126,6 +143,10 @@ class DiscordContextInterpreter {
         const output = this.normalizeOutput(this.parseJsonContent(content), input);
         console.log(`[DiscordContextInterpreter] Interpreted Discord context: provider=${this.provider}, attachments=${attachments.length}, chars=${output.awarenessText.length}`);
         return output;
+    }
+
+    async close() {
+        await this.codexImageContext.close();
     }
 
     async prepareAttachments(attachments = []) {

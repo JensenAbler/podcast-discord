@@ -40,7 +40,7 @@ with code 1, leaving five seconds before the service's 30-second stop timeout.
 A startup failure during shutdown also retains exit code 1.
 
 Run the deterministic shutdown tests with `node --test test-shutdown.js`.
-They also run first in `npm test` and use mocks without connecting to Discord
+They also run in `npm test` and use mocks without connecting to Discord
 or providers.
 
 ## Response generator
@@ -66,6 +66,61 @@ models use `(break)` and `(long-break)`. Other voice modes should use punctuatio
 and wording for pacing instead of Fish tags.
 
 Contract files live in `../clawcast-network/contracts`.
+
+## Image comprehension with Astra
+
+The existing Discord attachment interpreter can use `gpt-6-astra` through a
+ChatGPT-authenticated Codex session. Its result enters the same awareness shelf
+used by the podcast response generator. There is no extra Discord command or
+separate podcast generator.
+
+Each image request includes all 30 pages of *A Read Her* as reference images.
+These are the original JPEGs extracted from the supplied PDF, without resizing
+or recompression; `assets/xenolex/manifest.json` records the source PDF hash and
+each page's hash. Astra is instructed to consult this material only when a
+target contains Xenolex or the participant explicitly requests Xenolex decoding.
+Ordinary images receive an ordinary interpretation. Uncertain readings belong
+in the existing confidence and caveats fields.
+
+On the bot host, run the setup helper **as the same Unix user that runs the bot**:
+
+```bash
+cd /opt/podcast-discord
+node codex-context-setup.js login
+```
+
+Complete the displayed ChatGPT device sign-in in your own browser. Credentials
+stay in the bot's private `.podcast-context-codex` directory, which is excluded
+from Git. The helper verifies the setup before writing its activation marker.
+The running bot reads that marker for each request; activation does not require
+a restart. Use `node codex-context-setup.js status` to check configuration and
+`node codex-context-setup.js disable` to return images to the configured API
+interpreter. Disabling image use does not log the account out.
+
+This uses the signed-in account's Codex allowance and requires that account to
+have access to `gpt-6-astra`. It does not inherit this ChatGPT conversation or
+its memory. An enabled Codex request fails explicitly if authentication, model
+access, limits, or interpretation fails; it does not retry against a paid API.
+Text-only attachments and messages containing PDFs retain the existing API
+interpreter, including mixed PDF/image messages.
+
+Optional service settings:
+
+- `PODCAST_DISCORD_CONTEXT_CODEX_HOME`: an absolute private credential directory
+  shared by the bot and setup helper; defaults to `.podcast-context-codex` here.
+- `PODCAST_DISCORD_CONTEXT_IMAGE_BACKEND=codex`: explicitly enable Codex;
+  `api` explicitly selects the existing API route. Otherwise the activation
+  marker decides. An explicit setting takes precedence over the setup marker.
+- `PODCAST_DISCORD_CONTEXT_CODEX_TIMEOUT_MS`: request deadline, default `180000`,
+  capped at `240000`.
+
+Only one Astra interpretation runs at a time. A request accepts at most ten
+target images and 24 MiB of target data, subject to the existing attachment
+limits. Image text is untrusted source material. The Codex process receives
+only its dedicated authentication configuration, with shell, browsing, apps,
+and other execution tools disabled. Temporary inputs are removed after the
+request. Shutdown cancels an active interpretation, and results from an ended
+recording are discarded.
 
 ## Recording durability
 

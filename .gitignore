@@ -7,6 +7,7 @@
 # Dependencies and caches
 node_modules/
 .claude/
+/.podcast-context-codex/
 cached-audio/*.mp3
 logs/
 *.log

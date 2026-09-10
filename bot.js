@@ -3945,14 +3945,17 @@ class AlphaClawdVoiceBot {
         }
 
         const guildId = message.guildId;
+        const recordingPath = this.getActiveRecordingPath(guildId);
+        const recordingSession = this.internalThoughtManager?.sessions?.get?.(guildId);
+        if (!recordingPath) return null;
         const pendingItem = this.addPendingDiscordAttachmentAwarenessItem(guildId, message);
         const pendingItemId = pendingItem?.id || null;
         const previous = this.discordContextProcessing.get(guildId) || Promise.resolve();
         const work = previous
             .catch(() => {})
-            .then(() => this.ingestDiscordContextMessage(message, { pendingItemId }))
+            .then(() => this.ingestDiscordContextMessage(message, { pendingItemId, recordingPath, recordingSession }))
             .catch((error) => {
-                if (pendingItemId) {
+                if (pendingItemId && this.isDiscordContextRecordingCurrent(message, recordingPath, recordingSession)) {
                     this.markDiscordContextIngestionFailed(guildId, message, pendingItemId, error);
                 }
                 console.warn(`[Bot] Discord context ingestion failed: guild=${guildId}, message=${message.id || 'unknown'}, error=${error.message}`);
@@ -3963,7 +3966,7 @@ class AlphaClawdVoiceBot {
     }
 
     shouldIngestDiscordContextMessage(message) {
-        if (!this.discordContextEnabled || !message?.guildId || message.author?.bot) {
+        if (this.discordContextClosing || !this.discordContextEnabled || !message?.guildId || message.author?.bot) {
             return false;
         }
         if (this.recordingState.get(message.guildId) !== this.RecordingState.RECORDING) {
@@ -3979,8 +3982,22 @@ class AlphaClawdVoiceBot {
         return hasAttachments || (this.discordContextTextEnabled && hasText);
     }
 
+    isDiscordContextRecordingCurrent(message, recordingPath, recordingSession) {
+        const guildId = message.guildId;
+        return !this.discordContextClosing && Boolean(recordingPath) &&
+            this.recordingState.get(guildId) === this.RecordingState.RECORDING &&
+            this.recordingTextChannels.get(guildId) === (message.channelId || message.channel?.id) &&
+            this.getActiveRecordingPath(guildId) === recordingPath &&
+            this.internalThoughtManager?.sessions?.get?.(guildId) === recordingSession;
+    }
+
     async ingestDiscordContextMessage(message, options = {}) {
         const guildId = message.guildId;
+        const recordingPath = options.recordingPath ?? this.getActiveRecordingPath(guildId);
+        const recordingSession = Object.prototype.hasOwnProperty.call(options, 'recordingSession')
+            ? options.recordingSession
+            : this.internalThoughtManager?.sessions?.get?.(guildId);
+        if (!this.isDiscordContextRecordingCurrent(message, recordingPath, recordingSession)) return null;
         const baseInput = this.buildDiscordContextBaseInput(message);
         if (baseInput.attachments.length === 0 && !baseInput.messageText) {
             return null;
@@ -3999,6 +4016,8 @@ class AlphaClawdVoiceBot {
             ? await this.discordContextInterpreter.interpret(baseInput)
             : this.buildDiscordTextAwarenessOutput(baseInput);
         const archivedImages = await imageArchive;
+        // A slow image interpretation must never enter a later episode's awareness shelf.
+        if (!this.isDiscordContextRecordingCurrent(message, recordingPath, recordingSession)) return null;
         if (archivedImages.length > 0) {
             baseInput.archivedImages = archivedImages;
         }
@@ -7237,6 +7256,10 @@ class AlphaClawdVoiceBot {
      * Stop the bot
      */
     async stop() {
+        this.discordContextClosing = true;
+        const contextClosed = Promise.resolve()
+            .then(() => this.discordContextInterpreter?.close?.())
+            .catch(() => console.warn('[Bot] Discord context shutdown failed.'));
         for (const guildId of this.geminiLiveHosts.keys()) {
             await this.stopGeminiLiveSession(guildId);
         }
@@ -7258,6 +7281,7 @@ class AlphaClawdVoiceBot {
         this.gatewayBridge.destroy();
 
         await this.client.destroy();
+        await contextClosed;
     }
 }
 

@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node bot.js",
     "dev": "nodemon bot.js",
-    "test": "node test.js && node --test test-journal-recovery.js",
+    "test": "node --test test-codex-context-client.js test-codex-image-context.js test-codex-context-lifecycle.js && node test.js && node --test test-journal-recovery.js",
     "eval:podcast": "node prompt-eval.js",
     "view-transcripts": "node episode-transcript-viewer.js",
     "generate-cached-audio": "node generate-cached-audio.js"
@@ -27,6 +27,7 @@
     "@discordjs/builders": "^1.10.1",
     "@discordjs/voice": "^0.19.2",
     "@google/genai": "^2.8.0",
+    "@openai/codex": "0.154.0",
     "@snazzah/davey": "^0.1.11",
     "discord.js": "^14.18.0",
     "ffmpeg-static": "^5.2.0",
