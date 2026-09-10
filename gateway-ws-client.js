@@ -400,8 +400,9 @@ class GatewayWsClient extends EventEmitter {
 
     buildConnectParams(payload = {}) {
         const params = {
+            // Allow gateway protocol 4 while retaining protocol 3 for rollback.
             minProtocol: 3,
-            maxProtocol: 3,
+            maxProtocol: 4,
             client: {
                 id: this.clientId,
                 version: this.clientVersion,
