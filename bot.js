@@ -4578,7 +4578,12 @@ class AlphaClawdVoiceBot {
                 speakers: Object.values(this.speakerMap).map(s => `${s.name} (${s.role || 'speaker'})`),
                 episodePlan: episodePlanSelection?.plan
             });
-            await this.speakRecordingStart(guildId, sessionHostMode, episodePlanSelection);
+            // An optional announcement must not prevent host initialization.
+            try {
+                await this.speakRecordingStart(guildId, sessionHostMode, episodePlanSelection);
+            } catch (error) {
+                console.error('[Bot] Recording start announcement failed; continuing session startup:', error);
+            }
             if (sessionHostMode === 'gemini-live') {
                 try {
                     await this.startGeminiLiveSession(guildId);
