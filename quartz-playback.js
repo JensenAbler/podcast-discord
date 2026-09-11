@@ -114,6 +114,7 @@ class QuartzPlayback {
             const finish = error => {
                 clearInterval(pending.timer);
                 if (this.handoff === pending) this.handoff = null;
+                this.onLog('Handoff completed: ' + JSON.stringify({ eventId: pending.eventId, accepted: pending.accepted, elapsedMs: Date.now() - pending.startedAt, quietFrames: this.quietFrames, failed: Boolean(error) }));
                 error ? reject(error) : resolve();
             };
             const pending = { accepted: false, startedAt: Date.now(), fail: finish };
@@ -184,6 +185,7 @@ class QuartzPlayback {
                 packets.delete(packet);
                 owner.lastConsumedAt = Date.now();
                 owner.quietFrames = entry.voiced ? 0 : owner.quietFrames + 1;
+                owner.client.audioDiagnostics?.record('outputConsumed', pcm, 48000, 2);
                 owner.onPcm(pcm);
             }
             return packet;

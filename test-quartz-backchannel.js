@@ -62,10 +62,11 @@ test('Live receives continuously, gates output only, and preserves transcripts a
 test('delegation cannot trigger duplicate backend work; role prompt stays acknowledgment-only', async () => {
     const t = transport(); await connected(t);
     t.socket.event({ type: 'session.delegation.created', delegation: { id: 'd1' } });
-    assert.equal(t.socket.sent.at(-1).type, 'session.instructions.append');
+    assert.equal(t.socket.sent.at(-1).type, 'session.thinking.append');
+    assert.equal(t.socket.sent.at(-1).delegation_id, 'd1');
     assert.ok(!t.socket.sent.some(e => e.type === 'response.create'));
     assert.match(BACKCHANNEL_PROMPT, /every substantial answer/);
-    assert.match(BACKCHANNEL_PROMPT, /Comfortable silence is welcome/);
+    assert.match(BACKCHANNEL_PROMPT, /nonlexical vocal contact/);
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });
 test('stop during pending startup settles and does not start a late session', async () => {
@@ -293,13 +294,15 @@ test('normal mode follows all four environments while Alpha alone controls turns
     assert.match(BACKCHANNEL_PROMPT, /Alpha has a separate existing pipeline/);
     for (const state of ['LISTENING', 'HOLDING', 'YIELDING', 'ASIDE']) assert.ok(BACKCHANNEL_PROMPT.includes(state));
     t.client.updateAlphaProgress('thinking');
+    assert.equal(t.client.environment, 'listening');
+    t.client.updateAlphaProgress('preparing voice');
     assert.equal(t.client.environment, 'holding');
     t.client.updateAlphaProgress('idle');
     assert.equal(t.client.environment, 'listening');
     assert.match(t.socket.sent.at(-1).content, /Alpha has decided not to take this turn/);
     assert.equal(t.socket.sent.at(-1).type, 'session.thinking.append');
     t.socket.event({ type: 'session.output_audio.delta', delta: Buffer.from([1, 2]).toString('base64') });
-    assert.equal(t.audio.length, 1, 'declining must allow the phrase to finish');
+    assert.equal(t.audio.length, 1, 'declining must allow the vocalization to end');
     t.client.updateAlphaProgress('thinking');
     const id = t.client.requestHandoff('Upcoming answer');
     assert.equal(t.socket.sent.at(-1).event_id, id);
@@ -332,12 +335,57 @@ test('normal mode forwards complete delivered context without enabling delegatio
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });
 
-test('normal startup retains a processing update received before Live connects', async () => {
+test('normal startup remains listening during a pending evaluation', async () => {
     const t = transport();
     t.client.updateAlphaProgress('thinking');
     await connected(t);
-    assert.equal(t.client.environment, 'holding');
+    assert.equal(t.client.environment, 'listening');
     t.client.updateAlphaProgress('idle');
     assert.equal(t.client.environment, 'listening');
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
+});
+
+test('repeated decision checks preserve listening and never gate vocal contact', async () => {
+    const t = transport(); await connected(t);
+    const revision = t.client.environmentRevision;
+    for (let i = 0; i < 3; i++) {
+        t.client.updateAlphaProgress('thinking');
+        t.client.updateAlphaProgress('idle');
+        t.client.updateAlphaProgress('finished');
+    }
+    assert.equal(t.client.environmentRevision, revision);
+    assert.equal(t.client.blocked, false);
+    assert.ok(t.socket.sent.some(e => e.content?.includes('evaluating whether')));
+    t.socket.event({ type: 'session.output_audio.delta', delta: Buffer.alloc(640, 20).toString('base64') });
+    assert.equal(t.audio.length, 1);
+    const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
+});
+
+test('audio diagnostics distinguish provider silence, blocked signal, and consumed signal', async () => {
+    const t = transport(); await connected(t);
+    const reports = [];
+    t.client.audioDiagnostics.report = e => reports.push(e);
+    const voice = Buffer.alloc(640); voice.writeInt16LE(1000);
+    t.socket.event({ type: 'session.output_audio.delta', delta: Buffer.alloc(640).toString('base64') });
+    t.client.setAlphaPlaying(true);
+    t.socket.event({ type: 'session.output_audio.delta', delta: voice.toString('base64') });
+    t.client.audioDiagnostics.flush();
+    assert.equal(reports[0].paths.outputReceived.chunks, 2);
+    assert.equal(reports[0].paths.outputReceived.nonSilentSamples, 1);
+    assert.equal(reports[0].paths.outputBlocked.nonSilentSamples, 1);
+    assert.equal(t.audio.length, 1);
+    t.client.audioDiagnostics.flush();
+    assert.deepEqual(reports[1].paths, {});
+    const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
+});
+
+test('consumption diagnostics count packets only after the resource reads them', async () => {
+    const t = playback(), records = [];
+    t.p.client.audioDiagnostics = { record: (...args) => records.push(args) };
+    t.callbacks.onAudio(Buffer.alloc(640, 20));
+    assert.equal(records.length, 0);
+    t.p.stream.read();
+    assert.equal(records[0][0], 'outputConsumed');
+    assert.equal(records[0][1].length, 3840);
+    await t.p.stop();
 });

@@ -1,13 +1,14 @@
 const WebSocket = require('ws');
 const { LIVE_ALPHA_PROMPT, LIVE_ENVIRONMENT_POLICY } = require('./live-turn-controller');
 const { RealtimePcmMixer } = require('./realtime-pcm-mixer');
+const { LiveAudioDiagnostics } = require('./live-audio-diagnostics');
 
 const BACKCHANNEL_PROMPT = [
     'You are Quartz, the quiet conversational-contact voice accompanying Alpha in a live podcast with guests.',
     'Alpha has a separate existing pipeline that listens to the guests, decides whether to respond, thinks, uses tools, and delivers every substantial answer in Alpha’s own voice.',
     'Your only role is active listening, brief acknowledgments, and occasional floor holding while that pipeline works. You are not another host or the substantive answerer.',
-    'Backchannel policy: Listen closely and use natural, sparse acknowledgments such as mm-hmm or yeah when they fit. Let guests develop long thoughts. Do not acknowledge every sentence. Comfortable silence is welcome.',
-    'Floor-holding policy: When appropriate, offer a very short point of contact while Alpha is processing. Do not start answering, explaining, summarizing, interviewing, introducing topics, or giving opinions. Do not claim that work is underway or finished unless an application update says so.',
+    'Backchannel policy: Listen closely and use natural, sparse nonlexical vocalizations such as mm or mhm when they fit. Let guests develop long thoughts. Use these sounds throughout the conversation when natural, including during longer guest turns; do not acknowledge every sentence.',
+    'Floor-holding policy: When appropriate, use a brief nonlexical sound to maintain contact while Alpha is deciding or preparing. Do not start answering, explaining, summarizing, interviewing, introducing topics, or giving opinions. Do not claim that work is underway or finished unless an application update says so.',
     'A clear invitation to answer still belongs to Alpha’s existing pipeline. You may briefly acknowledge the invitation and leave the answer to Alpha.',
     'You may hear several guests talking to one another. Respect their exchange and avoid taking the floor. A brief listening sound may overlap speech without interrupting its flow.',
     ...LIVE_ENVIRONMENT_POLICY,
@@ -38,11 +39,14 @@ class GptLiveBackchannel {
         this.closing = false;
         this.blocked = false;
         this.sequence = 0;
+        this.audioDiagnostics = new LiveAudioDiagnostics(report => this.onLog('Audio diagnostics: ' + JSON.stringify(report)));
         this.mixer = options.mixer || new RealtimePcmMixer({
+            onDrop: event => this.onLog('Input audio dropped: ' + JSON.stringify(event)),
             onFrame: frame => {
                 if (this.started && !this.closing) {
                     // Continuous input (including silence) drives Live's own timing.
-                    this.send({ type: 'session.input_audio.append', audio: frame.toString('base64') });
+                    const sent = this.send({ type: 'session.input_audio.append', audio: frame.toString('base64') });
+                    this.audioDiagnostics.record(sent ? 'inputSent' : 'inputSendFailed', frame, 16000, 1);
                 }
             }
         });
@@ -96,6 +100,8 @@ class GptLiveBackchannel {
                         this.started = true;
                         this.sessionId = event.session?.id;
                         this.mixer.start();
+                        this.diagnosticsTimer = setInterval(() => this.audioDiagnostics.flush(), 5000);
+                        this.diagnosticsTimer.unref?.();
                         this.onLog('Session started: gpt-live-1 / ' + this.voice);
                         this.setAlphaPlaying(this.blocked, true);
                         resolve();
@@ -106,15 +112,20 @@ class GptLiveBackchannel {
                         this.onInputTranscript({ text: event.delta, startMs: event.start_ms, endMs: event.end_ms });
                     } else if (event.type === 'session.output_audio.delta') {
                         // Never retain muted audio for later replay.
-                        if (this.started && !this.blocked) this.onAudio(Buffer.from(event.delta, 'base64'));
+                        const pcm = Buffer.from(event.delta, 'base64');
+                        this.audioDiagnostics.record('outputReceived', pcm, 16000, 1);
+                        if (this.started && !this.blocked) this.onAudio(pcm);
+                        else this.audioDiagnostics.record('outputBlocked', pcm, 16000, 1);
                     } else if (event.type === 'session.output_transcript.delta') {
                         this.onTranscript({
                             text: event.delta, startMs: event.start_ms, endMs: event.end_ms,
                             playbackBlocked: this.blocked, sessionId: this.sessionId
                         });
                     } else if (event.type === 'session.delegation.created') {
+                        this.onLog('Delegation received: ' + JSON.stringify({ id: event.delegation?.id, target: event.delegation?.target, offsetMs: event.offset_ms, environment: this.environment, blocked: this.blocked, mode: this.turnControl ? 'live-alpha' : 'current' }));
                         if (this.turnControl) {
                             if (this.blocked || this.environment !== 'listening') {
+                                this.onLog('Delegation disposition: environment-blocked');
                                 this.reportDelegation(event.delegation?.id, 'No new Alpha turn started: the current environment does not allow another turn.');
                             } else {
                                 Promise.resolve(this.onDelegation(event)).catch(() => this.onError(new Error('Live delegation handler failed')));
@@ -122,8 +133,9 @@ class GptLiveBackchannel {
                             return;
                         }
                         // No second request is sent to the generator or any other backend.
-                        this.append('session.instructions.append',
-                            'Continue your acknowledgment-only role. Alpha’s existing pipeline handles the request; do not answer it or delegate again.');
+                        this.onLog('Delegation disposition: Alpha retains turn authority; no backend request');
+                        this.reportDelegation(event.delegation?.id,
+                            'No additional task was started. Alpha independently decides whether to respond. Continue brief nonlexical listening sounds as appropriate to the current environment; no spoken explanation is needed.');
                     } else if (event.type === 'error') {
                         // Provider errors can echo credentials; log codes rather than raw messages.
                         fail(new Error('GPT-Live rejected an event: ' + (event.error?.code || event.error?.type || 'unknown')));
@@ -143,6 +155,8 @@ class GptLiveBackchannel {
                     clearTimeout(this.startTimer);
                     clearTimeout(this.closeTimer);
                     this.started = false;
+                    clearInterval(this.diagnosticsTimer);
+                    this.audioDiagnostics.flush();
                     this.mixer.stop();
                     if (!settled) fail(new Error('GPT-Live closed before session startup'));
                     this.finishClose?.();
@@ -169,7 +183,9 @@ class GptLiveBackchannel {
     append(type, content, delegationId = null) {
         if (!this.started || this.closing) return;
         const eventId = 'quartz_' + (++this.sequence);
-        return this.send({ type, event_id: eventId, delegation_id: delegationId, content }) ? eventId : null;
+        const sent = this.send({ type, event_id: eventId, delegation_id: delegationId, content });
+        this.onLog('Context sent: ' + JSON.stringify({ eventId, type, delegationId, sent }));
+        return sent ? eventId : null;
     }
 
     setAlphaPlaying(playing, force = false) {
@@ -180,6 +196,13 @@ class GptLiveBackchannel {
     }
 
     updateAlphaProgress(stage, preview = '') {
+        this.onLog('Alpha progress: ' + JSON.stringify({ stage, environment: this.environment }));
+        if (stage === 'thinking') {
+            // A decision is still pending. Keep vocal contact available without
+            // turning every speculative evaluation into a floor-state change.
+            return this.append('session.thinking.append',
+                'Alpha is evaluating whether to respond; no answer is committed. Brief nonlexical contact remains available while this decision is pending.');
+        }
         if (stage === 'finished') {
             if (!this.turnControl && !this.blocked && this.environment !== 'listening') {
                 return this.setEnvironment('listening');
@@ -190,10 +213,14 @@ class GptLiveBackchannel {
             // The experimental controller owns its own completion transition.
             // A late silence decision must not override an active handoff/playback.
             if (this.turnControl || this.blocked || this.environment === 'yielding') return;
+            if (this.environment === 'listening') {
+                return this.append('session.thinking.append',
+                    'Alpha decided not to respond. Let any current floor-holding vocalization end naturally; listening sounds remain available. No spoken transition.');
+            }
             return this.setEnvironment('listening',
-                'Alpha has decided not to take this turn. Finish your current brief phrase naturally, then yield to the guests. Do not continue holding the floor. Quiet active-listening acknowledgments remain appropriate.');
+                'Alpha has decided not to take this turn. Let the current vocalization end naturally and leave room for the guests. No spoken transition. Resume brief listening sounds when appropriate.');
         }
-        if (['thinking', 'preparing voice'].includes(stage) && !this.blocked && this.environment === 'listening') {
+        if (stage === 'preparing voice' && !this.blocked && this.environment === 'listening') {
             this.setEnvironment('holding');
         }
         // Late text-completion updates never downgrade YIELDING or ASIDE.
@@ -245,6 +272,8 @@ class GptLiveBackchannel {
     stop() {
         if (this.closePromise) return this.closePromise;
         this.closing = true;
+        clearInterval(this.diagnosticsTimer);
+        this.audioDiagnostics.flush();
         this.mixer.stop();
         this.closePromise = new Promise(resolve => {
             this.finishClose = resolve;

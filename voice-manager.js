@@ -570,7 +570,7 @@ class VoiceManager {
             onDelegation: event => host.turnController?.request(event),
             onInputTranscript: event => {
                 host.turnController?.observe({ kind: 'guest-live', text: event.text });
-                if (options.turnControl) logEvent({ event: 'input-transcript', ...event });
+                logEvent({ event: 'input-transcript', mode: options.turnControl ? 'live-alpha' : 'current', ...event });
             },
             onClose: () => {
                 host.turnController?.close();

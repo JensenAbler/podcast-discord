@@ -157,7 +157,7 @@ test('default companion keeps original no-delegation behavior', async () => {
     const t = await transport(false);
     t.socket.event(delegation('one'));
     assert.equal(t.requests.length, 0);
-    assert.match(t.socket.sent.at(-1).content, /do not answer it or delegate again/);
+    assert.match(t.socket.sent.at(-1).content, /No additional task was started/);
     await t.close();
 });
 
