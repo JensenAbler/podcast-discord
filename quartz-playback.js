@@ -30,6 +30,9 @@ class QuartzPlayback {
         const clientOptions = {
             apiKey: options.apiKey,
             voice: options.voice || 'quartz',
+            turnControl: options.turnControl,
+            onDelegation: options.onDelegation,
+            onInputTranscript: options.onInputTranscript,
             onAudio: pcm => this.enqueue(pcm),
             onTranscript: options.onTranscript,
             onLog: this.onLog,
@@ -43,6 +46,7 @@ class QuartzPlayback {
             onClose: () => {
                 // A network failure is not permission to cut off buffered audio.
                 this.handoff?.fail(new Error('Quartz disconnected during handoff'));
+                options.onClose?.();
             }
         };
         this.client = options.clientFactory ? options.clientFactory(clientOptions) : new GptLiveBackchannel(clientOptions);
@@ -56,6 +60,10 @@ class QuartzPlayback {
         this.player.on(AudioPlayerStatus.Idle, this.onPlayerIdle);
         this.player.on('error', this.onPlayerError);
     }
+
+    setEnvironment(state) { return this.client.setEnvironment?.(state); }
+    appendConversation(label, text) { return this.client.appendConversation?.(label, text); }
+    reportDelegation(id, text) { return this.client.reportDelegation?.(id, text); }
 
     async start() {
         this.client.setAlphaPlaying(this.blocked);
@@ -227,6 +235,7 @@ class QuartzPlayback {
     async stop() {
         if (this.stopPromise) return this.stopPromise;
         this.closed = true;
+        this.turnController?.close();
         this.handoff?.fail(new Error('Quartz stopped during handoff'));
         this.alphaPlayer.off('stateChange', this.onAlphaState);
         this.player.off(AudioPlayerStatus.Idle, this.onPlayerIdle);

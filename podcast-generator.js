@@ -742,7 +742,7 @@ class PodcastGenerator {
             { role: 'system', content: this.buildSystemPrompt() },
             ...this.getRecentHistory(),
             { role: 'user', content: this.buildUserPrompt(transcript, input.wordData, input) },
-            { role: 'system', content: this.buildDecisionPrompt() }
+            { role: 'system', content: this.buildDecisionPrompt(input) }
         ];
         return this.fitMessagesToPromptBudget(messages, transcript, input);
     }
@@ -1084,7 +1084,10 @@ class PodcastGenerator {
         return lines.join('\n');
     }
 
-    buildDecisionPrompt() {
+    buildDecisionPrompt(input = {}) {
+        if (input.liveDelegation) {
+            return 'Live has explicitly requested this Alpha turn based on the ongoing audio conversation. Compose the substantive response now using the conversation context. Live handles acknowledgments and floor holding, so do not emit a bare backchannel or stall. This overrides generic timing preferences to remain silent, but preserve explicit guest requests to wait or stop and all task/tool rules. If the context is insufficient or the request has been withdrawn, return empty speech and shouldRespond=false. Emit speech first, then shouldRespond, chosenAngle, bigBrain, bigHeart, and podcastLeave.';
+        }
         return 'Produce the host turn now. Emit speech first, then shouldRespond, followed by chosenAngle, bigBrain, bigHeart, and podcastLeave.';
     }
 

@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { AudioReceiver } = require('./audio-receiver');
 const { AudioTransmitter } = require('./audio-transmitter');
+const { LiveTurnController } = require('./live-turn-controller');
 const { QuartzPlayback } = require('./quartz-playback');
 const { AudioRecorder } = require('./audio-recorder');
 const { EpisodePostProcessor } = require('./post-processor');
@@ -555,12 +556,32 @@ class VoiceManager {
         const alphaPlayer = this.players.get(guildId);
         if (!connection || !alphaPlayer) return false;
         const recordingPath = this.recordingPaths.get(guildId);
+        const logEvent = event => {
+            console.log('[LiveTurn] ' + JSON.stringify(event));
+            if (recordingPath && this.isRecording.get(guildId)) {
+                try {
+                    fs.appendFileSync(path.join(recordingPath, 'live-turn-events.jsonl'),
+                        JSON.stringify({ ...event, observedAt: new Date().toISOString() }) + '\n');
+                } catch { console.error('[LiveTurn] Event journal write failed'); }
+            }
+        };
         const host = new QuartzPlayback({
+            turnControl: options.turnControl,
+            onDelegation: event => host.turnController?.request(event),
+            onInputTranscript: event => {
+                host.turnController?.observe({ kind: 'guest-live', text: event.text });
+                if (options.turnControl) logEvent({ event: 'input-transcript', ...event });
+            },
+            onClose: () => {
+                host.turnController?.close();
+                if (options.turnControl) logEvent({ event: 'disconnected', mode: 'live-alpha' });
+            },
             connection, alphaPlayer, apiKey: options.apiKey, voice: options.voice || 'quartz',
             onPcm: pcm => this.addBotPcmChunkToRecording(guildId, pcm, {
                 sourceId: 'quartz', sampleRate: 48000, channels: 2, capturedAt: Date.now(), volume: 1
             }),
             onTranscript: event => {
+                host.turnController?.observe({ kind: 'quartz', text: event.text, playbackBlocked: event.playbackBlocked });
                 // Generated transcript fragments are observations, not completed
                 // Alpha turns. Keep them out of the conversation buffer and ASR.
                 if (!this.isRecording.get(guildId) || !recordingPath) return;
@@ -571,18 +592,60 @@ class VoiceManager {
                     console.error('[Quartz] Transcript save failed:', error.message);
                 }
             },
-            onLog: message => console.log('[Quartz] ' + message),
+            onLog: message => {
+                console.log('[Quartz] ' + message);
+                if (options.turnControl) logEvent({ event: 'live-context', message });
+            },
             onError: error => console.error('[Quartz] ' + error.message)
         });
+        if (options.turnControl) {
+            host.turnController = new LiveTurnController({
+                runAlpha: options.runAlpha,
+                isActive: () => this.quartzBackchannels.get(guildId) === host && !host.closed && this.isRecording.get(guildId),
+                setState: state => host.setEnvironment(state),
+                report: (id, text) => host.reportDelegation(id, text),
+                log: logEvent
+            });
+        }
         this.quartzBackchannels.set(guildId, host);
         try {
             await host.start();
+            if (host.turnController && !host.closed) {
+                // Includes the opening announcement and any guests heard during startup.
+                const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
+                if (fs.existsSync(transcriptPath)) {
+                    for (const line of fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean)) {
+                        const entry = JSON.parse(line);
+                        this.observeQuartzTranscript(guildId, { ...entry, transcription: entry.text });
+                    }
+                }
+            }
             return this.quartzBackchannels.get(guildId) === host;
         } catch (error) {
             if (this.quartzBackchannels.get(guildId) === host) this.quartzBackchannels.delete(guildId);
+            await host.stop();
             console.error('[Quartz] Startup failed; Alpha continues normally:', error.message);
             return false;
         }
+    }
+
+    notifyQuartzBackendReady(guildId, kind, runId) {
+        const host = this.quartzBackchannels?.get(guildId);
+        if (!host?.turnController || host.turnController.closed) return;
+        const text = kind + ' result is ready for Alpha to use on its next turn. No result has been spoken yet.';
+        host.turnController.backendReady(kind + ':' + runId, text);
+        host.appendConversation('Backend availability', text);
+    }
+
+    observeQuartzTranscript(guildId, entry) {
+        const host = this.quartzBackchannels?.get(guildId);
+        if (!host?.turnController || !host.client.started || host.closed) return;
+        const text = entry.transcription || entry.text;
+        if (!text) return;
+        const alpha = entry.speakerRole === 'host';
+        host.turnController.observe({ kind: alpha ? 'alpha' : 'guest', speaker: entry.speaker, text });
+        host.appendConversation(alpha ? 'Alpha delivered transcript' : 'Guest transcript',
+            (entry.speaker || '') + ': ' + text);
     }
 
     updateQuartzProgress(guildId, stage, preview = '') {
@@ -1027,6 +1090,7 @@ class VoiceManager {
 
         const entry = JSON.stringify(cleanEntry);
         fs.appendFileSync(transcriptPath, entry + '\n');
+        this.observeQuartzTranscript?.(guildId, utterance);
         
         const wordCount = cleanEntry.wordCount;
         const lowConfCount = cleanEntry.lowConfidenceWords.length;

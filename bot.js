@@ -509,9 +509,12 @@ class AlphaClawdVoiceBot {
     }
 
     normalizeSessionHostMode(mode) {
-        return String(mode || '').toLowerCase() === 'gemini-live'
-            ? 'gemini-live'
-            : 'current';
+        const selected = String(mode || '').toLowerCase();
+        return ['gemini-live', 'live-alpha'].includes(selected) ? selected : 'current';
+    }
+
+    isLiveAlphaSession(guildId) {
+        return this.sessionHostModes?.get?.(guildId) === 'live-alpha';
     }
 
     isGeminiLiveSession(guildId) {
@@ -1396,7 +1399,7 @@ class AlphaClawdVoiceBot {
     }
 
     startIdleDecisionLoop(guildId) {
-        if (this.useGatewayGenerator() || this.idleDecisionIntervalMs <= 0) {
+        if (this.isLiveAlphaSession(guildId) || this.useGatewayGenerator() || this.idleDecisionIntervalMs <= 0) {
             return;
         }
 
@@ -1452,6 +1455,7 @@ class AlphaClawdVoiceBot {
     }
 
     canRunIdleDecision(guildId) {
+        if (this.isLiveAlphaSession(guildId)) return false;
         if (this.useGatewayGenerator()) return false;
         if (!this.isRecordingActive(guildId)) return false;
         if (!this.lastParticipantSpeechAt.has(guildId)) return false;
@@ -2519,7 +2523,8 @@ class AlphaClawdVoiceBot {
                         .setRequired(false)
                         .addChoices(
                             { name: 'Claude + Fish', value: 'current' },
-                            { name: 'Gemini Live (experimental)', value: 'gemini-live' }
+                            { name: 'Gemini Live (experimental)', value: 'gemini-live' },
+                            { name: 'Live timing + Alpha voice (experimental)', value: 'live-alpha' }
                         ))
                 .addStringOption(option =>
                     option.setName('plan')
@@ -3835,6 +3840,12 @@ class AlphaClawdVoiceBot {
         }
 
         const engine = this.normalizeSessionHostMode(interaction.options.getString('engine'));
+        if (engine === 'live-alpha' && (!process.env.PODCAST_LIVE_API_KEY || this.useGatewayGenerator())) {
+            return interaction.reply({
+                content: 'Live timing requires PODCAST_LIVE_API_KEY and the direct podcast generator.',
+                ephemeral: true
+            });
+        }
         if (engine === 'gemini-live' && !this.geminiApiKey) {
             return interaction.reply({
                 content: 'Gemini Live is not configured. Add GEMINI_API_KEY before selecting the experimental engine.',
@@ -3883,7 +3894,7 @@ class AlphaClawdVoiceBot {
                 `🎙️ **Consent Request Sent**\n` +
                 `I've asked participants for recording consent in voice.\n` +
                 `Please type **YES** to proceed or **NO** to cancel.\n\n` +
-                `Host engine: **${engine === 'gemini-live' ? 'Gemini Live (experimental)' : 'Claude + Fish'}**\n\n` +
+                `Host engine: **${engine === 'gemini-live' ? 'Gemini Live (experimental)' : engine === 'live-alpha' ? 'Live timing + Alpha voice (experimental)' : 'Claude + Fish'}**\n\n` +
                 (episodePlanSelection ? `Episode plan: **${episodePlanSelection.plan.basename} ${episodePlanSelection.plan.version}**\n\n` : '') +
                 `(Waiting 60 seconds for response...)`
             );
@@ -4541,6 +4552,9 @@ class AlphaClawdVoiceBot {
      */
     async grantConsent(guildId, topic, engine = 'current', episodePlanSelection = null, context = {}) {
         const sessionHostMode = this.normalizeSessionHostMode(engine);
+        if (sessionHostMode === 'live-alpha' && (!process.env.PODCAST_LIVE_API_KEY || this.useGatewayGenerator())) {
+            throw new Error('Live timing requires the dedicated Live key and direct generator');
+        }
         this.conversationBuffer?.clear?.();
         this.recordingState.set(guildId, this.RecordingState.RECORDING);
         this.sessionHostModes.set(guildId, sessionHostMode);
@@ -4561,6 +4575,7 @@ class AlphaClawdVoiceBot {
         // Start recording with consent metadata
         const recordingInfo = this.voiceManager.startRecording(guildId, 'episode', {
             consentGiven: true,
+            hostEngine: sessionHostMode,
             consentTimestamp: consentTimestamp,
             episodePlan: episodePlanSelection ? {
                 basename: episodePlanSelection.plan.basename,
@@ -4606,6 +4621,19 @@ class AlphaClawdVoiceBot {
                         }
                     );
                 }
+            } else if (sessionHostMode === 'live-alpha') {
+                // Explicit opt-in per episode. No idle/buffer generator is started.
+                const started = await this.voiceManager.startQuartzBackchannel(guildId, {
+                    apiKey: process.env.PODCAST_LIVE_API_KEY,
+                    voice: 'quartz',
+                    turnControl: true,
+                    runAlpha: request => this.handleDirectGeneratorFlush(
+                        guildId, [], request.transcript, null,
+                        { liveDelegation: request.id, liveController: request.controller }
+                    )
+                });
+                if (!started) throw new Error('Live turn controller did not start');
+                console.log('[LiveTurn] Experimental turn control active; legacy turn triggers bypassed');
             } else {
                 this.startIdleDecisionLoop(guildId);
                 if (process.env.PODCAST_LIVE_BACKCHANNEL_ENABLED !== 'false') {
@@ -4656,6 +4684,11 @@ class AlphaClawdVoiceBot {
             }
         } catch (error) {
             console.error('[Bot] Error speaking start:', error);
+            if (sessionHostMode === 'live-alpha') {
+                await this.voiceManager.stopQuartzBackchannel?.(guildId);
+                this.consentWaiters.delete(guildId);
+                throw error;
+            }
         }
 
         this.consentWaiters.delete(guildId);
@@ -4875,6 +4908,7 @@ class AlphaClawdVoiceBot {
         message += sessionHostMode === 'gemini-live'
             ? `Generator: **gemini-live** (google/${process.env.PODCAST_GEMINI_LIVE_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025'})\n`
             : `Generator: **${this.generatorMode}** (${generatorInfo.provider}/${generatorInfo.model})\n`;
+        if (sessionHostMode === 'live-alpha') message += `Turn-taking: **Live (experimental)** | State: ${this.voiceManager.quartzBackchannels?.get(guildId)?.client?.environment || 'unavailable'}\n`;
         message += `Buffer: ${bufferCount} utterance(s) | Ready: ${bufferReady ? '✅' : '⏳'}\n`;
         
         if (recordingInfo) {
@@ -4941,6 +4975,11 @@ class AlphaClawdVoiceBot {
 
         if (this.useGatewayGenerator() && !this.wsClient.isAuthenticated) {
             console.warn('[Bot] Cannot flush buffer: WebSocket not authenticated');
+            return;
+        }
+
+        if (this.isLiveAlphaSession(guildId)) {
+            console.log('[LiveTurn] ASR buffer observed; waiting for Live delegation');
             return;
         }
 
@@ -5035,7 +5074,9 @@ class AlphaClawdVoiceBot {
         }
     }
 
-    async handleDirectGeneratorFlush(guildId, utterances, transcript, wordData) {
+    async handleDirectGeneratorFlush(guildId, utterances, transcript, wordData, turnOptions = {}) {
+        if (this.isLiveAlphaSession(guildId) && !turnOptions.liveDelegation) return { played: false };
+        if (turnOptions.liveController?.closed) return { played: false, stale: true };
         if (!this.isRecordingActive(guildId)) {
             const state = this.recordingState?.get?.(guildId) || this.getRecordingStateValue('IDLE');
             console.log(`[Bot] Direct generator flush dropped because recording state is ${state}`);
@@ -5065,12 +5106,14 @@ class AlphaClawdVoiceBot {
         const episodePlanStructure = this.getEpisodePlanStructureForGenerator(guildId, generatorTiming);
         let bigBrainDispatch = null;
         let bigHeartDispatch = null;
+        let turnResult = { played: false };
 
         try {
             let response = await this.beginGeneratorTurn({
                 utterances,
                 transcript,
                 wordData,
+                liveDelegation: turnOptions.liveDelegation,
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
                 stagedBigHeart: this.getStagedBigHeartForGenerator(guildId),
@@ -5084,6 +5127,10 @@ class AlphaClawdVoiceBot {
                 remember: false
             });
 
+            if (turnOptions.liveController?.closed) {
+                await this.settleGeneratorResponse(response, 'Live episode ended');
+                return { played: false, stale: true };
+            }
             if ((this.hasPendingBigBrain(guildId) || this.hasPendingBigHeart(guildId)) && response?.isStreaming) {
                 response = await this.settleGeneratorResponse(response, 'pending handoff duplicate check');
             }
@@ -5135,14 +5182,16 @@ class AlphaClawdVoiceBot {
             }
 
             const playbackResult = await this.speakDirectGeneratorResponse(guildId, response, {
-                source: 'buffer',
-                playFiller: true,
+                ...turnOptions,
+                source: turnOptions.liveDelegation ? 'live-delegation' : 'buffer',
+                playFiller: !turnOptions.liveDelegation,
                 participantActivityBaseline,
                 awarenessInjections,
                 awarenessShelfItems,
                 flushedUtterances: utterances,
                 rememberTranscript: transcript
             });
+            turnResult = playbackResult;
             const finalResponse = playbackResult?.finalResponse || response;
             if ((playbackResult?.played || playbackResult?.stale) && finalResponse.bigBrain?.requested) {
                 if (playbackResult?.stale) {
@@ -5188,6 +5237,7 @@ class AlphaClawdVoiceBot {
             }
         } catch (error) {
             console.error('[Bot] Direct generator failed:', error);
+            if (turnOptions.liveDelegation) throw error;
             await this.waitForParticipantFloorToSettle(guildId);
             if (this.discardStaleDirectResponse(guildId, {
                 source: 'buffer',
@@ -5209,6 +5259,7 @@ class AlphaClawdVoiceBot {
             this.conversationBuffer?.setFlushHold?.('direct-response', false);
         }
 
+        if (turnOptions.liveController?.closed) return { played: false, stale: true };
         if (bigBrainDispatch) {
             await this.dispatchBigBrainTurn(
                 guildId,
@@ -5223,9 +5274,11 @@ class AlphaClawdVoiceBot {
                 bigHeartDispatch.options
             );
         }
+        return turnResult;
     }
 
     discardStaleDirectResponse(guildId, options = {}, stage = 'before playback') {
+        if (options.liveController?.closed) return true;
         if (!this.isRecordingActive(guildId)) {
             const source = options.source || 'buffer';
             const state = this.recordingState?.get?.(guildId) || this.getRecordingStateValue('IDLE');
@@ -5233,8 +5286,10 @@ class AlphaClawdVoiceBot {
             return true;
         }
 
-        const participantResumed = this.didParticipantResumeSince(guildId, options.participantActivityBaseline);
-        const currentFloor = options.includeCurrentFloor ? this.hasCurrentParticipantFloor(guildId) : false;
+        // Live's acoustic request can precede Fish's transcript of the same words.
+        // Keep the current-speaker guard without treating that late ASR as a new turn.
+        const participantResumed = !options.liveDelegation && this.didParticipantResumeSince(guildId, options.participantActivityBaseline);
+        const currentFloor = (options.includeCurrentFloor || options.liveDelegation) ? this.hasCurrentParticipantFloor(guildId) : false;
 
         if (!participantResumed && !currentFloor) {
             return false;
@@ -6162,6 +6217,7 @@ class AlphaClawdVoiceBot {
         const withoutDuplicate = existing.filter((item) => item.runId !== staged.runId);
         withoutDuplicate.push(staged);
         this.stagedBigBrainResponses.set(guildId, withoutDuplicate.slice(-3));
+        this.voiceManager?.notifyQuartzBackendReady?.(guildId, 'bigBrain', staged.runId);
         this.stopBigBrainToolTone(guildId, 'bigBrain response staged', { runId: staged.runId });
         this.stopBigBrainAmbientBed(guildId, 'bigBrain response staged', { runId: staged.runId });
         console.log(`[Bot] bigBrain response staged runId=${staged.runId}; stagedCount=${this.stagedBigBrainResponses.get(guildId).length}`);
@@ -6211,6 +6267,7 @@ class AlphaClawdVoiceBot {
         const withoutDuplicate = existing.filter((item) => item.runId !== staged.runId);
         withoutDuplicate.push(staged);
         this.stagedBigHeartResponses.set(guildId, withoutDuplicate.slice(-3));
+        this.voiceManager?.notifyQuartzBackendReady?.(guildId, 'bigHeart', staged.runId);
         console.log(`[Bot] bigHeart response staged runId=${staged.runId}; stagedCount=${this.stagedBigHeartResponses.get(guildId).length}`);
         return staged;
     }
