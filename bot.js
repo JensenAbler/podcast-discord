@@ -1434,6 +1434,8 @@ class AlphaClawdVoiceBot {
         this.lastParticipantSpeechAt.delete(guildId);
         this.idleDecisionHandledSpeechAt.delete(guildId);
         this.participantActivityVersion.delete(guildId);
+        this.participantAcousticActivity?.delete(guildId);
+        this.rejectedParticipantActivity?.delete(guildId);
         this.stagedBigBrainResponses?.delete?.(guildId);
         this.stagedBigHeartResponses?.delete?.(guildId);
         for (const [runId, pending] of Array.from(this.pendingBigHeartResponses?.entries?.() || [])) {
@@ -1509,7 +1511,10 @@ class AlphaClawdVoiceBot {
     }
 
     getParticipantActivityVersion(guildId) {
-        return this.participantActivityVersion?.get?.(guildId) || 0;
+        let version = this.participantActivityVersion?.get?.(guildId) || 0;
+        const rejected = this.rejectedParticipantActivity?.get(guildId);
+        while (version > 0 && rejected?.has(version)) version--;
+        return version;
     }
 
     markParticipantActivity(guildId) {
@@ -1517,7 +1522,8 @@ class AlphaClawdVoiceBot {
         if (!this.participantActivityVersion) {
             this.participantActivityVersion = new Map();
         }
-        const current = this.getParticipantActivityVersion(guildId);
+        // Allocation stays monotonic even when an earlier event is rejected.
+        const current = this.participantActivityVersion.get(guildId) || 0;
         const next = current + 1;
         this.participantActivityVersion.set(guildId, next);
         return next;
@@ -1644,6 +1650,9 @@ class AlphaClawdVoiceBot {
     recordParticipantSignal(guildId, userId, type, metadata = {}) {
         if (!guildId || !userId) return null;
 
+        if (type === 'phantom_utterance' || type === 'real_transcript') {
+            this.resolveParticipantAcousticActivity(guildId, userId, metadata, type === 'phantom_utterance');
+        }
         const at = Number.isFinite(metadata.at)
             ? metadata.at
             : (metadata.speechStartedAt ? Date.parse(metadata.speechStartedAt) : Date.now());
@@ -1815,7 +1824,7 @@ class AlphaClawdVoiceBot {
                     `[Bot] Fresh speech evidence confirmed for ${userId} during continuation ` +
                     `(frames=${metadata.speakingFrames || 0}, threshold=${metadata.threshold || 1}, source=${reason})`
                 );
-                this.confirmParticipantActivity(guildId, userId, reason);
+                this.confirmParticipantActivity(guildId, userId, reason, metadata);
             }
             return true;
         }
@@ -1831,7 +1840,7 @@ class AlphaClawdVoiceBot {
         );
         this.setInternalThoughtUserSpeaking(guildId, userId, true);
         this.conversationBuffer?.setUserSpeaking?.(userId, true);
-        this.confirmParticipantActivity(guildId, userId, reason);
+        this.confirmParticipantActivity(guildId, userId, reason, metadata);
         return true;
     }
 
@@ -1996,16 +2005,42 @@ class AlphaClawdVoiceBot {
         console.log(`[Bot] Provisional participant activity cleared for ${userId} (${reason})`);
     }
 
-    confirmParticipantActivity(guildId, userId, reason = 'confirmed') {
+    confirmParticipantActivity(guildId, userId, reason = 'confirmed', acoustic = null) {
         if (userId) {
             this.clearProvisionalParticipantActivity(guildId, userId, reason);
         }
 
         const version = this.markParticipantActivity(guildId);
+        if (userId && Number.isFinite(acoustic?.firstSpeechAtMs)) {
+            this.participantAcousticActivity ||= new Map();
+            let events = this.participantAcousticActivity.get(guildId);
+            if (!events) this.participantAcousticActivity.set(guildId, events = new Map());
+            const key = JSON.stringify([userId, acoustic.firstSpeechAtMs]);
+            const versions = events.get(key) || [];
+            versions.push(version);
+            events.set(key, versions);
+        }
         if (guildId) {
             console.log(`[Bot] Participant activity confirmed${userId ? ` for ${userId}` : ''} (${reason}); version=${version}`);
         }
         return version;
+    }
+
+    resolveParticipantAcousticActivity(guildId, userId, utterance, phantom) {
+        const start = Date.parse(utterance.speechStartedAt);
+        if (!userId || !Number.isFinite(start) || utterance.providerError) return;
+        const events = this.participantAcousticActivity?.get(guildId);
+        const key = JSON.stringify([userId, start]);
+        const versions = events?.get(key);
+        if (!versions) return;
+        events.delete(key);
+        if (!events.size) this.participantAcousticActivity.delete(guildId);
+        if (!phantom) return;
+        this.rejectedParticipantActivity ||= new Map();
+        let rejected = this.rejectedParticipantActivity.get(guildId);
+        if (!rejected) this.rejectedParticipantActivity.set(guildId, rejected = new Set());
+        versions.forEach(version => rejected.add(version));
+        console.log('[Bot] Phantom activity revoked: ' + JSON.stringify({ guildId, userId, speechStartedAt: utterance.speechStartedAt, versions }));
     }
 
     clearParticipantActivityTimers(guildId) {
@@ -2022,7 +2057,12 @@ class AlphaClawdVoiceBot {
         if (!Number.isFinite(baseline)) {
             return false;
         }
-        return this.getParticipantActivityVersion(guildId) > baseline;
+        const current = this.participantActivityVersion?.get?.(guildId) || 0;
+        const rejected = this.rejectedParticipantActivity?.get(guildId);
+        for (let version = current; version > baseline; version--) {
+            if (!rejected?.has(version)) return true;
+        }
+        return false;
     }
 
     getParticipantFloorState(guildId) {
