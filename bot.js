@@ -4606,6 +4606,13 @@ class AlphaClawdVoiceBot {
                 }
             } else {
                 this.startIdleDecisionLoop(guildId);
+                if (process.env.PODCAST_LIVE_BACKCHANNEL_ENABLED !== 'false') {
+                    // Do not await Live startup or let it delay Alpha's response path.
+                    Promise.resolve(this.voiceManager.startQuartzBackchannel?.(guildId, {
+                        apiKey: process.env.PODCAST_LIVE_API_KEY,
+                        voice: 'quartz'
+                    })).catch(error => console.error('[Quartz] Startup failed:', error.message));
+                }
             }
 
             // Notify Gateway/OpenClaw when it is driving responses, mirroring is enabled,
@@ -4881,6 +4888,7 @@ class AlphaClawdVoiceBot {
      */
     async handleResetCommand(interaction) {
         const guildId = interaction.guildId;
+        await this.voiceManager.stopQuartzBackchannel?.(guildId);
 
         this.recordingState.set(guildId, this.RecordingState.IDLE);
         this.consentWaiters.delete(guildId);

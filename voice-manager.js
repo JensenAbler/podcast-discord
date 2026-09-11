@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { AudioReceiver } = require('./audio-receiver');
 const { AudioTransmitter } = require('./audio-transmitter');
+const { QuartzPlayback } = require('./quartz-playback');
 const { AudioRecorder } = require('./audio-recorder');
 const { EpisodePostProcessor } = require('./post-processor');
 const { getRecordingDir } = require('./paths');
@@ -30,6 +31,7 @@ class VoiceManager {
         this.receivers = new Map(); // guildId -> AudioReceiver
         this.transmitters = new Map(); // guildId -> AudioTransmitter
         this.players = new Map(); // guildId -> audioPlayer
+        this.quartzBackchannels = new Map(); // independent acknowledgment playback
         this.recorders = new Map(); // guildId -> AudioRecorder
         this.connectionChannels = new Map(); // guildId -> channelId
         this.isRecording = new Map(); // guildId -> boolean
@@ -308,6 +310,7 @@ class VoiceManager {
     async leaveChannel(guildId, options = {}) {
         console.log(`[VoiceManager] Leaving voice channel in guild ${guildId}`);
         const shouldStopRecording = options.stopRecording !== false;
+        await this.stopQuartzBackchannel(guildId);
 
         // Stop recording if active
         if (shouldStopRecording && this.isRecording.get(guildId)) {
@@ -402,6 +405,7 @@ class VoiceManager {
             });
         }
 
+        this.quartzBackchannels?.get(guildId)?.pushAudio(userId, chunk);
         if (this.onAudioChunk) {
             this.onAudioChunk(guildId, userId, chunk);
         }
@@ -539,6 +543,55 @@ class VoiceManager {
      * @param {Buffer|string} audio - Audio buffer or file path
      * @returns {Promise<void>}
      */
+    async startQuartzBackchannel(guildId, options = {}) {
+        if (!options.apiKey) {
+            console.log('[Quartz] Not started: configure PODCAST_LIVE_API_KEY with an OpenAI API key');
+            return false;
+        }
+        if (!this.isRecording.get(guildId)) return false;
+        if (!this.quartzBackchannels) this.quartzBackchannels = new Map();
+        if (this.quartzBackchannels.has(guildId)) return false;
+        const connection = this.connections.get(guildId);
+        const alphaPlayer = this.players.get(guildId);
+        if (!connection || !alphaPlayer) return false;
+        const recordingPath = this.recordingPaths.get(guildId);
+        const host = new QuartzPlayback({
+            connection, alphaPlayer, apiKey: options.apiKey, voice: options.voice || 'quartz',
+            onPcm: pcm => this.addBotPcmChunkToRecording(guildId, pcm, {
+                sourceId: 'quartz', sampleRate: 48000, channels: 2, capturedAt: Date.now(), volume: 1
+            }),
+            onTranscript: event => {
+                // Generated transcript fragments are observations, not completed
+                // Alpha turns. Keep them out of the conversation buffer and ASR.
+                if (!this.isRecording.get(guildId) || !recordingPath) return;
+                try {
+                    fs.appendFileSync(path.join(recordingPath, 'quartz-transcript.jsonl'),
+                        JSON.stringify({ ...event, observedAt: new Date().toISOString() }) + '\n');
+                } catch (error) {
+                    console.error('[Quartz] Transcript save failed:', error.message);
+                }
+            },
+            onLog: message => console.log('[Quartz] ' + message),
+            onError: error => console.error('[Quartz] ' + error.message)
+        });
+        this.quartzBackchannels.set(guildId, host);
+        try {
+            await host.start();
+            return this.quartzBackchannels.get(guildId) === host;
+        } catch (error) {
+            if (this.quartzBackchannels.get(guildId) === host) this.quartzBackchannels.delete(guildId);
+            console.error('[Quartz] Startup failed; Alpha continues normally:', error.message);
+            return false;
+        }
+    }
+
+    async stopQuartzBackchannel(guildId) {
+        const host = this.quartzBackchannels?.get(guildId);
+        if (!host) return;
+        this.quartzBackchannels.delete(guildId);
+        await host.stop();
+    }
+
     async speak(guildId, audio, options = {}) {
         const transmitter = this.transmitters.get(guildId);
         if (!transmitter) {
@@ -717,6 +770,7 @@ class VoiceManager {
      * @returns {Object} - Recording result
      */
     async stopRecording(guildId) {
+        await this.stopQuartzBackchannel(guildId);
         if (!this.isRecording.get(guildId)) {
             throw new Error('Not recording');
         }

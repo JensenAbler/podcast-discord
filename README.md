@@ -43,6 +43,37 @@ Run the deterministic shutdown tests with `node --test test-shutdown.js`.
 They also run in `npm test` and use mocks without connecting to Discord
 or providers.
 
+## Quartz acknowledgment experiment
+
+During a normal recorded podcast session, GPT-Live can listen alongside the
+existing generator and speak brief acknowledgments or hold conversational contact.
+It uses the Australian-influenced Quartz voice. Its role is explained in
+gpt-live-backchannel.js; there is no content classifier, acknowledgment cooldown,
+or extra turn-taking decision. Alpha's existing generator and state machine still
+own substantial responses.
+
+Set PODCAST_LIVE_API_KEY to an OpenAI project API key in the service environment,
+then restart the service. This is deliberately separate from OPENAI_API_KEY,
+which this deployment also uses for OpenAI-compatible providers such as Groq.
+Quartz starts after recording begins, only in the normal host mode. Without its
+dedicated key it remains inactive. Set PODCAST_LIVE_BACKCHANNEL_ENABLED=false
+to disable the experiment.
+
+The separate Quartz player yields synchronously whenever Alpha's player is busy,
+including initial buffering. Muted audio is discarded, never queued for later.
+Quartz does not touch the guest buffer, generator, or host playback callbacks.
+Its consumed PCM packets are included in the durable recording as source quartz;
+generated transcript fragments go to quartz-transcript.jsonl, with
+playbackBlocked metadata. These fragments are not a verified transcript of
+everything heard. Recording stop, reset, disconnect, and shutdown close its session.
+A connection failure leaves the normal pipeline running; the next recording
+attempts a new session.
+
+Run node --test test-quartz-backchannel.js for transport, playback priority,
+and lifecycle tests. Run npm test for the existing regression suite.
+Live voice quality and acknowledgment timing require an actual Discord session.
+GPT-Live session time incurs OpenAI API charges while connected, even when muted.
+
 ## Response generator
 
 The live spoken reply generator defaults to `PODCAST_GENERATOR=direct`, which calls the configured model provider with a strict JSON schema for turn-taking:
