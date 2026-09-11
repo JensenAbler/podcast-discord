@@ -295,5 +295,13 @@ test('Live handoff and progress use distinct event types and bounded spoken cont
     assert.equal(t.socket.sent.at(-1).event_id, id);
     assert.match(t.socket.sent.at(-1).content, /Finish your current brief thought/);
     assert.match(t.socket.sent.at(-1).content, /Upcoming answer/);
+    t.client.updateAlphaProgress('idle');
+    assert.equal(t.socket.sent.at(-1).type, 'session.instructions.append');
+    assert.match(t.socket.sent.at(-1).content, /Alpha has decided not to take this turn/);
+    t.socket.event({ type: 'session.output_audio.delta', delta: Buffer.from([1, 2]).toString('base64') });
+    assert.equal(t.audio.length, 1, 'silence decision must let the current phrase play through');
+    assert.equal(t.client.blocked, false);
+    t.client.updateAlphaProgress('thinking');
+    assert.equal(t.socket.sent.at(-1).type, 'session.thinking.append');
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });

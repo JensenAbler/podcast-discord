@@ -165,6 +165,12 @@ class GptLiveBackchannel {
     }
 
     updateAlphaProgress(stage, preview = '') {
+        if (stage === 'idle') {
+            // Alpha declined this turn. Guide Live to yield without muting
+            // or discarding the phrase already being delivered.
+            return this.append('session.instructions.append',
+                'Alpha has decided not to take this turn. If you are speaking, finish your current brief phrase naturally, then yield to the guests. Do not add a follow-up or continue holding the floor for this turn. Quiet active-listening acknowledgments are still appropriate. Alpha remains responsible for substantive answers. Floor holding may resume when a later application update says Alpha is processing a new turn.');
+        }
         // Context, not text to read aloud; never send internal reasoning.
         this.append('session.thinking.append',
             'Alpha status: ' + stage + (preview ? '. Upcoming spoken words (context only): ' + JSON.stringify(String(preview).slice(0, 600)) : ''));
