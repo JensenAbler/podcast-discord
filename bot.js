@@ -2078,6 +2078,7 @@ class AlphaClawdVoiceBot {
             const episodePlanStructure = this.getEpisodePlanStructureForGenerator(guildId, generatorTiming);
 
             console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s without participant speech`);
+            this.voiceManager?.updateQuartzProgress?.(guildId, 'thinking');
             const response = await this.beginGeneratorTurn({
                 transcript: '',
                 idleCheck: true,
@@ -2108,6 +2109,7 @@ class AlphaClawdVoiceBot {
                 if (this.getParticipantActivityVersion(guildId) === participantActivityBaseline) {
                     this.recordGeneratorSilence(guildId, 'idle');
                 }
+                this.voiceManager?.updateQuartzProgress?.(guildId, 'idle');
                 console.log(`[Bot] Idle generator chose silence`);
                 return;
             }
@@ -5047,6 +5049,7 @@ class AlphaClawdVoiceBot {
         }
 
         this.directResponseInFlight.add(guildId);
+        this.voiceManager?.updateQuartzProgress?.(guildId, 'thinking');
         this.conversationBuffer?.setFlushHold?.('direct-response', true);
         const participantActivityBaseline = this.getParticipantActivityVersion(guildId);
         const turnIdIntent = this.buildGeneratorTurnIdIntent('direct-generator', utterances);
@@ -5126,6 +5129,7 @@ class AlphaClawdVoiceBot {
                 }
                 this.podcastGenerator.rememberTurn?.(transcript, toRemember);
                 this.recordGeneratorSilence(guildId, 'buffer');
+                this.voiceManager?.updateQuartzProgress?.(guildId, 'idle');
                 console.log(`[Bot] Direct generator chose silence`);
                 return;
             }
@@ -5335,7 +5339,7 @@ class AlphaClawdVoiceBot {
         const ttsCompletedAt = new Date().toISOString();
 
         if (this.recordingState.get(guildId) === this.RecordingState.RECORDING) {
-            const playbackResult = await this.playTtsAndRecord(guildId, audioBuffer);
+            const playbackResult = await this.playTtsAndRecord(guildId, audioBuffer, { alphaPreview: text });
             const playback = playbackResult.playback;
             const playbackTiming = playbackResult.playbackTiming || playback?.timing || {};
             const playbackStartedAt = playbackTiming.playbackStartedAt || playback?.timing?.playbackStartedAt || null;
@@ -6712,6 +6716,8 @@ class AlphaClawdVoiceBot {
             this.conversationBuffer?.setFlushHold?.('direct-response', true);
         }
         const source = options.source || 'buffer';
+        const quartzForResponse = this.voiceManager?.quartzBackchannels?.get(guildId);
+        if (quartzForResponse) quartzForResponse.previewRun = response;
         this.stopBigBrainToolTone(guildId, 'host response starting');
 
         try {
@@ -6744,6 +6750,18 @@ class AlphaClawdVoiceBot {
                 };
             }
 
+            this.voiceManager?.updateQuartzProgress?.(guildId, 'preparing voice', response.speech || '');
+            if (isStreaming) {
+                // Preserve streaming generation/TTS; publish only actual spoken
+                // text once complete, never the generator's private reasoning.
+                response.completed.then(final => {
+                    if (quartzForResponse && !quartzForResponse.closed &&
+                        quartzForResponse.previewRun === response &&
+                        this.voiceManager?.quartzBackchannels?.get(guildId) === quartzForResponse) {
+                        this.voiceManager.updateQuartzProgress(guildId, 'response text available', final.speech || '');
+                    }
+                }).catch(() => {});
+            }
             const ttsStartedAt = new Date().toISOString();
             const speechSource = isStreaming ? response.speechStream : response.speech;
             const audio = await this.synthesizeLiveTTS(speechSource, {
@@ -6783,6 +6801,7 @@ class AlphaClawdVoiceBot {
 
             this.markIdleDecisionHandled(guildId);
             const playbackResult = await this.playTtsAndRecord(guildId, audio, {
+                alphaPreview: response.speech || '',
                 shouldAbortPlaybackStart: () => {
                     const playbackOptions = { ...options, includeCurrentFloor: true };
                     return this.discardStaleDirectResponse(
@@ -6889,6 +6908,7 @@ class AlphaClawdVoiceBot {
             this.conversationBuffer.startCooldown();
             return { played: true, stale: false, finalResponse };
         } finally {
+            if (quartzForResponse?.previewRun === response) quartzForResponse.previewRun = null;
             if (!alreadyInFlight) {
                 this.directResponseInFlight.delete(guildId);
                 this.conversationBuffer?.setFlushHold?.('direct-response', false);
@@ -7029,6 +7049,7 @@ class AlphaClawdVoiceBot {
 
             this.markIdleDecisionHandled(guildId);
             const playbackResult = await this.playTtsAndRecord(guildId, audioBuffer, {
+                alphaPreview: text,
                 shouldAbortPlaybackStart: () => {
                     const playbackOptions = { ...options, includeCurrentFloor: true };
                     return this.discardStaleDirectResponse(
@@ -7236,13 +7257,14 @@ class AlphaClawdVoiceBot {
         console.log(`[Bot] Active guildId: ${guildId}, synthesizing TTS...`);
 
         try {
+            this.voiceManager?.updateQuartzProgress?.(guildId, 'preparing voice', text);
             // Synthesize response
             const audio = await this.synthesizeLiveTTS(text, {
                 voiceId: this.voiceId
             });
 
             // Speak and add the completed audio to the mixed recording.
-            await this.playTtsAndRecord(guildId, audio);
+            await this.playTtsAndRecord(guildId, audio, { alphaPreview: text });
 
             // Start cooldown after playback completes
             console.log('[Bot] Audio playback complete, starting cooldown');

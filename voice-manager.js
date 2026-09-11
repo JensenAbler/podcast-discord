@@ -585,6 +585,14 @@ class VoiceManager {
         }
     }
 
+    updateQuartzProgress(guildId, stage, preview = '') {
+        const quartz = this.quartzBackchannels?.get(guildId);
+        if (!quartz) return;
+        if (preview) quartz.alphaPreview = String(preview).slice(0, 600);
+        if (stage === 'thinking' || stage === 'idle') quartz.alphaPreview = '';
+        quartz.updateAlphaProgress(stage, preview);
+    }
+
     async stopQuartzBackchannel(guildId) {
         const host = this.quartzBackchannels?.get(guildId);
         if (!host) return;
@@ -599,10 +607,56 @@ class VoiceManager {
             throw new Error('Not connected to voice channel');
         }
 
-        await transmitter.play(audio, options);
+        const quartz = this.quartzBackchannels?.get(guildId);
+        let release, audioError;
+        const trackAudioError = error => { audioError = error; };
+        if (quartz && typeof audio?.on === 'function') audio.on('error', trackAudioError);
+        try {
+            if (quartz) {
+                // A streaming TTS handle can exist before its first audio byte.
+                if (audio && typeof audio.once === 'function' && !audio.readableLength && !audio.readableEnded) {
+                    await new Promise((resolve, reject) => {
+                        const cleanup = () => {
+                            clearTimeout(timer);
+                            audio.off('readable', ready);
+                            audio.off('error', failed);
+                            audio.off('end', empty);
+                            audio.off('close', empty);
+                        };
+                        const ready = () => { cleanup(); resolve(); };
+                        const failed = error => { cleanup(); reject(error); };
+                        const empty = () => failed(new Error('Alpha audio ended before becoming ready'));
+                        const timer = setTimeout(() => failed(new Error('Alpha audio readiness timed out')), 15000);
+                        audio.once('readable', ready);
+                        audio.once('error', failed);
+                        audio.once('end', empty);
+                        audio.once('close', empty);
+                    });
+                }
+                release = await quartz.acquireAlpha(options.alphaPreview || quartz.alphaPreview || '');
+            }
+            if (audioError) throw audioError;
+            if (quartz && audio?.destroyed) throw new Error('Alpha audio closed during handoff');
+            await transmitter.play(audio, {
+                ...options,
+                onFinish: () => {
+                    try { options.onFinish?.(); } finally { release?.(); }
+                },
+                onError: error => {
+                    try { options.onError?.(error); } finally { release?.(); }
+                }
+            });
+        } catch (error) {
+            release?.();
+            if (audio && typeof audio.destroy === 'function') audio.destroy();
+            throw error;
+        } finally {
+            if (quartz && typeof audio?.off === 'function') audio.off('error', trackAudioError);
+        }
     }
 
     stopPlayback(guildId) {
+        this.quartzBackchannels?.get(guildId)?.cancelPendingAlpha();
         const transmitter = this.transmitters.get(guildId);
         if (!transmitter) {
             return false;

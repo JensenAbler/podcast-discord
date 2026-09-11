@@ -18,6 +18,14 @@ class QuartzPlayback {
         this.stream = null;
         this.queue = Buffer.alloc(0);
         this.closed = false;
+        this.alphaLease = false;
+        this.alphaQueue = Promise.resolve();
+        this.cancelEpoch = 0;
+        this.handoff = null;
+        this.quietFrames = 0;
+        this.pendingVoicedFrames = 0;
+        this.lastConsumedAt = 0;
+        this.handoffTimeoutMs = options.handoffTimeoutMs || 20000;
         this.blocked = this.alphaPlayer.state.status !== AudioPlayerStatus.Idle;
         const clientOptions = {
             apiKey: options.apiKey,
@@ -26,7 +34,16 @@ class QuartzPlayback {
             onTranscript: options.onTranscript,
             onLog: this.onLog,
             onError: this.onError,
-            onClose: () => this.clearOutput()
+            onInstructionsAccepted: id => {
+                if (this.handoff?.eventId === id) {
+                    this.handoff.accepted = true;
+                    this.quietFrames = 0;
+                }
+            },
+            onClose: () => {
+                // A network failure is not permission to cut off buffered audio.
+                this.handoff?.fail(new Error('Quartz disconnected during handoff'));
+            }
         };
         this.client = options.clientFactory ? options.clientFactory(clientOptions) : new GptLiveBackchannel(clientOptions);
         this.onAlphaState = (_old, next) => this.setBlocked(next.status !== AudioPlayerStatus.Idle);
@@ -48,9 +65,69 @@ class QuartzPlayback {
 
     pushAudio(userId, pcm) { this.client.pushAudio(userId, pcm); }
 
+    updateAlphaProgress(stage, preview) { this.client.updateAlphaProgress?.(stage, preview); }
+
+    async acquireAlpha(preview = '') {
+        const epoch = this.cancelEpoch;
+        let releaseQueue;
+        const previous = this.alphaQueue;
+        this.alphaQueue = new Promise(resolve => { releaseQueue = resolve; });
+        await previous;
+        if (this.closed || epoch !== this.cancelEpoch) { releaseQueue(); throw new Error('Quartz stopped or Alpha playback cancelled'); }
+        let released = false;
+        const release = () => {
+            if (released) return;
+            released = true;
+            this.alphaLease = false;
+            if (!this.closed) this.setBlocked(this.alphaPlayer.state.status !== AudioPlayerStatus.Idle);
+            releaseQueue();
+        };
+        this.alphaLease = true;
+        try {
+            if (!this.client.started && this.stream) throw new Error('Quartz audio still pending after disconnection');
+            if (this.client.started && !this.blocked) await this.waitForHandoff(preview);
+            // Only silence is discarded here, after played audio reached a quiet boundary.
+            this.setBlocked(true);
+            return release;
+        } catch (error) {
+            release();
+            throw error;
+        }
+    }
+
+    cancelPendingAlpha() {
+        this.cancelEpoch++;
+        this.handoff?.fail(new Error('Alpha playback cancelled during handoff'));
+    }
+
+    waitForHandoff(preview) {
+        return new Promise((resolve, reject) => {
+            const finish = error => {
+                clearInterval(pending.timer);
+                if (this.handoff === pending) this.handoff = null;
+                error ? reject(error) : resolve();
+            };
+            const pending = { accepted: false, startedAt: Date.now(), fail: finish };
+            this.handoff = pending;
+            this.quietFrames = 0;
+            pending.eventId = this.client.requestHandoff(preview);
+            if (!pending.eventId) return finish(new Error('Could not request Quartz handoff'));
+            pending.timer = setInterval(() => {
+                // Count actual near-silent PCM that Discord consumed, not missing
+                // network packets or transcript gaps. Acceptance is not completion.
+                const quietBoundary = pending.accepted && this.quietFrames >= 50 &&
+                    this.pendingVoicedFrames === 0 && !hasVoice(this.queue);
+                if (quietBoundary) return finish();
+                if (Date.now() - pending.startedAt >= this.handoffTimeoutMs) {
+                    finish(new Error('Quartz handoff not observed; Alpha playback withheld to avoid interruption'));
+                }
+            }, 25);
+        });
+    }
+
     setBlocked(blocked) {
         if (this.closed) return;
-        this.blocked = Boolean(blocked);
+        this.blocked = Boolean(blocked || (this.alphaLease && !this.handoff));
         if (this.blocked) {
             // This runs synchronously on Alpha's Buffering/Playing transition,
             // before Discord can consume its first packet. Discard Quartz's
@@ -91,9 +168,13 @@ class QuartzPlayback {
         const read = stream.read.bind(stream);
         stream.read = function(size) {
             const packet = read(size);
-            const pcm = packet && packets.get(packet);
+            const entry = packet && packets.get(packet);
+            const pcm = entry?.pcm;
+            if (entry?.voiced) owner.pendingVoicedFrames--;
             if (pcm && !owner.blocked && !owner.closed) {
                 packets.delete(packet);
+                owner.lastConsumedAt = Date.now();
+                owner.quietFrames = entry.voiced ? 0 : owner.quietFrames + 1;
                 owner.onPcm(pcm);
             }
             return packet;
@@ -117,7 +198,9 @@ class QuartzPlayback {
         }
         try {
             const packet = Buffer.from(stream.encoder.encode(stereo, 960));
-            stream.packets.set(packet, stereo);
+            const voiced = hasVoice(mono);
+            if (voiced) this.pendingVoicedFrames++;
+            stream.packets.set(packet, { pcm: stereo, voiced });
             stream.wantsPacket = false;
             stream.push(packet);
         } catch (error) {
@@ -130,6 +213,7 @@ class QuartzPlayback {
         const stream = this.stream;
         this.stream = null;
         this.queue = Buffer.alloc(0);
+        this.pendingVoicedFrames = 0;
         // Set stream=null before stop(), whose Idle event can reenter here.
         if (stream) {
             this.player.stop(true);
@@ -143,6 +227,7 @@ class QuartzPlayback {
     async stop() {
         if (this.stopPromise) return this.stopPromise;
         this.closed = true;
+        this.handoff?.fail(new Error('Quartz stopped during handoff'));
         this.alphaPlayer.off('stateChange', this.onAlphaState);
         this.player.off(AudioPlayerStatus.Idle, this.onPlayerIdle);
         this.clearOutput();
@@ -150,6 +235,15 @@ class QuartzPlayback {
         this.stopPromise = this.client.stop();
         return this.stopPromise;
     }
+}
+
+// Deliberately conservative: only near-digital silence qualifies. This is an
+// acoustic boundary, not a claim that Live has semantically completed a turn.
+function hasVoice(pcm) {
+    for (let i = 0; i + 1 < pcm.length; i += 2) {
+        if (Math.abs(pcm.readInt16LE(i)) > 8) return true;
+    }
+    return false;
 }
 
 module.exports = { QuartzPlayback };

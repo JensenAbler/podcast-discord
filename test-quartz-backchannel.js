@@ -95,12 +95,12 @@ class Player extends EventEmitter {
     play(resource) { this.resource = resource; this.plays++; this.transition('playing'); }
     stop() { this.transition('idle'); }
 }
-function playback() {
+function playback(options = {}) {
     const alpha = new Player(), quartz = new Player(), consumed = [];
     const connection = { subscribed: alpha, subscribe(p) { this.subscribed = p; } };
     let callbacks, closes = 0, pushed = 0;
     const p = new QuartzPlayback({
-        connection, alphaPlayer: alpha, player: quartz,
+        ...options, connection, alphaPlayer: alpha, player: quartz,
         resourceFactory: stream => stream,
         encoderFactory: () => ({ encode(pcm) { return pcm; }, delete() {} }),
         onPcm: pcm => consumed.push(pcm),
@@ -178,4 +178,122 @@ test('stop removes the companion before awaiting network closure', async () => {
     const stopping = VoiceManager.prototype.stopQuartzBackchannel.call(fake, 'g');
     assert.equal(fake.quartzBackchannels.size, 0);
     finish(); await stopping;
+});
+
+test('handoff waits for accepted instructions and played silence, not packet gaps', async () => {
+    const t = playback({ handoffTimeoutMs: 500 });
+    t.p.client.started = true;
+    t.p.client.requestHandoff = preview => { assert.equal(preview, 'Here is the answer.'); return 'handoff-1'; };
+    const voice = Buffer.alloc(640); voice.fill(100);
+    t.callbacks.onAudio(voice);
+    let granted = false;
+    const waiting = t.p.acquireAlpha('Here is the answer.').then(release => { granted = true; return release; });
+    await new Promise(resolve => setImmediate(resolve));
+    t.p.stream.read();
+    await new Promise(resolve => setTimeout(resolve, 35));
+    assert.equal(granted, false, 'network silence must not grant the floor');
+    t.callbacks.onInstructionsAccepted('wrong-id');
+    for (let i = 0; i < 50; i++) { t.callbacks.onAudio(Buffer.alloc(640)); t.p.stream.read(); }
+    await new Promise(resolve => setTimeout(resolve, 35));
+    assert.equal(granted, false, 'wrong acknowledgment must not grant the floor');
+    t.callbacks.onInstructionsAccepted('handoff-1');
+    for (let i = 0; i < 49; i++) { t.callbacks.onAudio(Buffer.alloc(640)); t.p.stream.read(); }
+    await new Promise(resolve => setTimeout(resolve, 35));
+    assert.equal(granted, false);
+    t.callbacks.onAudio(Buffer.alloc(640)); t.p.stream.read();
+    const release = await waiting;
+    assert.equal(t.p.blocked, true);
+    assert.equal(t.connection.subscribed, t.alpha);
+    assert.equal(t.consumed.length, 101, 'all speech and silence played before handoff');
+    release();
+    assert.equal(t.p.blocked, false);
+    await t.p.stop();
+});
+test('handoff deadline withholds Alpha and preserves Quartz output', async () => {
+    const t = playback({ handoffTimeoutMs: 40 });
+    t.p.client.started = true;
+    t.p.client.requestHandoff = () => 'h';
+    const pcm = Buffer.alloc(640, 100);
+    t.callbacks.onAudio(pcm);
+    const stream = t.p.stream;
+    await assert.rejects(t.p.acquireAlpha(), /withheld/);
+    assert.equal(stream.destroyed, false);
+    assert.equal(t.p.blocked, false);
+    assert.equal(t.alpha.plays, 0);
+    assert.ok(stream.read());
+    await t.p.stop();
+});
+test('shutdown cancels a pending handoff and queued Alpha requests', async () => {
+    const t = playback();
+    t.p.client.started = true;
+    t.p.client.requestHandoff = () => 'h';
+    const first = assert.rejects(t.p.acquireAlpha(), /stopped/);
+    const second = assert.rejects(t.p.acquireAlpha(), /stopped/);
+    await new Promise(resolve => setImmediate(resolve));
+    await t.p.stop();
+    await Promise.all([first, second]);
+    assert.equal(t.alpha.plays, 0);
+});
+test('VoiceManager waits for handoff and holds the lease until Alpha finishes', async () => {
+    let grant, playedOptions, releases = 0;
+    const fake = {
+        transmitters: new Map([['g', { play: async (_audio, options) => { playedOptions = options; } }]]),
+        quartzBackchannels: new Map([['g', { acquireAlpha: () => new Promise(resolve => { grant = resolve; }) }]])
+    };
+    const speaking = VoiceManager.prototype.speak.call(fake, 'g', Buffer.from([1]));
+    assert.equal(playedOptions, undefined);
+    grant(() => { releases++; });
+    await speaking;
+    assert.equal(releases, 0);
+    playedOptions.onFinish();
+    assert.equal(releases, 1);
+});
+test('failed handoff never starts the transmitter', async () => {
+    let plays = 0;
+    const fake = {
+        transmitters: new Map([['g', { play: async () => { plays++; } }]]),
+        quartzBackchannels: new Map([['g', { acquireAlpha: async () => { throw new Error('withheld'); } }]])
+    };
+    await assert.rejects(VoiceManager.prototype.speak.call(fake, 'g', Buffer.from([1])), /withheld/);
+    assert.equal(plays, 0);
+});
+
+test('cancelling playback also rejects Alpha requests waiting behind a lease', async () => {
+    const t = playback();
+    const release = await t.p.acquireAlpha();
+    const pending = assert.rejects(t.p.acquireAlpha(), /cancelled/);
+    t.p.cancelPendingAlpha();
+    release();
+    await pending;
+    await t.p.stop();
+});
+
+test('a TTS stream error during handoff is handled and never reaches playback', async () => {
+    const { PassThrough } = require('node:stream');
+    const audio = new PassThrough();
+    audio.write(Buffer.from([1, 2]));
+    let grant, plays = 0, released = 0;
+    const fake = {
+        transmitters: new Map([['g', { play: async () => { plays++; } }]]),
+        quartzBackchannels: new Map([['g', { acquireAlpha: () => new Promise(resolve => { grant = resolve; }) }]])
+    };
+    const speaking = VoiceManager.prototype.speak.call(fake, 'g', audio);
+    const rejected = assert.rejects(speaking, /TTS failed/);
+    audio.destroy(new Error('TTS failed'));
+    await new Promise(resolve => setImmediate(resolve));
+    grant(() => { released++; });
+    await rejected;
+    assert.equal(plays, 0);
+    assert.equal(released, 1);
+});
+
+test('Live handoff and progress use distinct event types and bounded spoken context', async () => {
+    const t = transport(); await connected(t);
+    t.client.updateAlphaProgress('preparing voice', 'Upcoming answer');
+    assert.equal(t.socket.sent.at(-1).type, 'session.thinking.append');
+    const id = t.client.requestHandoff('Upcoming answer');
+    assert.equal(t.socket.sent.at(-1).event_id, id);
+    assert.match(t.socket.sent.at(-1).content, /Finish your current brief thought/);
+    assert.match(t.socket.sent.at(-1).content, /Upcoming answer/);
+    const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });

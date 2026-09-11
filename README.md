@@ -59,9 +59,25 @@ Quartz starts after recording begins, only in the normal host mode. Without its
 dedicated key it remains inactive. Set PODCAST_LIVE_BACKCHANNEL_ENABLED=false
 to disable the experiment.
 
-The separate Quartz player yields synchronously whenever Alpha's player is busy,
-including initial buffering. Muted audio is discarded, never queued for later.
-Quartz does not touch the guest buffer, generator, or host playback callbacks.
+Alpha waits for a cooperative Quartz handoff before entering its player.
+Quartz receives factual thinking/voice-preparation updates and available upcoming
+spoken text (never private reasoning). When audio is ready, it is asked to finish
+its current thought, optionally bridge into that text, and stay silent.
+The implementation waits for instruction acceptance and one second of actual
+near-silent PCM consumed by Discord, with no queued voiced frames. Missing
+network packets and transcript gaps do not qualify as silence. A 20-second
+deadline rejects Alpha playback instead of interrupting Quartz; it never forces
+a handoff. Guest turn-taking checks still run at Alpha playback start.
+Once yielded, Quartz stays gated through Alpha playback and resumes afterward.
+Late muted audio is discarded, never replayed. Quartz does not change the guest
+buffer or the generator's turn-taking authority.
+
+GPT-Live has no output-audio-done event. This acoustic boundary is experimental,
+not proof of semantic sentence completion; the model must follow the handoff
+prompt. If the provider does not emit enough near-silent PCM, the handoff will
+withhold Alpha rather than infer silence from a stalled connection. Validate
+this with real Live audio before deployment, including quiet starts, pauses
+inside sentences, delayed packets, and the transition wording.
 Its consumed PCM packets are included in the durable recording as source quartz;
 generated transcript fragments go to quartz-transcript.jsonl, with
 playbackBlocked metadata. These fragments are not a verified transcript of
