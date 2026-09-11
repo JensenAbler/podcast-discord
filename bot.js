@@ -2113,7 +2113,7 @@ class AlphaClawdVoiceBot {
                 if (this.getParticipantActivityVersion(guildId) === participantActivityBaseline) {
                     this.recordGeneratorSilence(guildId, 'idle');
                 }
-                this.voiceManager?.updateQuartzProgress?.(guildId, 'idle');
+                if (!this.directResponseInFlight.has(guildId)) this.voiceManager?.updateQuartzProgress?.(guildId, 'idle');
                 console.log(`[Bot] Idle generator chose silence`);
                 return;
             }
@@ -2160,6 +2160,7 @@ class AlphaClawdVoiceBot {
             console.error('[Bot] Idle generator failed:', error);
         } finally {
             this.idleDecisionInFlight.delete(guildId);
+            if (!this.directResponseInFlight.has(guildId)) this.voiceManager?.updateQuartzProgress?.(guildId, 'finished');
         }
     }
 
@@ -5257,6 +5258,7 @@ class AlphaClawdVoiceBot {
         } finally {
             this.directResponseInFlight.delete(guildId);
             this.conversationBuffer?.setFlushHold?.('direct-response', false);
+            if (!this.idleDecisionInFlight?.has(guildId)) this.voiceManager?.updateQuartzProgress?.(guildId, 'finished');
         }
 
         if (turnOptions.liveController?.closed) return { played: false, stale: true };

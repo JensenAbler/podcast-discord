@@ -287,21 +287,57 @@ test('a TTS stream error during handoff is handled and never reaches playback', 
     assert.equal(released, 1);
 });
 
-test('Live handoff and progress use distinct event types and bounded spoken context', async () => {
+test('normal mode follows all four environments while Alpha alone controls turns', async () => {
     const t = transport(); await connected(t);
-    t.client.updateAlphaProgress('preparing voice', 'Upcoming answer');
+    assert.equal(t.client.environment, 'listening');
+    assert.match(BACKCHANNEL_PROMPT, /Alpha has a separate existing pipeline/);
+    for (const state of ['LISTENING', 'HOLDING', 'YIELDING', 'ASIDE']) assert.ok(BACKCHANNEL_PROMPT.includes(state));
+    t.client.updateAlphaProgress('thinking');
+    assert.equal(t.client.environment, 'holding');
+    t.client.updateAlphaProgress('idle');
+    assert.equal(t.client.environment, 'listening');
+    assert.match(t.socket.sent.at(-1).content, /Alpha has decided not to take this turn/);
     assert.equal(t.socket.sent.at(-1).type, 'session.thinking.append');
+    t.socket.event({ type: 'session.output_audio.delta', delta: Buffer.from([1, 2]).toString('base64') });
+    assert.equal(t.audio.length, 1, 'declining must allow the phrase to finish');
+    t.client.updateAlphaProgress('thinking');
     const id = t.client.requestHandoff('Upcoming answer');
     assert.equal(t.socket.sent.at(-1).event_id, id);
-    assert.match(t.socket.sent.at(-1).content, /Finish your current brief thought/);
-    assert.match(t.socket.sent.at(-1).content, /Upcoming answer/);
-    t.client.updateAlphaProgress('idle');
-    assert.equal(t.socket.sent.at(-1).type, 'session.instructions.append');
-    assert.match(t.socket.sent.at(-1).content, /Alpha has decided not to take this turn/);
-    t.socket.event({ type: 'session.output_audio.delta', delta: Buffer.from([1, 2]).toString('base64') });
-    assert.equal(t.audio.length, 1, 'silence decision must let the current phrase play through');
-    assert.equal(t.client.blocked, false);
+    assert.equal(t.client.environment, 'yielding');
+    t.client.updateAlphaProgress('idle'); // late decision cannot undo handoff
+    assert.equal(t.client.environment, 'yielding');
+    t.client.setAlphaPlaying(true);
+    assert.equal(t.client.environment, 'aside');
+    t.client.updateAlphaProgress('response text available', 'Late text');
+    t.client.updateAlphaProgress('finished');
+    assert.equal(t.client.environment, 'aside');
+    t.client.setAlphaPlaying(false);
+    assert.equal(t.client.environment, 'listening');
     t.client.updateAlphaProgress('thinking');
-    assert.equal(t.socket.sent.at(-1).type, 'session.thinking.append');
+    t.client.updateAlphaProgress('finished'); // failure/cancel without playback
+    assert.equal(t.client.environment, 'listening');
+    const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
+});
+
+test('normal mode forwards complete delivered context without enabling delegation', async () => {
+    const t = transport(); await connected(t);
+    const full = 'An extended Alpha answer. '.repeat(100) + 'FINAL DETAIL';
+    t.client.setAlphaPlaying(true);
+    const before = t.socket.sent.length;
+    t.client.appendConversation('Alpha delivered transcript', full);
+    const chunks = t.socket.sent.slice(before);
+    assert.equal(chunks.map(e => JSON.parse(e.content.slice(e.content.indexOf(': ') + 2))).join(''), full);
+    assert.equal(t.client.environment, 'aside');
+    assert.equal(t.client.turnControl, false);
+    const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
+});
+
+test('normal startup retains a processing update received before Live connects', async () => {
+    const t = transport();
+    t.client.updateAlphaProgress('thinking');
+    await connected(t);
+    assert.equal(t.client.environment, 'holding');
+    t.client.updateAlphaProgress('idle');
+    assert.equal(t.client.environment, 'listening');
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });

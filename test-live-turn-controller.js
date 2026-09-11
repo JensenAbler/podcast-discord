@@ -293,3 +293,15 @@ test('new backend results allow a fresh Live decision without starting Alpha the
     assert.equal(await t.c.request(delegation('three')), false);
     assert.equal(calls, 2);
 });
+
+test('normal mode receives delivered transcript context with no Live turn controller', () => {
+    const seen = [];
+    const host = { client: { started: true }, appendConversation: (...args) => seen.push(args) };
+    const vm = { quartzBackchannels: new Map([['g', host]]) };
+    VoiceManager.prototype.observeQuartzTranscript.call(vm, 'g', {
+        speakerRole: 'host', speaker: 'Alpha', transcription: 'full response '.repeat(100)
+    });
+    assert.equal(seen[0][0], 'Alpha delivered transcript');
+    assert.equal(seen[0][1], 'Alpha: ' + 'full response '.repeat(100));
+    assert.equal(host.turnController, undefined);
+});

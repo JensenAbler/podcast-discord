@@ -574,7 +574,7 @@ class VoiceManager {
             },
             onClose: () => {
                 host.turnController?.close();
-                if (options.turnControl) logEvent({ event: 'disconnected', mode: 'live-alpha' });
+                logEvent({ event: 'disconnected', mode: options.turnControl ? 'live-alpha' : 'current' });
             },
             connection, alphaPlayer, apiKey: options.apiKey, voice: options.voice || 'quartz',
             onPcm: pcm => this.addBotPcmChunkToRecording(guildId, pcm, {
@@ -594,7 +594,7 @@ class VoiceManager {
             },
             onLog: message => {
                 console.log('[Quartz] ' + message);
-                if (options.turnControl) logEvent({ event: 'live-context', message });
+                logEvent({ event: 'live-context', mode: options.turnControl ? 'live-alpha' : 'current', message });
             },
             onError: error => console.error('[Quartz] ' + error.message)
         });
@@ -610,7 +610,7 @@ class VoiceManager {
         this.quartzBackchannels.set(guildId, host);
         try {
             await host.start();
-            if (host.turnController && !host.closed) {
+            if (!host.closed && recordingPath) {
                 // Includes the opening announcement and any guests heard during startup.
                 const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
                 if (fs.existsSync(transcriptPath)) {
@@ -639,11 +639,11 @@ class VoiceManager {
 
     observeQuartzTranscript(guildId, entry) {
         const host = this.quartzBackchannels?.get(guildId);
-        if (!host?.turnController || !host.client.started || host.closed) return;
+        if (!host?.client?.started || host.closed) return;
         const text = entry.transcription || entry.text;
         if (!text) return;
         const alpha = entry.speakerRole === 'host';
-        host.turnController.observe({ kind: alpha ? 'alpha' : 'guest', speaker: entry.speaker, text });
+        host.turnController?.observe({ kind: alpha ? 'alpha' : 'guest', speaker: entry.speaker, text });
         host.appendConversation(alpha ? 'Alpha delivered transcript' : 'Guest transcript',
             (entry.speaker || '') + ': ' + text);
     }

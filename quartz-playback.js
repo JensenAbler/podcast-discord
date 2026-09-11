@@ -99,6 +99,7 @@ class QuartzPlayback {
             return release;
         } catch (error) {
             release();
+            if (!this.closed && !this.blocked) this.client.setEnvironment?.('listening');
             throw error;
         }
     }
