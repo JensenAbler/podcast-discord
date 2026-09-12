@@ -66,7 +66,7 @@ test('delegation cannot trigger duplicate backend work; role prompt stays acknow
     assert.equal(t.socket.sent.at(-1).delegation_id, 'd1');
     assert.ok(!t.socket.sent.some(e => e.type === 'response.create'));
     assert.match(BACKCHANNEL_PROMPT, /every substantial answer/);
-    assert.match(BACKCHANNEL_PROMPT, /nonlexical vocal contact/);
+    assert.match(BACKCHANNEL_PROMPT, /Prefer nonlexical sounds/);
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });
 test('stop during pending startup settles and does not start a late session', async () => {
