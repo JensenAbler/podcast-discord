@@ -2424,6 +2424,16 @@ class AlphaClawdVoiceBot {
         const playback = await this.voiceManager.speakWithTiming(guildId, capture.playbackAudio, {
             ...options,
             inputType,
+            beforePlayback: async () => {
+                await options.preparePlaybackStart?.();
+                if (options.shouldAbortPlaybackStart?.()) {
+                    playbackStartAborted = true;
+                    this.disposeUnusedAudio(audio);
+                    this.disposeUnusedAudio(capture.playbackAudio);
+                    return false;
+                }
+                return true;
+            },
             onStart: (timing) => {
                 if (
                     typeof options.shouldAbortPlaybackStart === 'function' &&
@@ -5319,6 +5329,45 @@ class AlphaClawdVoiceBot {
         return turnResult;
     }
 
+    async preserveDirectResponseWhileUncertain(guildId, options = {}, stage = 'before playback') {
+        // Experimental delegation keeps its existing floor policy.
+        if (options.liveDelegation || options.activityResolutionExpired) return;
+        const startedAt = Date.now();
+        const timeoutMs = options.activityResolutionTimeoutMs ?? 8000;
+        let waiting = false;
+        while (this.isRecordingActive(guildId) && !options.liveController?.closed) {
+            const baseline = options.participantActivityBaseline;
+            const pendingVersions = new Set(
+                Array.from(this.participantAcousticActivity?.get(guildId)?.values() || []).flat()
+            );
+            const rejected = this.rejectedParticipantActivity?.get(guildId);
+            const current = this.participantActivityVersion?.get(guildId) || 0;
+            let uncertain = false;
+            let real = false;
+            if (Number.isFinite(baseline)) {
+                for (let version = current; version > baseline; version--) {
+                    if (rejected?.has(version)) continue;
+                    if (pendingVersions.has(version)) uncertain = true;
+                    else real = true;
+                }
+            }
+            if (real) break;
+            uncertain ||= this.getPendingUnconfirmedParticipantSignals(guildId).length > 0;
+            if (!uncertain) break;
+            if (!waiting) {
+                waiting = true;
+                console.log(`[Bot] Preserving pending answer ${stage} while participant activity resolves`);
+            }
+            if (Date.now() - startedAt >= timeoutMs) {
+                options.activityResolutionExpired = true;
+                console.log(`[Bot] Pending answer activity resolution timed out after ${timeoutMs}ms`);
+                break;
+            }
+            await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        if (waiting) console.log(`[Bot] Pending answer classification wait ended after ${Date.now() - startedAt}ms; rechecking playback authority`);
+    }
+
     discardStaleDirectResponse(guildId, options = {}, stage = 'before playback') {
         if (options.liveController?.closed) return true;
         if (!this.isRecordingActive(guildId)) {
@@ -6828,6 +6877,7 @@ class AlphaClawdVoiceBot {
             console.log(`[Bot] Direct generator response (${source}): "${previewText}"`);
 
             await this.waitForParticipantFloorToSettle(guildId);
+            await this.preserveDirectResponseWhileUncertain(guildId, options, 'after generation');
             if (this.discardStaleDirectResponse(guildId, options, 'after generation')) {
                 return {
                     played: false,
@@ -6841,6 +6891,7 @@ class AlphaClawdVoiceBot {
                 await this.playFillerClip(guildId);
             }
 
+            await this.preserveDirectResponseWhileUncertain(guildId, options, 'after filler');
             if (this.discardStaleDirectResponse(guildId, options, 'after filler')) {
                 return {
                     played: false,
@@ -6868,6 +6919,7 @@ class AlphaClawdVoiceBot {
             });
             const ttsSetupCompletedAt = this.isReadableAudio(audio) ? null : new Date().toISOString();
 
+            await this.preserveDirectResponseWhileUncertain(guildId, options, 'after TTS');
             if (this.discardStaleDirectResponse(guildId, options, 'after TTS')) {
                 this.disposeUnusedAudio(audio);
                 return {
@@ -6878,6 +6930,7 @@ class AlphaClawdVoiceBot {
             }
 
             const speechEvidenceWait = await this.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
+            await this.preserveDirectResponseWhileUncertain(guildId, options, 'after speech-evidence wait');
             if (
                 speechEvidenceWait.timedOut &&
                 this.discardDirectResponseForPendingRawVad(guildId, options, 'after speech-evidence wait timeout')
@@ -6901,6 +6954,9 @@ class AlphaClawdVoiceBot {
             this.markIdleDecisionHandled(guildId);
             const playbackResult = await this.playTtsAndRecord(guildId, audio, {
                 alphaPreview: response.speech || '',
+                preparePlaybackStart: async () => {
+                    await this.preserveDirectResponseWhileUncertain(guildId, options, 'after handoff');
+                },
                 shouldAbortPlaybackStart: () => {
                     const playbackOptions = { ...options, includeCurrentFloor: true };
                     return this.discardStaleDirectResponse(

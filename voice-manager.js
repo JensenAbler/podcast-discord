@@ -700,6 +700,14 @@ class VoiceManager {
             }
             if (audioError) throw audioError;
             if (quartz && audio?.destroyed) throw new Error('Alpha audio closed during handoff');
+            // Classification may finish after the Live handoff. Keep the same
+            // audio queued until the caller has rechecked playback authority.
+            if (options.beforePlayback && await options.beforePlayback() === false) {
+                release?.();
+                options.onFinish?.();
+                return;
+            }
+            if (audioError) throw audioError;
             await transmitter.play(audio, {
                 ...options,
                 onFinish: () => {
