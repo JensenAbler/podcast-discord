@@ -1,3 +1,4 @@
+const { ConversationAdmission, assess } = require('./conversation-admission');
 /**
  * Alpha-Clawd Discord Voice Bot
  * 
@@ -124,6 +125,7 @@ class AlphaClawdVoiceBot {
         this.lastParticipantSpeechAt = new Map(); // guildId -> ms timestamp
         this.asrErrorNoticeLastSpokenAt = new Map(); // guildId -> ms timestamp
         this.asrErrorNoticeCooldownMs = Number(process.env.VOICE_ASR_ERROR_NOTICE_COOLDOWN_MS || 60000);
+        this.conversationAdmissions = new Map();
         this.participantActivityVersion = new Map(); // guildId -> monotonic counter for floor-taking changes
         this.participantActivityTimers = new Map(); // guildId -> Map<userId, timeout>
         this.participantActivityConfirmDelayMs = Number(process.env.PODCAST_PARTICIPANT_ACTIVITY_CONFIRM_MS || 200);
@@ -353,96 +355,8 @@ class AlphaClawdVoiceBot {
         this.setupEventHandlers();
         
         // Set up voice manager utterance handler
-        this.voiceManager.setUtteranceHandler(async (guildId, utterance) => {
-            const transcription = (utterance.transcription || '').trim();
-            const recordingActive = this.isRecordingActive(guildId);
-            const geminiLive = this.isGeminiLiveSession(guildId);
-
-            // Debug: inject individual utterance for Gateway UI visibility
-            if (
-                !geminiLive &&
-                this.debugInject &&
-                transcription &&
-                this.wsClient.isAuthenticated &&
-                this.wsClient.canInjectMessages?.()
-            ) {
-                try {
-                    await this.wsClient.injectMessage(
-                        `[Podcast Voice] ${utterance.speaker}: ${transcription}`,
-                        { label: 'discord-voice' }
-                    );
-                } catch (err) {
-                    console.error('[Bot] Debug inject failed:', err.message);
-                }
-            }
-
-            // Buffer the utterance (buffer handles timing and flush)
-            // Include full word-level data from ElevenLabs STT for confidence analysis
-            if (transcription && recordingActive) {
-                this.lastParticipantSpeechAt.set(guildId, Date.now());
-                this.recordParticipantSignal(guildId, utterance.userId, 'real_transcript', utterance);
-                this.confirmParticipantActivity(guildId, utterance.userId, 'transcript');
-                if (!geminiLive) {
-                    const participantTurnIdIntent = this.buildGeneratorTurnIdIntent('participant', [utterance]);
-                    if (participantTurnIdIntent) {
-                        this.latestParticipantTurnIdIntent.set(guildId, participantTurnIdIntent);
-                    }
-                    this.observeInternalThoughtTranscriptEntry(guildId, {
-                        ...utterance,
-                        speakerRole: utterance.speakerRole || 'guest',
-                        source: 'participant'
-                    });
-                    this.observeShowRunnerTranscriptEntry(guildId, {
-                        ...utterance,
-                        speakerRole: utterance.speakerRole || 'guest',
-                        source: 'participant'
-                    });
-                } else {
-                    console.log(
-                        `[GeminiLive] Fish shadow transcript retained for forensics only: ` +
-                        `${utterance.speaker}: ${transcription}`
-                    );
-                }
-            } else if (transcription) {
-                const state = this.recordingState?.get?.(guildId) || this.getRecordingStateValue('IDLE');
-                console.log(`[Bot] Ignoring participant utterance for generator while recording state is ${state}`);
-            } else {
-                const eventType = Array.isArray(utterance.audioEvents) && utterance.audioEvents.includes('phantom')
-                    ? 'phantom_utterance'
-                    : 'empty_asr';
-                if (recordingActive) {
-                    this.recordParticipantSignal(guildId, utterance.userId, eventType, utterance);
-                }
-            }
-
-            if (recordingActive) {
-                this.conversationBuffer.addUtterance({
-                    userId: utterance.userId,
-                    speaker: utterance.speaker,
-                    speakerRole: utterance.speakerRole,
-                    transcription: transcription,
-                    rawTranscription: utterance.rawTranscription,
-                    audioEvents: utterance.audioEvents,
-                    transcriptionConfidence: utterance.transcriptionConfidence,
-                    words: utterance.words,
-                    language: utterance.language,
-                    duration: utterance.duration,
-                    speechStartedAt: utterance.speechStartedAt,
-                    speechEndedAt: utterance.speechEndedAt,
-                    speechDuration: utterance.speechDuration,
-                    asrStartedAt: utterance.asrStartedAt,
-                    asrCompletedAt: utterance.asrCompletedAt,
-                    providerError: utterance.providerError,
-                    timestamp: utterance.timestamp || Date.now()
-                });
-            } else {
-                this.clearConversationBufferAsrPendingIfPresent(
-                    utterance.userId,
-                    'ASR result outside active recording'
-                );
-            }
-            this.clearCompletedParticipantSignalState(guildId, utterance.userId, 'ASR result handled');
-        });
+        this.voiceManager.onQuartzInputTranscript = (guildId, event) => this.observeAdmissionLive(guildId, event);
+        this.voiceManager.setUtteranceHandler((guildId, utterance) => this.handleParticipantUtterance(guildId, utterance));
 
         // Set up speaking start/stop handlers to prevent buffer flush while user is speaking
         this.voiceManager.setSpeakingStartHandler((guildId, userId) => {
@@ -490,6 +404,119 @@ class AlphaClawdVoiceBot {
                 console.error('[Bot] ASR error notice failed:', error);
             });
         });
+    }
+
+    async handleParticipantUtterance(guildId, utterance) {
+        const transcription = (utterance.transcription || '').trim();
+        let preservesPendingAnswer = false;
+        if (this.isRecordingActive(guildId) && this.usesConversationAdmission(guildId)) {
+            const admission = this.admitParticipantUtterance(guildId, utterance);
+            if (transcription && admission.status === 'candidate') {
+                // Preserve raw text in the recording, but don't inject it as
+                // guest speech into Alpha, Live, or the conversation buffer.
+                utterance.rawTranscription ||= transcription;
+                utterance.transcription = '';
+                this.clearConversationBufferAsrPendingIfPresent(utterance.userId, 'uncertain transcript retained');
+                this.clearCompletedParticipantSignalState(guildId, utterance.userId, 'admission handled');
+                return;
+            }
+            preservesPendingAnswer = admission.effect === 'preserve' && this.directResponseInFlight.has(guildId);
+            if (preservesPendingAnswer) {
+                const policy = this.getConversationAdmission(guildId);
+                policy.supplements.push(utterance.speaker + ': ' + transcription);
+                const { audioBuffer, ...entry } = utterance;
+                policy.pendingUtterances?.push(entry);
+            }
+        }
+        const recordingActive = this.isRecordingActive(guildId);
+        const geminiLive = this.isGeminiLiveSession(guildId);
+
+        // Buffer the utterance (buffer handles timing and flush)
+        // Include full word-level data from ElevenLabs STT for confidence analysis
+        if (transcription && recordingActive) {
+            this.lastParticipantSpeechAt.set(guildId, Date.now());
+            this.recordParticipantSignal(guildId, utterance.userId, 'real_transcript', utterance);
+            if (!preservesPendingAnswer) this.confirmParticipantActivity(guildId, utterance.userId, 'transcript');
+            if (!geminiLive) {
+                const participantTurnIdIntent = this.buildGeneratorTurnIdIntent('participant', [utterance]);
+                if (participantTurnIdIntent && !preservesPendingAnswer) {
+                    this.latestParticipantTurnIdIntent.set(guildId, participantTurnIdIntent);
+                }
+                this.observeInternalThoughtTranscriptEntry(guildId, {
+                    ...utterance,
+                    speakerRole: utterance.speakerRole || 'guest',
+                    source: 'participant'
+                });
+                this.observeShowRunnerTranscriptEntry(guildId, {
+                    ...utterance,
+                    speakerRole: utterance.speakerRole || 'guest',
+                    source: 'participant'
+                });
+            } else {
+                console.log(
+                    `[GeminiLive] Fish shadow transcript retained for forensics only: ` +
+                    `${utterance.speaker}: ${transcription}`
+                );
+            }
+        } else if (transcription) {
+            const state = this.recordingState?.get?.(guildId) || this.getRecordingStateValue('IDLE');
+            console.log(`[Bot] Ignoring participant utterance for generator while recording state is ${state}`);
+        } else {
+            const eventType = Array.isArray(utterance.audioEvents) && utterance.audioEvents.includes('phantom')
+                ? 'phantom_utterance'
+                : 'empty_asr';
+            if (recordingActive) {
+                this.recordParticipantSignal(guildId, utterance.userId, eventType, utterance);
+            }
+        }
+
+        if (recordingActive && preservesPendingAnswer) {
+            this.clearConversationBufferAsrPendingIfPresent(utterance.userId, 'acknowledgment preserved pending answer');
+        } else if (recordingActive) {
+            this.conversationBuffer.addUtterance({
+                userId: utterance.userId,
+                speaker: utterance.speaker,
+                speakerRole: utterance.speakerRole,
+                transcription: transcription,
+                rawTranscription: utterance.rawTranscription,
+                audioEvents: utterance.audioEvents,
+                transcriptionConfidence: utterance.transcriptionConfidence,
+                words: utterance.words,
+                language: utterance.language,
+                duration: utterance.duration,
+                speechStartedAt: utterance.speechStartedAt,
+                speechEndedAt: utterance.speechEndedAt,
+                speechDuration: utterance.speechDuration,
+                asrStartedAt: utterance.asrStartedAt,
+                asrCompletedAt: utterance.asrCompletedAt,
+                providerError: utterance.providerError,
+                timestamp: utterance.timestamp || Date.now()
+            });
+        } else {
+            this.clearConversationBufferAsrPendingIfPresent(
+                utterance.userId,
+                'ASR result outside active recording'
+            );
+        }
+        this.clearCompletedParticipantSignalState(guildId, utterance.userId, 'ASR result handled');
+
+        // Debug: inject individual utterance for Gateway UI visibility
+        if (
+            !geminiLive &&
+            this.debugInject &&
+            transcription &&
+            this.wsClient.isAuthenticated &&
+            this.wsClient.canInjectMessages?.()
+        ) {
+            try {
+                void this.wsClient.injectMessage(
+                    `[Podcast Voice] ${utterance.speaker}: ${transcription}`,
+                    { label: 'discord-voice' }
+                ).catch(err => console.error('[Bot] Debug inject failed:', err.message));
+            } catch (err) {
+                console.error('[Bot] Debug inject failed:', err.message);
+            }
+        }
     }
 
     normalizeGeneratorMode(mode) {
@@ -1434,6 +1461,8 @@ class AlphaClawdVoiceBot {
         this.lastParticipantSpeechAt.delete(guildId);
         this.idleDecisionHandledSpeechAt.delete(guildId);
         this.participantActivityVersion.delete(guildId);
+        this.conversationAdmissions?.get(guildId)?.close();
+        this.conversationAdmissions?.delete(guildId);
         this.participantAcousticActivity?.delete(guildId);
         this.rejectedParticipantActivity?.delete(guildId);
         this.stagedBigBrainResponses?.delete?.(guildId);
@@ -1629,6 +1658,7 @@ class AlphaClawdVoiceBot {
         this.hostPlaybackState.set(guildId, {
             active: true,
             startedAt,
+            text: this.voiceManager?.quartzBackchannels?.get(guildId)?.alphaPreview || '',
             endedAt: null
         });
     }
@@ -1675,6 +1705,93 @@ class AlphaClawdVoiceBot {
         }
 
         return snapshot;
+    }
+
+    usesConversationAdmission(guildId) {
+        return !!this.conversationAdmissions && !this.isGeminiLiveSession(guildId) && !this.isLiveAlphaSession(guildId);
+    }
+
+    getConversationAdmission(guildId) {
+        let admission = this.conversationAdmissions.get(guildId);
+        if (!admission) this.conversationAdmissions.set(guildId, admission = new ConversationAdmission());
+        return admission;
+    }
+
+    admissionHostContext(guildId, utterance = {}) {
+        const host = this.voiceManager?.quartzBackchannels?.get(guildId);
+        // A mixed Live transcript cannot establish which of several guests spoke.
+        const members = this.voiceManager?.connections?.get(guildId)?.joinConfig?.channelId;
+        const channel = members && this.client?.channels?.cache?.get(members);
+        const singleSpeaker = channel?.members
+            ? Array.from(channel.members.values()).filter(member => !member.user?.bot).length === 1
+            : false;
+        const at = Date.parse(utterance.speechStartedAt);
+        const playback = this.hostPlaybackState?.get(guildId);
+        return { singleSpeaker, hostText: playback?.text || host?.alphaPreview || '',
+            duringHostPlayback: Number.isFinite(at) && this.getHostPlaybackContext(guildId, at).duringHostPlayback };
+    }
+
+    releaseAdmissionAcousticActivity(guildId, utterance) {
+        this.resolveParticipantAcousticActivity(guildId, utterance.userId, utterance, true, 'transcript admission');
+        const state = this.getParticipantSignalState(guildId, utterance.userId, false);
+        const remaining = Array.from(this.participantAcousticActivity?.get(guildId)?.keys() || [])
+            .some(key => JSON.parse(key)[0] === utterance.userId);
+        // Never let an old ASR completion clear a newer speech segment.
+        if (state?.floorConfirmed && !remaining && state.evidenceAt <= Date.parse(utterance.asrStartedAt)) {
+            state.floorConfirmed = false;
+            state.floorHasFreshSpeechEvidence = false;
+            state.continuationUntil = null;
+            this.conversationBuffer?.setUserSpeaking?.(utterance.userId, false);
+            this.setInternalThoughtUserSpeaking(guildId, utterance.userId, false);
+        }
+    }
+
+    admitParticipantUtterance(guildId, utterance) {
+        const policy = this.getConversationAdmission(guildId);
+        const result = policy.evaluate(utterance, this.admissionHostContext(guildId, utterance));
+        utterance.admission = result;
+        this.releaseAdmissionAcousticActivity(guildId, utterance);
+        console.log('[Bot] Transcript admission: ' + JSON.stringify({ guildId, userId: utterance.userId, ...result }));
+        return result;
+    }
+
+    observeAdmissionLive(guildId, event) {
+        if (!this.isRecordingActive(guildId) || !this.usesConversationAdmission(guildId)) return;
+        const policy = this.getConversationAdmission(guildId);
+        policy.observeLive(event);
+        for (const [id, candidate] of Array.from(policy.candidates)) {
+            const original = { ...candidate, transcription: candidate.rawTranscription || candidate.transcription };
+            // Do not promote historical recognition after a newer accepted turn.
+            const newer = policy.recent.get(original.userId);
+            const playbackStart = this.hostPlaybackState?.get(guildId)?.startedAt;
+            if ((playbackStart > Date.parse(original.asrCompletedAt)) ||
+                Date.now() - Date.parse(original.asrCompletedAt) > 5000 ||
+                (newer && Date.parse(newer.speechStartedAt) > Date.parse(original.speechStartedAt))) {
+                policy.candidates.delete(id);
+                continue;
+            }
+            const context = policy.context(original, this.admissionHostContext(guildId, original));
+            if (!context.liveMatch || assess(original, context).status !== 'accepted') continue;
+            policy.candidates.delete(id); // claim once before any async handler work
+            void this.voiceManager.handleUtterance(guildId, { ...original, source: 'admission_promotion' })
+                .catch(error => console.error('[Bot] Admission promotion failed:', error.message));
+        }
+    }
+
+    async waitForAdmittedParticipantFloor(guildId, options) {
+        if (!this.usesConversationAdmission(guildId) || options.liveDelegation) return;
+        options.admissionPolicy ||= this.getConversationAdmission(guildId);
+        let logged = false;
+        while (!options.admissionPolicy.closed && this.isRecordingActive(guildId) && !options.liveController?.closed &&
+            !this.didParticipantResumeSince(guildId, options.participantActivityBaseline)) {
+            const pending = this.participantAcousticActivity?.get(guildId);
+            const hasNewAcoustic = Array.from(pending?.values() || []).some(versions =>
+                versions.some(version => version > options.participantActivityBaseline));
+            if (!this.hasCurrentParticipantFloor(guildId) && !hasNewAcoustic) break;
+            if (!logged) { console.log('[Bot] Pending answer parked for participant classification'); logged = true; }
+            await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        if (logged) console.log('[Bot] Pending answer unparked; rechecking admitted turn');
     }
 
     getParticipantFloorContinuationMs() {
@@ -2026,9 +2143,9 @@ class AlphaClawdVoiceBot {
         return version;
     }
 
-    resolveParticipantAcousticActivity(guildId, userId, utterance, phantom) {
+    resolveParticipantAcousticActivity(guildId, userId, utterance, phantom, reason = 'phantom') {
         const start = Date.parse(utterance.speechStartedAt);
-        if (!userId || !Number.isFinite(start) || utterance.providerError) return;
+        if (!userId || !Number.isFinite(start) || (utterance.providerError && reason === 'phantom')) return;
         const events = this.participantAcousticActivity?.get(guildId);
         const key = JSON.stringify([userId, start]);
         const versions = events?.get(key);
@@ -2040,7 +2157,7 @@ class AlphaClawdVoiceBot {
         let rejected = this.rejectedParticipantActivity.get(guildId);
         if (!rejected) this.rejectedParticipantActivity.set(guildId, rejected = new Set());
         versions.forEach(version => rejected.add(version));
-        console.log('[Bot] Phantom activity revoked: ' + JSON.stringify({ guildId, userId, speechStartedAt: utterance.speechStartedAt, versions }));
+        console.log('[Bot] Acoustic activity released: ' + JSON.stringify({ guildId, userId, speechStartedAt: utterance.speechStartedAt, versions, reason }));
     }
 
     clearParticipantActivityTimers(guildId) {
@@ -2059,8 +2176,10 @@ class AlphaClawdVoiceBot {
         }
         const current = this.participantActivityVersion?.get?.(guildId) || 0;
         const rejected = this.rejectedParticipantActivity?.get(guildId);
+        const pending = this.usesConversationAdmission(guildId)
+            ? new Set(Array.from(this.participantAcousticActivity?.get(guildId)?.values() || []).flat()) : null;
         for (let version = current; version > baseline; version--) {
-            if (!rejected?.has(version)) return true;
+            if (!rejected?.has(version) && !pending?.has(version)) return true;
         }
         return false;
     }
@@ -5143,6 +5262,12 @@ class AlphaClawdVoiceBot {
         this.directResponseInFlight.add(guildId);
         this.voiceManager?.updateQuartzProgress?.(guildId, 'thinking');
         this.conversationBuffer?.setFlushHold?.('direct-response', true);
+        const admissionPolicy = this.usesConversationAdmission(guildId) ? this.getConversationAdmission(guildId) : null;
+        if (admissionPolicy) {
+            admissionPolicy.pendingTexts = utterances.map(u => u.transcription || u.text || '');
+            admissionPolicy.supplements = [];
+            admissionPolicy.pendingUtterances = utterances;
+        }
         const participantActivityBaseline = this.getParticipantActivityVersion(guildId);
         const turnIdIntent = this.buildGeneratorTurnIdIntent('direct-generator', utterances);
         if (turnIdIntent) {
@@ -5306,6 +5431,7 @@ class AlphaClawdVoiceBot {
                 flushedUtterances: utterances
             });
         } finally {
+            if (admissionPolicy) { admissionPolicy.pendingTexts = []; admissionPolicy.pendingUtterances = null; }
             this.directResponseInFlight.delete(guildId);
             this.conversationBuffer?.setFlushHold?.('direct-response', false);
             if (!this.idleDecisionInFlight?.has(guildId)) this.voiceManager?.updateQuartzProgress?.(guildId, 'finished');
@@ -5331,7 +5457,9 @@ class AlphaClawdVoiceBot {
 
     async preserveDirectResponseWhileUncertain(guildId, options = {}, stage = 'before playback') {
         // Experimental delegation keeps its existing floor policy.
-        if (options.liveDelegation || options.activityResolutionExpired) return;
+        if (options.liveDelegation) return;
+        await this.waitForAdmittedParticipantFloor(guildId, options);
+        if (options.activityResolutionExpired) return;
         const startedAt = Date.now();
         // One adaptive budget for this answer, shared by all playback checks.
         // Raw flaps cannot renew it; confirmed speech still retains authority.
@@ -5374,11 +5502,12 @@ class AlphaClawdVoiceBot {
             }
             await new Promise(resolve => setTimeout(resolve, 25));
         }
+        await this.waitForAdmittedParticipantFloor(guildId, options);
         if (waiting) console.log(`[Bot] Pending answer classification wait ended after ${Date.now() - startedAt}ms; rechecking playback authority`);
     }
 
     discardStaleDirectResponse(guildId, options = {}, stage = 'before playback') {
-        if (options.liveController?.closed) return true;
+        if (options.liveController?.closed || options.admissionPolicy?.closed) return true;
         if (!this.isRecordingActive(guildId)) {
             const source = options.source || 'buffer';
             const state = this.recordingState?.get?.(guildId) || this.getRecordingStateValue('IDLE');
@@ -7057,7 +7186,10 @@ class AlphaClawdVoiceBot {
             if (playbackUnderrunDetected) {
                 console.warn('[Bot] Skipping generator history write for truncated host playback');
             } else if (typeof options.rememberTranscript === 'string') {
-                this.podcastGenerator.rememberTurn?.(options.rememberTranscript, finalResponse);
+                const supplements = this.conversationAdmissions?.get(guildId)?.supplements || [];
+                const remembered = [options.rememberTranscript, ...supplements].join('\n');
+                this.podcastGenerator.rememberTurn?.(remembered, finalResponse);
+                supplements.length = 0;
             } else if (options.rememberAssistant) {
                 this.podcastGenerator.rememberAssistantResponse?.(finalResponse);
             }

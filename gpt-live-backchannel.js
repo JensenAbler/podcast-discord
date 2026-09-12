@@ -9,7 +9,9 @@ const BACKCHANNEL_PROMPT = [
     'Your only role is active listening, brief acknowledgments, and occasional floor holding while that pipeline works. You are not another host or the substantive answerer.',
     'Backchannel policy: Listen closely and use natural, sparse nonlexical vocalizations such as mm or mhm when they fit. Let guests develop long thoughts. Use these sounds throughout the conversation when natural, including during longer guest turns; do not acknowledge every sentence.',
     'Floor-holding policy: When appropriate, use a brief nonlexical sound to maintain contact while Alpha is deciding or preparing. Do not start answering, explaining, summarizing, interviewing, introducing topics, or giving opinions. Do not claim that work is underway or finished unless an application update says so.',
-    'A clear invitation to answer still belongs to Alpha’s existing pipeline. You may briefly acknowledge the invitation and leave the answer to Alpha.',
+    'Presence priority: When a guest clearly addresses Alpha or invites an answer, promptly give one tiny nonlexical acknowledgment at the first natural opening. Do not wait for Alpha thinking/preparing updates. This acknowledgment does not decide whether Alpha will answer.',
+    'Ordinary listening is lower priority and much sparser. Respond to an intelligible conversational contribution, not merely a sound, pause, breath, rustle, VAD fluctuation, background television, or unclear speech. Do not acknowledge every sentence or every Alpha update. If the input is uncertain, stay quiet.',
+    'Recognize quoted examples of addressing Alpha as examples, not fresh invitations. After acknowledging a real invitation, do not repeat yourself while Alpha works unless a new meaningful contribution warrants it.',
     'You may hear several guests talking to one another. Respect their exchange and avoid taking the floor. A brief listening sound may overlap speech without interrupting its flow.',
     ...LIVE_ENVIRONMENT_POLICY,
     'Delegation policy: Do not delegate or use tools. The existing podcast pipeline already handles the guests’ requests independently.',
@@ -46,6 +48,14 @@ class GptLiveBackchannel {
                 if (this.started && !this.closing) {
                     // Continuous input (including silence) drives Live's own timing.
                     const sent = this.send({ type: 'session.input_audio.append', audio: frame.toString('base64') });
+                    if (sent) {
+                        this.inputAudioMs = this.inputAudioMs || 0;
+                        this.inputClock = this.inputClock || [];
+                        const durationMs = frame.length / 32;
+                        this.inputClock.push({ startMs: this.inputAudioMs, endMs: this.inputAudioMs + durationMs, at: Date.now() - durationMs });
+                        this.inputAudioMs += durationMs;
+                        if (this.inputClock.length > 2000) this.inputClock.shift();
+                    }
                     this.audioDiagnostics.record(sent ? 'inputSent' : 'inputSendFailed', frame, 16000, 1);
                 }
             }
@@ -109,7 +119,11 @@ class GptLiveBackchannel {
                         this.onInstructionsAccepted(event.client_event_id);
                         this.onLog('Context accepted: ' + event.client_event_id);
                     } else if (event.type === 'session.input_transcript.delta') {
-                        this.onInputTranscript({ text: event.delta, startMs: event.start_ms, endMs: event.end_ms });
+                        const anchor = this.inputClock?.find(frame => frame.startMs <= event.start_ms && frame.endMs > event.start_ms);
+                        const endAnchor = this.inputClock?.find(frame => frame.startMs < event.end_ms && frame.endMs >= event.end_ms);
+                        this.onInputTranscript({ text: event.delta, startMs: event.start_ms, endMs: event.end_ms,
+                            audioStartedAt: anchor ? anchor.at + event.start_ms - anchor.startMs : null,
+                            audioEndedAt: endAnchor ? endAnchor.at + event.end_ms - endAnchor.startMs : null });
                     } else if (event.type === 'session.output_audio.delta') {
                         // Never retain muted audio for later replay.
                         const pcm = Buffer.from(event.delta, 'base64');

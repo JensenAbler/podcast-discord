@@ -923,7 +923,15 @@ class AudioReceiver {
                 providerError,
                 sampleRate: 48000,
                 channels: 2,
-                endpointStabilityRaw
+                endpointStabilityRaw,
+                acousticEvidence: {
+                    voicedMs: (detectorStats.speakingFrames || 0) * 20,
+                    speechSpanMs: Math.max(20, speechDuration + 20),
+                    audioDurationMs: audioBuffer.length / (48000 * 2 * 2) * 1000,
+                    maxRunMs: (detectorStats.maxSpeakingRunFrames || 0) * 20,
+                    speakingFrames: detectorStats.speakingFrames || 0,
+                    totalFrames: detectorStats.totalFrames || 0
+                }
             };
 
             // Keep audioBuffer for recording purposes (finalized as mixed-audio.mp3)
@@ -953,11 +961,11 @@ class AudioReceiver {
                 startTime: Number.isFinite(speechStartedAtMs) ? speechStartedAtMs : startTime
             };
 
-            // Track in conversation history
-            this.speakerTracker.addUtterance(utterance);
-
-            // Emit utterance for processing (with audioBuffer for recording, transcription for AI)
-            this.options.onUtterance(utteranceForRecording);
+            // Admission must finish before text reaches any conversational history.
+            await this.options.onUtterance(utteranceForRecording);
+            if (utteranceForRecording.admission?.status !== 'candidate') {
+                this.speakerTracker.addUtterance(utteranceForRecording);
+            }
 
         } catch (error) {
             this.options.onError(error);

@@ -25,6 +25,7 @@ class SilenceDetector {
         this.bytesPerFrame = this.samplesPerFrame * this.options.channels * this.bytesPerSample;
 
         // Silence tracking
+        this.maxSpeakingRunFrames = 0;
         this.consecutiveSpeakingFrames = 0;
         this.consecutiveSilentFrames = 0;
         this.framesNeededForSilence = Math.floor(
@@ -93,6 +94,7 @@ class SilenceDetector {
         } else {
             this.stats.speakingFrames++;
             this.consecutiveSpeakingFrames++;
+            this.maxSpeakingRunFrames = Math.max(this.maxSpeakingRunFrames, this.consecutiveSpeakingFrames);
             this.consecutiveSilentFrames = 0;
             this.isSpeaking = true;
             if (this.firstSpeechAtMs === null) {
@@ -164,6 +166,7 @@ class SilenceDetector {
     getStats() {
         return {
             ...this.stats,
+            maxSpeakingRunFrames: this.maxSpeakingRunFrames,
             consecutiveSpeakingFrames: this.consecutiveSpeakingFrames,
             consecutiveSilentFrames: this.consecutiveSilentFrames,
             framesNeededForSilence: this.framesNeededForSilence,
@@ -179,6 +182,7 @@ class SilenceDetector {
      * Reset the detector state
      */
     reset() {
+        this.maxSpeakingRunFrames = 0;
         this.consecutiveSpeakingFrames = 0;
         this.consecutiveSilentFrames = 0;
         this.isSpeaking = false;

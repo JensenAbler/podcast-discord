@@ -380,7 +380,12 @@ class VoiceManager {
 
         // Emit event for external handling (AI interviewer)
         if (this.onUtterance) {
-            this.onUtterance(guildId, utterance);
+            await this.onUtterance(guildId, utterance);
+        }
+
+        // Promotions bypass AudioReceiver's original completion path.
+        if (utterance.source === 'admission_promotion' && utterance.admission?.status === 'accepted') {
+            this.receivers?.get(guildId)?.speakerTracker?.addUtterance(utterance);
         }
 
         // Decoded participant PCM is journaled continuously in handleAudioChunk.
@@ -569,6 +574,7 @@ class VoiceManager {
             turnControl: options.turnControl,
             onDelegation: event => host.turnController?.request(event),
             onInputTranscript: event => {
+                this.onQuartzInputTranscript?.(guildId, event);
                 host.turnController?.observe({ kind: 'guest-live', text: event.text });
                 logEvent({ event: 'input-transcript', mode: options.turnControl ? 'live-alpha' : 'current', ...event });
             },
@@ -640,6 +646,7 @@ class VoiceManager {
     observeQuartzTranscript(guildId, entry) {
         const host = this.quartzBackchannels?.get(guildId);
         if (!host?.client?.started || host.closed) return;
+        if (entry.admission?.status === 'candidate') return;
         const text = entry.transcription || entry.text;
         if (!text) return;
         const alpha = entry.speakerRole === 'host';
@@ -1031,6 +1038,8 @@ class VoiceManager {
             speakerRole: utterance.speakerRole || 'guest',
             text: utterance.transcription || '',
             rawTranscription: utterance.rawTranscription || null,
+            admission: utterance.admission || null,
+            acousticEvidence: utterance.acousticEvidence || null,
             textConfidence: utterance.transcriptionConfidence || null,
             language: utterance.language || null,
             duration: utterance.duration ?? 0,

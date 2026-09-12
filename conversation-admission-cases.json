@@ -1,0 +1,201 @@
+[
+  {
+    "id": "short-ack-with-endpoint-tail",
+    "provenance": "controlled",
+    "utterance": {
+      "transcription": "yeah",
+      "acousticEvidence": {
+        "voicedMs": 80,
+        "maxRunMs": 80,
+        "speechSpanMs": 80,
+        "audioDurationMs": 2300
+      }
+    },
+    "expected": {
+      "status": "accepted",
+      "effect": "preserve"
+    }
+  },
+  {
+    "id": "scattered-noise",
+    "provenance": "controlled",
+    "utterance": {
+      "transcription": "We're going to have.",
+      "acousticEvidence": {
+        "voicedMs": 100,
+        "maxRunMs": 20,
+        "speechSpanMs": 1800,
+        "audioDurationMs": 2200
+      }
+    },
+    "expected": {
+      "status": "candidate",
+      "effect": "none"
+    }
+  },
+  {
+    "id": "supported-new-question",
+    "provenance": "controlled",
+    "utterance": {
+      "transcription": "Alpha, can you explain the result?",
+      "acousticEvidence": {
+        "voicedMs": 900,
+        "maxRunMs": 240,
+        "speechSpanMs": 1400,
+        "audioDurationMs": 3400
+      }
+    },
+    "expected": {
+      "status": "accepted",
+      "effect": "supersede"
+    }
+  },
+  {
+    "id": "weak-script-switch",
+    "provenance": "controlled",
+    "utterance": {
+      "transcription": "谢谢。",
+      "acousticEvidence": {
+        "voicedMs": 80,
+        "maxRunMs": 80,
+        "speechSpanMs": 100,
+        "audioDurationMs": 2500
+      }
+    },
+    "context": {
+      "previousText": "An English conversation"
+    },
+    "expected": {
+      "status": "candidate",
+      "effect": "none"
+    }
+  },
+  {
+    "id": "real-language-switch",
+    "provenance": "controlled",
+    "utterance": {
+      "transcription": "谢谢。",
+      "acousticEvidence": {
+        "voicedMs": 400,
+        "maxRunMs": 240,
+        "speechSpanMs": 500,
+        "audioDurationMs": 2500
+      }
+    },
+    "context": {
+      "previousText": "An English conversation"
+    },
+    "expected": {
+      "status": "accepted",
+      "effect": "supersede"
+    }
+  },
+  {
+    "id": "live-corroborated-quiet-question",
+    "provenance": "controlled",
+    "utterance": {
+      "transcription": "Can you explain?",
+      "acousticEvidence": {
+        "voicedMs": 20,
+        "maxRunMs": 20,
+        "speechSpanMs": 1000,
+        "audioDurationMs": 3000
+      }
+    },
+    "context": {
+      "liveMatch": true
+    },
+    "expected": {
+      "status": "accepted",
+      "effect": "supersede"
+    }
+  },
+  {
+    "id": "short-echo",
+    "provenance": "controlled",
+    "utterance": {
+      "transcription": "the answer is seven",
+      "acousticEvidence": {
+        "voicedMs": 80,
+        "maxRunMs": 80,
+        "speechSpanMs": 100,
+        "audioDurationMs": 2100
+      }
+    },
+    "context": {
+      "liveMatch": true,
+      "duringHostPlayback": true,
+      "hostText": "the answer is seven"
+    },
+    "expected": {
+      "status": "candidate",
+      "effect": "none"
+    }
+  },
+  {
+    "id": "repeat-request",
+    "provenance": "controlled",
+    "utterance": {
+      "transcription": "Can you explain?",
+      "acousticEvidence": {
+        "voicedMs": 400,
+        "maxRunMs": 240,
+        "speechSpanMs": 500,
+        "audioDurationMs": 2500
+      }
+    },
+    "context": {
+      "pendingTexts": [
+        "Can you explain?"
+      ]
+    },
+    "expected": {
+      "status": "accepted",
+      "effect": "preserve"
+    }
+  },
+  {
+    "id": "correction",
+    "provenance": "controlled",
+    "utterance": {
+      "transcription": "Yes, but use yesterday's numbers.",
+      "acousticEvidence": {
+        "voicedMs": 800,
+        "maxRunMs": 300,
+        "speechSpanMs": 1200,
+        "audioDurationMs": 3200
+      }
+    },
+    "expected": {
+      "status": "accepted",
+      "effect": "supersede"
+    }
+  },
+  {
+    "id": "20260912-last-response-1",
+    "provenance": "archive-suspected-unlabeled",
+    "episode": "episode-2026-09-12T00-51-07-382Z",
+    "utterance": {
+      "transcription": "We're going to have."
+    },
+    "note": "No complete per-utterance acoustic evidence recorded. Suspected recognition error; not audio-verified. Excluded from pass/fail scoring."
+  },
+  {
+    "id": "20260912-last-response-2",
+    "provenance": "archive-suspected-unlabeled",
+    "episode": "episode-2026-09-12T00-51-07-382Z",
+    "utterance": {
+      "transcription": "谢谢。"
+    },
+    "note": "No complete per-utterance acoustic evidence recorded. Suspected recognition error; not audio-verified. Excluded from pass/fail scoring."
+  },
+  {
+    "id": "20260912-last-response-3",
+    "provenance": "archive-suspected-unlabeled",
+    "episode": "episode-2026-09-12T00-51-07-382Z",
+    "utterance": {
+      "transcription": "还曾经考取的最高荣誉。"
+    },
+    "note": "No complete per-utterance acoustic evidence recorded. Suspected recognition error; not audio-verified. Excluded from pass/fail scoring."
+  }
+]
