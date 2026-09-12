@@ -5333,7 +5333,15 @@ class AlphaClawdVoiceBot {
         // Experimental delegation keeps its existing floor policy.
         if (options.liveDelegation || options.activityResolutionExpired) return;
         const startedAt = Date.now();
-        const timeoutMs = options.activityResolutionTimeoutMs ?? 8000;
+        // One adaptive budget for this answer, shared by all playback checks.
+        // Raw flaps cannot renew it; confirmed speech still retains authority.
+        const users = new Set(this.getPendingUnconfirmedParticipantSignals(guildId).map(state => state.userId));
+        for (const key of this.participantAcousticActivity?.get(guildId)?.keys() || []) users.add(JSON.parse(key)[0]);
+        const timeoutMs = Math.max(150, ...Array.from(users, userId =>
+            this.getParticipantSignalProfile(guildId, userId).getPrePlaybackEvidenceWaitMs({
+                pendingUnconfirmedCount: 1, ...this.getHostPlaybackContext(guildId)
+            })));
+
         let waiting = false;
         while (this.isRecordingActive(guildId) && !options.liveController?.closed) {
             const baseline = options.participantActivityBaseline;
@@ -5355,10 +5363,11 @@ class AlphaClawdVoiceBot {
             uncertain ||= this.getPendingUnconfirmedParticipantSignals(guildId).length > 0;
             if (!uncertain) break;
             if (!waiting) {
+                options.activityResolutionDeadline ??= startedAt + timeoutMs;
                 waiting = true;
                 console.log(`[Bot] Preserving pending answer ${stage} while participant activity resolves`);
             }
-            if (Date.now() - startedAt >= timeoutMs) {
+            if (Date.now() >= options.activityResolutionDeadline) {
                 options.activityResolutionExpired = true;
                 console.log(`[Bot] Pending answer activity resolution timed out after ${timeoutMs}ms`);
                 break;
@@ -5406,6 +5415,10 @@ class AlphaClawdVoiceBot {
         if (!this.isRecordingActive(guildId)) {
             return this.discardStaleDirectResponse(guildId, options, stage);
         }
+
+        // Expired weak evidence is not permission to discard an answer.
+        // Strong evidence and transcripts are checked separately above.
+        if (!options.liveDelegation && options.activityResolutionExpired) return false;
 
         const pending = this.getPendingUnconfirmedParticipantSignals(guildId);
         if (pending.length === 0) {
@@ -6929,18 +6942,14 @@ class AlphaClawdVoiceBot {
                 };
             }
 
-            const speechEvidenceWait = await this.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
-            await this.preserveDirectResponseWhileUncertain(guildId, options, 'after speech-evidence wait');
-            if (
-                speechEvidenceWait.timedOut &&
-                this.discardDirectResponseForPendingRawVad(guildId, options, 'after speech-evidence wait timeout')
-            ) {
-                this.disposeUnusedAudio(audio);
-                return {
-                    played: false,
-                    stale: true,
-                    finalResponse: await this.settleGeneratorResponse(response, 'stale response after unresolved raw VAD')
-                };
+            if (options.liveDelegation) {
+                const wait = await this.waitForPendingParticipantSpeechEvidenceBeforePlayback(guildId);
+                if (wait.timedOut && this.discardDirectResponseForPendingRawVad(guildId, options)) {
+                    this.disposeUnusedAudio(audio);
+                    return { played: false, stale: true, finalResponse: await this.settleGeneratorResponse(response, 'unresolved raw VAD') };
+                }
+            } else {
+                await this.preserveDirectResponseWhileUncertain(guildId, options, 'before playback');
             }
             if (this.discardStaleDirectResponse(guildId, options, 'after speech-evidence wait')) {
                 this.disposeUnusedAudio(audio);

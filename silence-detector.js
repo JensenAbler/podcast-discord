@@ -25,6 +25,7 @@ class SilenceDetector {
         this.bytesPerFrame = this.samplesPerFrame * this.options.channels * this.bytesPerSample;
 
         // Silence tracking
+        this.consecutiveSpeakingFrames = 0;
         this.consecutiveSilentFrames = 0;
         this.framesNeededForSilence = Math.floor(
             this.options.silenceDuration / this.options.frameDuration
@@ -80,6 +81,7 @@ class SilenceDetector {
         const isSilent = amplitude < this.options.threshold;
 
         if (isSilent) {
+            this.consecutiveSpeakingFrames = 0;
             this.stats.silentFrames++;
             this.consecutiveSilentFrames++;
             
@@ -90,6 +92,7 @@ class SilenceDetector {
             }
         } else {
             this.stats.speakingFrames++;
+            this.consecutiveSpeakingFrames++;
             this.consecutiveSilentFrames = 0;
             this.isSpeaking = true;
             if (this.firstSpeechAtMs === null) {
@@ -161,6 +164,7 @@ class SilenceDetector {
     getStats() {
         return {
             ...this.stats,
+            consecutiveSpeakingFrames: this.consecutiveSpeakingFrames,
             consecutiveSilentFrames: this.consecutiveSilentFrames,
             framesNeededForSilence: this.framesNeededForSilence,
             silenceDetected: this.silenceDetected,
@@ -175,6 +179,7 @@ class SilenceDetector {
      * Reset the detector state
      */
     reset() {
+        this.consecutiveSpeakingFrames = 0;
         this.consecutiveSilentFrames = 0;
         this.isSpeaking = false;
         this.silenceDetected = false;

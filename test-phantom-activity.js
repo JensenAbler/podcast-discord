@@ -8,7 +8,7 @@ function bot() {
     b.isRecordingActive = () => true;
     b.hasCurrentParticipantFloor = () => false;
     b.getHostPlaybackContext = () => ({});
-    b.getParticipantSignalProfile = () => ({ recordSignal: () => ({ strictnessLevel: 0 }) });
+    b.getParticipantSignalProfile = () => ({ recordSignal: () => ({ strictnessLevel: 0 }), getPrePlaybackEvidenceWaitMs: () => 150 });
     return b;
 }
 const at = n => new Date(n).toISOString();
@@ -115,7 +115,7 @@ test('raw VAD that becomes a phantom preserves the answer throughout', async () 
 test('unresolved activity times out conservatively and stopping cancels the wait', async () => {
     const b = bot();
     evidence(b, 'a', 1000);
-    await b.preserveDirectResponseWhileUncertain('g', { participantActivityBaseline: 0, activityResolutionTimeoutMs: 30 });
+    await b.preserveDirectResponseWhileUncertain('g', { participantActivityBaseline: 0 });
     assert.equal(b.didParticipantResumeSince('g', 0), true);
     const waiting = b.preserveDirectResponseWhileUncertain('g', { participantActivityBaseline: 0 });
     b.isRecordingActive = () => false;
@@ -157,4 +157,47 @@ test('post-handoff phantom wait preserves the exact audio and playback lease', a
         assert.equal(finishes, 1);
         assert.equal(releases, 1);
     }
+});
+
+test('weak raw flaps exhaust one short budget without vetoing the answer or renewing the wait', async () => {
+    const b = bot(), options = { participantActivityBaseline: 0 };
+    b.getPendingUnconfirmedParticipantSignals = () => [{ userId: 'a' }];
+    const started = Date.now();
+    await b.preserveDirectResponseWhileUncertain('g', options);
+    assert.ok(Date.now() - started < 500);
+    assert.equal(options.activityResolutionExpired, true);
+    assert.equal(b.discardDirectResponseForPendingRawVad('g', options), false);
+    const deadline = options.activityResolutionDeadline;
+    await b.preserveDirectResponseWhileUncertain('g', options);
+    assert.equal(options.activityResolutionDeadline, deadline);
+    evidence(b, 'a', 1000);
+    assert.equal(b.discardStaleDirectResponse('g', options), true, 'strong speech still blocks after raw budget expires');
+});
+
+test('isolated loud frames cannot accumulate speech authority, sustained speech can', () => {
+    const { SilenceDetector } = require('./silence-detector');
+    const { AudioReceiver } = require('./audio-receiver');
+    const detector = new SilenceDetector();
+    const buffer = { detector, chunks: [], segmentStartStats: null };
+    let confirmed = 0;
+    const receiver = Object.create(AudioReceiver.prototype);
+    receiver.getSpeechEvidenceFrameThreshold = () => 5;
+    receiver.getBufferedAudioBytes = () => 0;
+    receiver.options = { onSpeechEvidence: () => confirmed++ };
+    const loud = Buffer.alloc(detector.bytesPerFrame);
+    for (let i = 0; i < loud.length; i += 2) loud.writeInt16LE(10000, i);
+    const silent = Buffer.alloc(detector.bytesPerFrame);
+    for (let i = 0; i < 20; i++) {
+        detector.processAudio(loud);
+        receiver.maybeEmitSpeechEvidence('a', buffer);
+        detector.processAudio(silent);
+    }
+    assert.equal(confirmed, 0);
+    for (let i = 0; i < 5; i++) {
+        detector.processAudio(loud);
+        receiver.maybeEmitSpeechEvidence('a', buffer);
+    }
+    assert.equal(confirmed, 1);
+    detector.reset();
+    assert.equal(detector.getStats().consecutiveSpeakingFrames, 0);
 });

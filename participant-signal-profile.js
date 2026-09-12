@@ -178,7 +178,7 @@ class ParticipantSignalProfile {
 
     getSpeechEvidenceFrameThreshold(context = {}) {
         const snapshot = this.getSnapshot();
-        let threshold = 1 + snapshot.strictnessLevel;
+        let threshold = 5 + snapshot.strictnessLevel;
 
         if (context.nearHostPlaybackStart) {
             threshold += 2;
@@ -192,7 +192,7 @@ class ParticipantSignalProfile {
             threshold += 1;
         }
 
-        return clamp(Math.round(threshold), 1, 8);
+        return clamp(Math.round(threshold), 5, 12);
     }
 
     getAsrCandidateFrameThreshold(context = {}) {

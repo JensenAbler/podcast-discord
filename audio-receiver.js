@@ -392,7 +392,9 @@ class AudioReceiver {
             cumulativeTotalFrames: stats.totalFrames || 0
         });
 
-        if ((segmentStats.speakingFrames || 0) < threshold) {
+        // Require a sustained run, not isolated loud frames accumulated over
+        // an utterance. ASR candidacy remains separate so brief words survive.
+        if (Math.min(segmentStats.speakingFrames || 0, segmentStats.consecutiveSpeakingFrames || 0) < threshold) {
             return;
         }
 
