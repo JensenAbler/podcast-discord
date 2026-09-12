@@ -1,0 +1,4540 @@
+{
+  "schemaVersion": 1,
+  "episodes": [
+    {
+      "episode": "episode-2026-09-12T18-07-45-788Z",
+      "sources": {
+        "episode-complete.json": {
+          "sha256": "3146a0c8bfcdce993c71dc041e9144bb3dea8c28c9e82ec623a931df157a48c3",
+          "bytes": 1371
+        },
+        "live-turn-events.jsonl": {
+          "sha256": "8ef2caf51aaef60df8dddb9f244649d66240b6c1c03446719e135f5b75016b2a",
+          "bytes": 566562
+        },
+        "transcript.jsonl": {
+          "sha256": "295d070f7930bf804f41eae723e8d05b78c0bd6d2bc44b5673cec80762fc3df3",
+          "bytes": 297147
+        },
+        "quartz-transcript.jsonl": {
+          "sha256": "641341f964d24039fa68158255b49f75e9fb51ac48949693d25ebff77be972a9",
+          "bytes": 21700
+        }
+      },
+      "condition": "normal-nonlexical-before-presence-revision",
+      "mode": [
+        "current"
+      ],
+      "liveSessionSeconds": 968.71,
+      "stateSeconds": {
+        "listening": 748.3,
+        "holding": 12.32,
+        "yielding": 27.39,
+        "aside": 180.71
+      },
+      "stateRevisionViolations": [],
+      "presence": {
+        "generatedVocalizations": 102,
+        "unblockedTranscriptVocalizations": 102,
+        "generatedByObservedState": {
+          "listening": 92,
+          "yielding": 5,
+          "holding": 5
+        },
+        "eligibleWaitsAtLeast3s": 39,
+        "waitsWithUnblockedTextProxy": 29,
+        "contactLatencyProxyMs": {
+          "n": 29,
+          "median": 630.0,
+          "p90": 3890.0,
+          "max": 4642.0
+        },
+        "waits": [
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1693.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 540.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 32037.0,
+            "endOffsetMs": 33730.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1301.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 162.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 47307.0,
+            "endOffsetMs": 48608.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2680.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 638.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 57199.0,
+            "endOffsetMs": 59879.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2506.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 486.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 60046.0,
+            "endOffsetMs": 62552.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1191.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 77313.0,
+            "endOffsetMs": 78504.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 7620.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 538.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 84016.0,
+            "endOffsetMs": 91636.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2251.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 446.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 91686.0,
+            "endOffsetMs": 93937.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2077.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 662.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 104839.0,
+            "endOffsetMs": 106916.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2433.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 706.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 125198.0,
+            "endOffsetMs": 127631.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3183.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 603.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 128823.0,
+            "endOffsetMs": 132006.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2807.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 617.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 143543.0,
+            "endOffsetMs": 146350.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 6157.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 201.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 174038.0,
+            "endOffsetMs": 180195.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3929.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 734.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 193099.0,
+            "endOffsetMs": 197028.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2238.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 577.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 219310.0,
+            "endOffsetMs": 221548.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1274.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 242341.0,
+            "endOffsetMs": 243615.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 3510.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 368.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 245330.0,
+            "endOffsetMs": 248840.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1275.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 267342.0,
+            "endOffsetMs": 268617.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4118.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 562.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 274262.0,
+            "endOffsetMs": 278380.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2511.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 400.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 280977.0,
+            "endOffsetMs": 283488.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2823.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 589.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 289537.0,
+            "endOffsetMs": 292360.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1835.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 298664.0,
+            "endOffsetMs": 300499.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2322.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 769.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 332120.0,
+            "endOffsetMs": 334442.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5616.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 4178.0,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": true,
+            "startOffsetMs": 338918.0,
+            "endOffsetMs": 344534.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2460.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 520.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 350133.0,
+            "endOffsetMs": 352593.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2514.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 728.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 373113.0,
+            "endOffsetMs": 375627.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2297.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 375678.0,
+            "endOffsetMs": 377975.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3364.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 3135.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 379549.0,
+            "endOffsetMs": 382913.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3973.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 315.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 398490.0,
+            "endOffsetMs": 402463.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4021.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 415638.0,
+            "endOffsetMs": 419659.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3358.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 422133.0,
+            "endOffsetMs": 425491.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3987.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 487.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 429845.0,
+            "endOffsetMs": 433832.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 6742.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 483.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 435129.0,
+            "endOffsetMs": 441871.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1724.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 724.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 441923.0,
+            "endOffsetMs": 443647.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4798.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 570.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 447826.0,
+            "endOffsetMs": 452624.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2622.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 666.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 452677.0,
+            "endOffsetMs": 455299.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1265.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 467374.0,
+            "endOffsetMs": 468639.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2486.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 496.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 473475.0,
+            "endOffsetMs": 475961.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2318.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 476012.0,
+            "endOffsetMs": 478330.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3357.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 731.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 483979.0,
+            "endOffsetMs": 487336.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2469.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 557.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 501272.0,
+            "endOffsetMs": 503741.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1573.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 136.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 522377.0,
+            "endOffsetMs": 523950.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2253.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 531209.0,
+            "endOffsetMs": 533462.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1757.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 537381.0,
+            "endOffsetMs": 539138.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2676.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 542404.0,
+            "endOffsetMs": 545080.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2697.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 751.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 545561.0,
+            "endOffsetMs": 548258.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3483.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 548309.0,
+            "endOffsetMs": 551792.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2345.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 552390.0,
+            "endOffsetMs": 554735.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2529.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 554786.0,
+            "endOffsetMs": 557315.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1468.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 686.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 557607.0,
+            "endOffsetMs": 559075.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2529.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 559125.0,
+            "endOffsetMs": 561654.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2968.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 876.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 561704.0,
+            "endOffsetMs": 564672.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 4007.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 564724.0,
+            "endOffsetMs": 568731.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2545.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 704.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 569745.0,
+            "endOffsetMs": 572290.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2567.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 572341.0,
+            "endOffsetMs": 574908.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2818.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 790.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 576069.0,
+            "endOffsetMs": 578887.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2944.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 541.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 586529.0,
+            "endOffsetMs": 589473.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1254.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 592390.0,
+            "endOffsetMs": 593644.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2515.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 665.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 598452.0,
+            "endOffsetMs": 600967.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2472.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 601331.0,
+            "endOffsetMs": 603803.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2567.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 677.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 608090.0,
+            "endOffsetMs": 610657.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2225.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 610708.0,
+            "endOffsetMs": 612933.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2573.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 645.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 616598.0,
+            "endOffsetMs": 619171.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 6864.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 619223.0,
+            "endOffsetMs": 626087.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2877.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 767.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 628280.0,
+            "endOffsetMs": 631157.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2558.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 742.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 632363.0,
+            "endOffsetMs": 634921.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2557.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 635373.0,
+            "endOffsetMs": 637930.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2681.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 721.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 639140.0,
+            "endOffsetMs": 641821.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4622.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 390.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 648063.0,
+            "endOffsetMs": 652685.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 6669.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 671.0,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": true,
+            "startOffsetMs": 658655.0,
+            "endOffsetMs": 665324.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4749.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 3890.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 665376.0,
+            "endOffsetMs": 670125.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2360.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 2147.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 670213.0,
+            "endOffsetMs": 672573.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2886.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 691847.0,
+            "endOffsetMs": 694733.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3578.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 3454.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 701458.0,
+            "endOffsetMs": 705036.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2879.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 705740.0,
+            "endOffsetMs": 708619.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2740.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 1318.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 724157.0,
+            "endOffsetMs": 726897.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5158.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 707.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 730681.0,
+            "endOffsetMs": 735839.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2506.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 743.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 735892.0,
+            "endOffsetMs": 738398.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2010.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 606.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 740987.0,
+            "endOffsetMs": 742997.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2712.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 618.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 746730.0,
+            "endOffsetMs": 749442.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2914.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 2699.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 750790.0,
+            "endOffsetMs": 753704.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3186.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 756458.0,
+            "endOffsetMs": 759644.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2787.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 620.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 760449.0,
+            "endOffsetMs": 763236.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1955.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 521.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 763593.0,
+            "endOffsetMs": 765548.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2631.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 771095.0,
+            "endOffsetMs": 773726.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 6369.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 673.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 777401.0,
+            "endOffsetMs": 783770.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 10249.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 475.0,
+            "fullyContainedDiagnosticWindows": 2,
+            "confirmedConsumedActivityInContainedWindows": true,
+            "startOffsetMs": 783821.0,
+            "endOffsetMs": 794070.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5121.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 662.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 795593.0,
+            "endOffsetMs": 800714.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5309.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 630.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 802860.0,
+            "endOffsetMs": 808169.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5378.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 816275.0,
+            "endOffsetMs": 821653.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 7435.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 771.0,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": true,
+            "startOffsetMs": 823151.0,
+            "endOffsetMs": 830586.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 6309.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 830637.0,
+            "endOffsetMs": 836946.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5375.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 605.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 838030.0,
+            "endOffsetMs": 843405.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 7578.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 759.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 845054.0,
+            "endOffsetMs": 852632.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 6318.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 4642.0,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": true,
+            "startOffsetMs": 853874.0,
+            "endOffsetMs": 860192.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2781.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 694.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 860877.0,
+            "endOffsetMs": 863658.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1726.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 1545.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 887421.0,
+            "endOffsetMs": 889147.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2396.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 893054.0,
+            "endOffsetMs": 895450.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2284.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 895673.0,
+            "endOffsetMs": 897957.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2481.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 677.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 902019.0,
+            "endOffsetMs": 904500.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2194.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 829.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 908845.0,
+            "endOffsetMs": 911039.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3508.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 912209.0,
+            "endOffsetMs": 915717.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3259.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 856.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 918254.0,
+            "endOffsetMs": 921513.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2688.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 921642.0,
+            "endOffsetMs": 924330.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3150.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 307.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 924381.0,
+            "endOffsetMs": 927531.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 3700.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 521.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 942356.0,
+            "endOffsetMs": 946056.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2293.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 957433.0,
+            "endOffsetMs": 959726.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3112.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 960519.0,
+            "endOffsetMs": 963631.0
+          }
+        ]
+      },
+      "handoff": {
+        "elapsedMs": {
+          "n": 16,
+          "median": 1680.0,
+          "p90": 1896,
+          "max": 2124
+        },
+        "failed": 0,
+        "withoutAcknowledgment": 0,
+        "review": [
+          {
+            "offsetMs": 35152.0,
+            "elapsedMs": 1421,
+            "failed": false
+          },
+          {
+            "offsetMs": 64375.0,
+            "elapsedMs": 1823,
+            "failed": false
+          },
+          {
+            "offsetMs": 108548.0,
+            "elapsedMs": 1631,
+            "failed": false
+          },
+          {
+            "offsetMs": 223228.0,
+            "elapsedMs": 1680,
+            "failed": false
+          },
+          {
+            "offsetMs": 250373.0,
+            "elapsedMs": 1533,
+            "failed": false
+          },
+          {
+            "offsetMs": 302395.0,
+            "elapsedMs": 1896,
+            "failed": false
+          },
+          {
+            "offsetMs": 336122.0,
+            "elapsedMs": 1680,
+            "failed": false
+          },
+          {
+            "offsetMs": 354299.0,
+            "elapsedMs": 1706,
+            "failed": false
+          },
+          {
+            "offsetMs": 456908.0,
+            "elapsedMs": 1610,
+            "failed": false
+          },
+          {
+            "offsetMs": 505535.0,
+            "elapsedMs": 1794,
+            "failed": false
+          },
+          {
+            "offsetMs": 525561.0,
+            "elapsedMs": 1610,
+            "failed": false
+          },
+          {
+            "offsetMs": 674275.0,
+            "elapsedMs": 1702,
+            "failed": false
+          },
+          {
+            "offsetMs": 696856.0,
+            "elapsedMs": 2124,
+            "failed": false
+          },
+          {
+            "offsetMs": 865327.0,
+            "elapsedMs": 1669,
+            "failed": false
+          },
+          {
+            "offsetMs": 890964.0,
+            "elapsedMs": 1817,
+            "failed": false
+          },
+          {
+            "offsetMs": 947721.0,
+            "elapsedMs": 1664,
+            "failed": false
+          }
+        ]
+      },
+      "playback": {
+        "hostRowsWithTiming": 14,
+        "hostIntervals": [
+          {
+            "startOffsetMs": 6283.0,
+            "durationMs": 11017.0,
+            "observedDuringLiveMs": 0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 35161.0,
+            "durationMs": 11760.0,
+            "observedDuringLiveMs": 11760.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 64378.0,
+            "durationMs": 12300.0,
+            "observedDuringLiveMs": 12300.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 108550.0,
+            "durationMs": 11800.0,
+            "observedDuringLiveMs": 11800.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 223235.0,
+            "durationMs": 17921.0,
+            "observedDuringLiveMs": 17921.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 250376.0,
+            "durationMs": 16062.0,
+            "observedDuringLiveMs": 16062.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 302401.0,
+            "durationMs": 17320.0,
+            "observedDuringLiveMs": 17320.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 354301.0,
+            "durationMs": 13360.0,
+            "observedDuringLiveMs": 13360.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 456912.0,
+            "durationMs": 10382.0,
+            "observedDuringLiveMs": 10382.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 505537.0,
+            "durationMs": 16262.0,
+            "observedDuringLiveMs": 16262.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 525562.0,
+            "durationMs": 3181.0,
+            "observedDuringLiveMs": 3181.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 674281.0,
+            "durationMs": 13860.0,
+            "observedDuringLiveMs": 13860.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 865330.0,
+            "durationMs": 20120.0,
+            "observedDuringLiveMs": 20120.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 947723.0,
+            "durationMs": 8801.0,
+            "observedDuringLiveMs": 8801.0,
+            "outsideAsideMs": 0
+          }
+        ],
+        "asideCoverageAvailable": true,
+        "hostMsOutsideAside": 0,
+        "recovery": [
+          {
+            "hostEndOffsetMs": 46921.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 4
+          },
+          {
+            "hostEndOffsetMs": 76678.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 4
+          },
+          {
+            "hostEndOffsetMs": 120350.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 10
+          },
+          {
+            "hostEndOffsetMs": 241156.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 2
+          },
+          {
+            "hostEndOffsetMs": 266438.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 7
+          },
+          {
+            "hostEndOffsetMs": 319721.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 5
+          },
+          {
+            "hostEndOffsetMs": 367661.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 14
+          },
+          {
+            "hostEndOffsetMs": 467294.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 4
+          },
+          {
+            "hostEndOffsetMs": 521799.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 528743.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 17
+          },
+          {
+            "hostEndOffsetMs": 688141.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 22
+          },
+          {
+            "hostEndOffsetMs": 885450.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 8
+          },
+          {
+            "hostEndOffsetMs": 956524.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          }
+        ],
+        "listeningResumeMs": {
+          "n": 13,
+          "median": 0.0,
+          "p90": 1.0,
+          "max": 1.0
+        },
+        "audioAccountingAvailable": true,
+        "blockedNonSilentFraction": 0.2558755126734447,
+        "unaccountedSourceSamples": 0.0,
+        "generatedActivitySeconds": 79.54625,
+        "consumedActivitySeconds": 59.1923125,
+        "medianActiveWindowPeakDbFS": -26.35,
+        "paths": {
+          "inputSent": {
+            "samples": 15012160,
+            "nonSilentSamples": 7073818,
+            "durationMs": 938260
+          },
+          "outputReceived": {
+            "samples": 14942400,
+            "nonSilentSamples": 1272740,
+            "durationMs": 933900
+          },
+          "outputConsumed": {
+            "samples": 72572160,
+            "nonSilentSamples": 5682462,
+            "durationMs": 755960
+          },
+          "outputBlocked": {
+            "samples": 2836800,
+            "nonSilentSamples": 325663,
+            "durationMs": 177300
+          }
+        }
+      },
+      "context": {
+        "hostTranscriptRows": 14,
+        "deliveredTranscriptMessages": 14,
+        "sent": 462,
+        "sendFailures": 0,
+        "sentWithoutLoggedAcceptance": 0
+      },
+      "coverage": {
+        "diagnosticWindows": 195,
+        "stateUpdates": 65,
+        "transcriptDeltas": 140,
+        "annotations": {
+          "condition": "normal-nonlexical-before-presence-revision"
+        }
+      },
+      "limits": [
+        "Observational comparison, not causal evidence that states help.",
+        "Text timing uses arrival timestamps; it is not exact audio onset or guest-address latency.",
+        "Non-silent sample occupancy is not speaking duration, loudness, or proof of reception by a guest.",
+        "Six output samples correspond to one source sample in the current 16k mono to 48k stereo conversion.",
+        "Aggregate accounting cannot prove absence of individual cuts or overlap. Aside coverage uses transcript playback intervals.",
+        "Missing playback rows hide host intervals; missing telemetry must not be interpreted as successful behavior.",
+        "Prompt compliance, naturalness and substantive overreach require human ratings or a separately validated judge."
+      ]
+    },
+    {
+      "episode": "episode-2026-09-12T18-57-27-283Z",
+      "sources": {
+        "episode-complete.json": {
+          "sha256": "1aa6186b93c54dd415fd6a4cc52d68469e8df038f7c40604fa0327a15d92dea9",
+          "bytes": 1145
+        },
+        "live-turn-events.jsonl": {
+          "sha256": "5e090219327e77704b00fa4a3793e472b660770885a6980d1edf8497e9d98269",
+          "bytes": 549989
+        },
+        "transcript.jsonl": {
+          "sha256": "59a2ef922f2db204139d9c5d0276b71d655b0c3045efcee4d36307a30b285cf8",
+          "bytes": 267981
+        },
+        "quartz-transcript.jsonl": {
+          "sha256": "a093da77c447fb71a2da1dc5e1cc895050b37c6b9dbb09e164cb40b10d01bba0",
+          "bytes": 3727
+        }
+      },
+      "condition": "normal-nonlexical-before-presence-revision",
+      "mode": [
+        "current"
+      ],
+      "liveSessionSeconds": 750.88,
+      "stateSeconds": {
+        "listening": 531.54,
+        "holding": 19.92,
+        "yielding": 40.46,
+        "aside": 158.96
+      },
+      "stateRevisionViolations": [],
+      "presence": {
+        "generatedVocalizations": 17,
+        "unblockedTranscriptVocalizations": 15,
+        "generatedByObservedState": {
+          "listening": 12,
+          "yielding": 3,
+          "aside": 2
+        },
+        "eligibleWaitsAtLeast3s": 25,
+        "waitsWithUnblockedTextProxy": 2,
+        "contactLatencyProxyMs": {
+          "n": 2,
+          "median": 211.0,
+          "p90": 229.0,
+          "max": 229.0
+        },
+        "waits": [
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2313.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 192.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 11457.0,
+            "endOffsetMs": 13770.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2153.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 17515.0,
+            "endOffsetMs": 19668.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1514.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 21518.0,
+            "endOffsetMs": 23032.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1700.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 157.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 32861.0,
+            "endOffsetMs": 34561.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1828.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 40790.0,
+            "endOffsetMs": 42618.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4936.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 193.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 52234.0,
+            "endOffsetMs": 57170.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5555.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 57220.0,
+            "endOffsetMs": 62775.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2567.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 62824.0,
+            "endOffsetMs": 65391.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2630.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 76422.0,
+            "endOffsetMs": 79052.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2709.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 85906.0,
+            "endOffsetMs": 88615.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2110.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 103409.0,
+            "endOffsetMs": 105519.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1264.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 110392.0,
+            "endOffsetMs": 111656.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2229.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 111708.0,
+            "endOffsetMs": 113937.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1935.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 118082.0,
+            "endOffsetMs": 120017.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2607.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 120855.0,
+            "endOffsetMs": 123462.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3272.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 149623.0,
+            "endOffsetMs": 152895.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2141.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 153101.0,
+            "endOffsetMs": 155242.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 3314.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 162998.0,
+            "endOffsetMs": 166312.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2603.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 183181.0,
+            "endOffsetMs": 185784.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4526.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 194827.0,
+            "endOffsetMs": 199353.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2824.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 199404.0,
+            "endOffsetMs": 202228.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2532.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 211124.0,
+            "endOffsetMs": 213656.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2264.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 216664.0,
+            "endOffsetMs": 218928.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2613.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 518.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 226545.0,
+            "endOffsetMs": 229158.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2698.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 481.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 231098.0,
+            "endOffsetMs": 233796.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 10321.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 229.0,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 234711.0,
+            "endOffsetMs": 245032.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1969.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 249020.0,
+            "endOffsetMs": 250989.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2896.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 268328.0,
+            "endOffsetMs": 271224.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1960.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 276547.0,
+            "endOffsetMs": 278507.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2529.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 289922.0,
+            "endOffsetMs": 292451.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2544.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 293414.0,
+            "endOffsetMs": 295958.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2874.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 297978.0,
+            "endOffsetMs": 300852.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2799.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 300903.0,
+            "endOffsetMs": 303702.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2278.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 306476.0,
+            "endOffsetMs": 308754.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2519.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 308805.0,
+            "endOffsetMs": 311324.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4853.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 313464.0,
+            "endOffsetMs": 318317.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 7067.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 318367.0,
+            "endOffsetMs": 325434.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4155.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 327156.0,
+            "endOffsetMs": 331311.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2985.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 331362.0,
+            "endOffsetMs": 334347.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3857.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 337177.0,
+            "endOffsetMs": 341034.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2324.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 343025.0,
+            "endOffsetMs": 345349.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5512.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 362154.0,
+            "endOffsetMs": 367666.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2531.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 368927.0,
+            "endOffsetMs": 371458.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2710.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 379928.0,
+            "endOffsetMs": 382638.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2632.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 387949.0,
+            "endOffsetMs": 390581.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2693.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 391723.0,
+            "endOffsetMs": 394416.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2191.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 402751.0,
+            "endOffsetMs": 404942.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2875.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 419462.0,
+            "endOffsetMs": 422337.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2660.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 423309.0,
+            "endOffsetMs": 425969.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2901.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 427032.0,
+            "endOffsetMs": 429933.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2530.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 440245.0,
+            "endOffsetMs": 442775.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2450.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 483.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 456680.0,
+            "endOffsetMs": 459130.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2173.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 199.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 476938.0,
+            "endOffsetMs": 479111.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2215.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 496678.0,
+            "endOffsetMs": 498893.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2607.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 500752.0,
+            "endOffsetMs": 503359.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1433.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 508602.0,
+            "endOffsetMs": 510035.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2929.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 511409.0,
+            "endOffsetMs": 514338.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2659.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 529767.0,
+            "endOffsetMs": 532426.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3001.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 533968.0,
+            "endOffsetMs": 536969.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3512.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 541829.0,
+            "endOffsetMs": 545341.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2519.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 545855.0,
+            "endOffsetMs": 548374.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1247.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 548424.0,
+            "endOffsetMs": 549671.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2798.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 549721.0,
+            "endOffsetMs": 552519.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 3976.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 560074.0,
+            "endOffsetMs": 564050.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2426.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 584452.0,
+            "endOffsetMs": 586878.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 7749.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 587600.0,
+            "endOffsetMs": 595349.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3998.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 599021.0,
+            "endOffsetMs": 603019.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1312.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 603196.0,
+            "endOffsetMs": 604508.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2660.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 604558.0,
+            "endOffsetMs": 607218.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2848.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 611370.0,
+            "endOffsetMs": 614218.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3006.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 618690.0,
+            "endOffsetMs": 621696.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2366.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 622597.0,
+            "endOffsetMs": 624963.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2881.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 625068.0,
+            "endOffsetMs": 627949.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2895.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 641830.0,
+            "endOffsetMs": 644725.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 4407.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 648123.0,
+            "endOffsetMs": 652530.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4223.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 655689.0,
+            "endOffsetMs": 659912.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4091.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 659962.0,
+            "endOffsetMs": 664053.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2617.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 665642.0,
+            "endOffsetMs": 668259.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4578.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 694510.0,
+            "endOffsetMs": 699088.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2799.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 699140.0,
+            "endOffsetMs": 701939.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 3536.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 702896.0,
+            "endOffsetMs": 706432.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2109.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 711194.0,
+            "endOffsetMs": 713303.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3663.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 731852.0,
+            "endOffsetMs": 735515.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3504.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 735694.0,
+            "endOffsetMs": 739198.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 3068.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 742017.0,
+            "endOffsetMs": 745085.0
+          }
+        ]
+      },
+      "handoff": {
+        "elapsedMs": {
+          "n": 24,
+          "median": 1630.0,
+          "p90": 1938,
+          "max": 2416
+        },
+        "failed": 0,
+        "withoutAcknowledgment": 0,
+        "review": [
+          {
+            "offsetMs": 21464.0,
+            "elapsedMs": 1796,
+            "failed": false
+          },
+          {
+            "offsetMs": 24497.0,
+            "elapsedMs": 1465,
+            "failed": false
+          },
+          {
+            "offsetMs": 36351.0,
+            "elapsedMs": 1790,
+            "failed": false
+          },
+          {
+            "offsetMs": 44249.0,
+            "elapsedMs": 1631,
+            "failed": false
+          },
+          {
+            "offsetMs": 67020.0,
+            "elapsedMs": 1629,
+            "failed": false
+          },
+          {
+            "offsetMs": 90189.0,
+            "elapsedMs": 1574,
+            "failed": false
+          },
+          {
+            "offsetMs": 125053.0,
+            "elapsedMs": 1591,
+            "failed": false
+          },
+          {
+            "offsetMs": 168016.0,
+            "elapsedMs": 1705,
+            "failed": false
+          },
+          {
+            "offsetMs": 187424.0,
+            "elapsedMs": 1640,
+            "failed": false
+          },
+          {
+            "offsetMs": 203798.0,
+            "elapsedMs": 1569,
+            "failed": false
+          },
+          {
+            "offsetMs": 220802.0,
+            "elapsedMs": 1874,
+            "failed": false
+          },
+          {
+            "offsetMs": 252528.0,
+            "elapsedMs": 1539,
+            "failed": false
+          },
+          {
+            "offsetMs": 280041.0,
+            "elapsedMs": 1533,
+            "failed": false
+          },
+          {
+            "offsetMs": 346808.0,
+            "elapsedMs": 1459,
+            "failed": false
+          },
+          {
+            "offsetMs": 407358.0,
+            "elapsedMs": 2416,
+            "failed": false
+          },
+          {
+            "offsetMs": 431574.0,
+            "elapsedMs": 1642,
+            "failed": false
+          },
+          {
+            "offsetMs": 460771.0,
+            "elapsedMs": 1641,
+            "failed": false
+          },
+          {
+            "offsetMs": 480696.0,
+            "elapsedMs": 1585,
+            "failed": false
+          },
+          {
+            "offsetMs": 500573.0,
+            "elapsedMs": 1680,
+            "failed": false
+          },
+          {
+            "offsetMs": 565607.0,
+            "elapsedMs": 1558,
+            "failed": false
+          },
+          {
+            "offsetMs": 629554.0,
+            "elapsedMs": 1605,
+            "failed": false
+          },
+          {
+            "offsetMs": 708449.0,
+            "elapsedMs": 2017,
+            "failed": false
+          },
+          {
+            "offsetMs": 714864.0,
+            "elapsedMs": 1561,
+            "failed": false
+          },
+          {
+            "offsetMs": 747023.0,
+            "elapsedMs": 1938,
+            "failed": false
+          }
+        ]
+      },
+      "playback": {
+        "hostRowsWithTiming": 19,
+        "hostIntervals": [
+          {
+            "startOffsetMs": 24808.0,
+            "durationMs": 2560.0,
+            "observedDuringLiveMs": 2560.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 44253.0,
+            "durationMs": 4761.0,
+            "observedDuringLiveMs": 4761.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 69275.0,
+            "durationMs": 7041.0,
+            "observedDuringLiveMs": 7041.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 90368.0,
+            "durationMs": 10021.0,
+            "observedDuringLiveMs": 10021.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 125056.0,
+            "durationMs": 6741.0,
+            "observedDuringLiveMs": 6741.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 168020.0,
+            "durationMs": 9301.0,
+            "observedDuringLiveMs": 9301.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 187425.0,
+            "durationMs": 3461.0,
+            "observedDuringLiveMs": 3461.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 204009.0,
+            "durationMs": 4661.0,
+            "observedDuringLiveMs": 4661.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 221040.0,
+            "durationMs": 5400.0,
+            "observedDuringLiveMs": 5400.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 252530.0,
+            "durationMs": 8600.0,
+            "observedDuringLiveMs": 8600.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 280043.0,
+            "durationMs": 5262.0,
+            "observedDuringLiveMs": 5262.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 346809.0,
+            "durationMs": 8802.0,
+            "observedDuringLiveMs": 8802.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 407514.0,
+            "durationMs": 8439.0,
+            "observedDuringLiveMs": 8439.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 432715.0,
+            "durationMs": 6339.0,
+            "observedDuringLiveMs": 6339.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 460774.0,
+            "durationMs": 5981.0,
+            "observedDuringLiveMs": 5981.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 480698.0,
+            "durationMs": 12240.0,
+            "observedDuringLiveMs": 12240.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 629556.0,
+            "durationMs": 12160.0,
+            "observedDuringLiveMs": 12160.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 714866.0,
+            "durationMs": 11604.0,
+            "observedDuringLiveMs": 11604.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 747025.0,
+            "durationMs": 5121.0,
+            "observedDuringLiveMs": 5121.0,
+            "outsideAsideMs": 0
+          }
+        ],
+        "asideCoverageAvailable": true,
+        "hostMsOutsideAside": 0,
+        "recovery": [
+          {
+            "hostEndOffsetMs": 27368.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 49014.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 76316.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 100389.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          },
+          {
+            "hostEndOffsetMs": 131797.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          },
+          {
+            "hostEndOffsetMs": 177321.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          },
+          {
+            "hostEndOffsetMs": 190886.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          },
+          {
+            "hostEndOffsetMs": 208670.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 226440.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 3
+          },
+          {
+            "hostEndOffsetMs": 261130.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 285305.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          },
+          {
+            "hostEndOffsetMs": 355611.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 415953.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          },
+          {
+            "hostEndOffsetMs": 439054.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 466755.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 492938.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 641716.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          },
+          {
+            "hostEndOffsetMs": 726470.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          },
+          {
+            "hostEndOffsetMs": 752146.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          }
+        ],
+        "listeningResumeMs": {
+          "n": 19,
+          "median": 0.0,
+          "p90": 1.0,
+          "max": 1.0
+        },
+        "audioAccountingAvailable": true,
+        "blockedNonSilentFraction": 0.2394753819895305,
+        "unaccountedSourceSamples": 0.0,
+        "generatedActivitySeconds": 7.6531875,
+        "consumedActivitySeconds": 5.8204375,
+        "medianActiveWindowPeakDbFS": -25.95,
+        "paths": {
+          "inputSent": {
+            "samples": 11684160,
+            "nonSilentSamples": 5185577,
+            "durationMs": 730260
+          },
+          "outputReceived": {
+            "samples": 11475200,
+            "nonSilentSamples": 122451,
+            "durationMs": 717200
+          },
+          "outputConsumed": {
+            "samples": 53959680,
+            "nonSilentSamples": 558762,
+            "durationMs": 562080
+          },
+          "outputBlocked": {
+            "samples": 2459200,
+            "nonSilentSamples": 29324,
+            "durationMs": 153700
+          }
+        }
+      },
+      "context": {
+        "hostTranscriptRows": 19,
+        "deliveredTranscriptMessages": 19,
+        "sent": 434,
+        "sendFailures": 0,
+        "sentWithoutLoggedAcceptance": 0
+      },
+      "coverage": {
+        "diagnosticWindows": 151,
+        "stateUpdates": 97,
+        "transcriptDeltas": 24,
+        "annotations": {
+          "condition": "normal-nonlexical-before-presence-revision"
+        }
+      },
+      "limits": [
+        "Observational comparison, not causal evidence that states help.",
+        "Text timing uses arrival timestamps; it is not exact audio onset or guest-address latency.",
+        "Non-silent sample occupancy is not speaking duration, loudness, or proof of reception by a guest.",
+        "Six output samples correspond to one source sample in the current 16k mono to 48k stereo conversion.",
+        "Aggregate accounting cannot prove absence of individual cuts or overlap. Aside coverage uses transcript playback intervals.",
+        "Missing playback rows hide host intervals; missing telemetry must not be interpreted as successful behavior.",
+        "Prompt compliance, naturalness and substantive overreach require human ratings or a separately validated judge."
+      ]
+    },
+    {
+      "episode": "episode-2026-09-12T19-54-39-530Z",
+      "sources": {
+        "episode-complete.json": {
+          "sha256": "9a847d06cdd20d5eb90f4893b3909c9863bd38948cac2b5db15b5c44e322c70b",
+          "bytes": 1145
+        },
+        "live-turn-events.jsonl": {
+          "sha256": "2f504b29dc1eef99686783c0de1865037e4d3a530580fb1185eb55d52b7b3fbe",
+          "bytes": 220719
+        },
+        "transcript.jsonl": {
+          "sha256": "e0bbe0d358f5332ba326bab172ac314f8a76812ec41882d7b15766874ee8c8d1",
+          "bytes": 89409
+        },
+        "quartz-transcript.jsonl": {
+          "sha256": "ce2adf1bb1475b36937708e017c2cf8456e9037974f2f24382a0b5087dc32351",
+          "bytes": 5563
+        }
+      },
+      "condition": "normal-nonlexical-before-presence-revision",
+      "mode": [
+        "current"
+      ],
+      "liveSessionSeconds": 417.74,
+      "stateSeconds": {
+        "listening": 251.26,
+        "holding": 10.27,
+        "yielding": 24.04,
+        "aside": 132.16
+      },
+      "stateRevisionViolations": [],
+      "presence": {
+        "generatedVocalizations": 33,
+        "unblockedTranscriptVocalizations": 30,
+        "generatedByObservedState": {
+          "listening": 19,
+          "holding": 7,
+          "yielding": 4,
+          "aside": 3
+        },
+        "eligibleWaitsAtLeast3s": 3,
+        "waitsWithUnblockedTextProxy": 1,
+        "contactLatencyProxyMs": {
+          "n": 1,
+          "median": 500.0,
+          "p90": 500.0,
+          "max": 500.0
+        },
+        "waits": [
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1961.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 302.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 14894.0,
+            "endOffsetMs": 16855.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1896.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 443.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 28022.0,
+            "endOffsetMs": 29918.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1899.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 477.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 32437.0,
+            "endOffsetMs": 34336.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2240.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 423.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 44669.0,
+            "endOffsetMs": 46909.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5687.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 500.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 60551.0,
+            "endOffsetMs": 66238.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4454.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 67078.0,
+            "endOffsetMs": 71532.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3018.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 71583.0,
+            "endOffsetMs": 74601.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2132.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 75704.0,
+            "endOffsetMs": 77836.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1962.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 496.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 81078.0,
+            "endOffsetMs": 83040.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2527.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 448.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 98736.0,
+            "endOffsetMs": 101263.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2109.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 547.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 126497.0,
+            "endOffsetMs": 128606.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1898.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 506.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 163662.0,
+            "endOffsetMs": 165560.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1918.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 593.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 176983.0,
+            "endOffsetMs": 178901.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1167.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 191319.0,
+            "endOffsetMs": 192486.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3426.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 196319.0,
+            "endOffsetMs": 199745.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1250.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 201319.0,
+            "endOffsetMs": 202569.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 3728.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 206319.0,
+            "endOffsetMs": 210047.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2241.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 458.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 238174.0,
+            "endOffsetMs": 240415.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2006.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 520.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 278044.0,
+            "endOffsetMs": 280050.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1185.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 291328.0,
+            "endOffsetMs": 292513.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1218.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 296329.0,
+            "endOffsetMs": 297547.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1137.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 301330.0,
+            "endOffsetMs": 302467.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2794.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 306330.0,
+            "endOffsetMs": 309124.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1014.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 311331.0,
+            "endOffsetMs": 312345.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1330.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 316332.0,
+            "endOffsetMs": 317662.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2097.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 321332.0,
+            "endOffsetMs": 323429.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1253.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 326332.0,
+            "endOffsetMs": 327585.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1087.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 336333.0,
+            "endOffsetMs": 337420.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 9470.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 341333.0,
+            "endOffsetMs": 350803.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2094.0,
+            "excluded": true,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 351333.0,
+            "endOffsetMs": 353427.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2514.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 525.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 377710.0,
+            "endOffsetMs": 380224.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2294.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 1714.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 391186.0,
+            "endOffsetMs": 393480.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2738.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 407012.0,
+            "endOffsetMs": 409750.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2845.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 501.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 410010.0,
+            "endOffsetMs": 412855.0
+          }
+        ]
+      },
+      "handoff": {
+        "elapsedMs": {
+          "n": 13,
+          "median": 1743,
+          "p90": 1933,
+          "max": 3356
+        },
+        "failed": 0,
+        "withoutAcknowledgment": 0,
+        "review": [
+          {
+            "offsetMs": 18788.0,
+            "elapsedMs": 1933,
+            "failed": false
+          },
+          {
+            "offsetMs": 37692.0,
+            "elapsedMs": 3356,
+            "failed": false
+          },
+          {
+            "offsetMs": 48675.0,
+            "elapsedMs": 1766,
+            "failed": false
+          },
+          {
+            "offsetMs": 84835.0,
+            "elapsedMs": 1795,
+            "failed": false
+          },
+          {
+            "offsetMs": 102759.0,
+            "elapsedMs": 1496,
+            "failed": false
+          },
+          {
+            "offsetMs": 130291.0,
+            "elapsedMs": 1685,
+            "failed": false
+          },
+          {
+            "offsetMs": 180829.0,
+            "elapsedMs": 1928,
+            "failed": false
+          },
+          {
+            "offsetMs": 211665.0,
+            "elapsedMs": 1619,
+            "failed": false
+          },
+          {
+            "offsetMs": 242230.0,
+            "elapsedMs": 1815,
+            "failed": false
+          },
+          {
+            "offsetMs": 281730.0,
+            "elapsedMs": 1680,
+            "failed": false
+          },
+          {
+            "offsetMs": 355171.0,
+            "elapsedMs": 1743,
+            "failed": false
+          },
+          {
+            "offsetMs": 395073.0,
+            "elapsedMs": 1593,
+            "failed": false
+          },
+          {
+            "offsetMs": 414473.0,
+            "elapsedMs": 1617,
+            "failed": false
+          }
+        ]
+      },
+      "playback": {
+        "hostRowsWithTiming": 13,
+        "hostIntervals": [
+          {
+            "startOffsetMs": 19020.0,
+            "durationMs": 3681.0,
+            "observedDuringLiveMs": 3681.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 37694.0,
+            "durationMs": 2062.0,
+            "observedDuringLiveMs": 2062.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 48905.0,
+            "durationMs": 4981.0,
+            "observedDuringLiveMs": 4981.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 85096.0,
+            "durationMs": 7580.0,
+            "observedDuringLiveMs": 7580.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 102761.0,
+            "durationMs": 13921.0,
+            "observedDuringLiveMs": 13921.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 130296.0,
+            "durationMs": 21340.0,
+            "observedDuringLiveMs": 21340.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 180831.0,
+            "durationMs": 1400.0,
+            "observedDuringLiveMs": 1400.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 211668.0,
+            "durationMs": 21019.0,
+            "observedDuringLiveMs": 21019.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 242233.0,
+            "durationMs": 28639.0,
+            "observedDuringLiveMs": 28639.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 281732.0,
+            "durationMs": 1541.0,
+            "observedDuringLiveMs": 1541.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 355174.0,
+            "durationMs": 14140.0,
+            "observedDuringLiveMs": 14140.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 395075.0,
+            "durationMs": 7761.0,
+            "observedDuringLiveMs": 7761.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 414476.0,
+            "durationMs": 3361.0,
+            "observedDuringLiveMs": 3361.0,
+            "outsideAsideMs": 0
+          }
+        ],
+        "asideCoverageAvailable": true,
+        "hostMsOutsideAside": 0,
+        "recovery": [
+          {
+            "hostEndOffsetMs": 22701.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 4
+          },
+          {
+            "hostEndOffsetMs": 39756.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 2
+          },
+          {
+            "hostEndOffsetMs": 53886.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 5
+          },
+          {
+            "hostEndOffsetMs": 92676.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 2
+          },
+          {
+            "hostEndOffsetMs": 116682.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 2
+          },
+          {
+            "hostEndOffsetMs": 151636.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 3
+          },
+          {
+            "hostEndOffsetMs": 182231.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          },
+          {
+            "hostEndOffsetMs": 232687.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 2
+          },
+          {
+            "hostEndOffsetMs": 270872.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 3
+          },
+          {
+            "hostEndOffsetMs": 283273.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          },
+          {
+            "hostEndOffsetMs": 369314.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 3
+          },
+          {
+            "hostEndOffsetMs": 402836.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 417837.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          }
+        ],
+        "listeningResumeMs": {
+          "n": 13,
+          "median": 0.0,
+          "p90": 0.0,
+          "max": 0.0
+        },
+        "audioAccountingAvailable": true,
+        "blockedNonSilentFraction": 0.061372915150172486,
+        "unaccountedSourceSamples": 0.0,
+        "generatedActivitySeconds": 19.748125,
+        "consumedActivitySeconds": 18.536125,
+        "medianActiveWindowPeakDbFS": -29.42,
+        "paths": {
+          "inputSent": {
+            "samples": 6502080,
+            "nonSilentSamples": 1556589,
+            "durationMs": 406380
+          },
+          "outputReceived": {
+            "samples": 6452800,
+            "nonSilentSamples": 315970,
+            "durationMs": 403300
+          },
+          "outputConsumed": {
+            "samples": 26256000,
+            "nonSilentSamples": 1779468,
+            "durationMs": 273500
+          },
+          "outputBlocked": {
+            "samples": 2065600,
+            "nonSilentSamples": 19392,
+            "durationMs": 129100
+          }
+        }
+      },
+      "context": {
+        "hostTranscriptRows": 13,
+        "deliveredTranscriptMessages": 13,
+        "sent": 189,
+        "sendFailures": 0,
+        "sentWithoutLoggedAcceptance": 0
+      },
+      "coverage": {
+        "diagnosticWindows": 85,
+        "stateUpdates": 53,
+        "transcriptDeltas": 36,
+        "annotations": {
+          "condition": "normal-nonlexical-before-presence-revision",
+          "excludePresenceIntervals": [
+            {
+              "startMs": 159000,
+              "endMs": 211500,
+              "reason": "Deliberate thirty-second listening exercise, including request"
+            },
+            {
+              "startMs": 273000,
+              "endMs": 355500,
+              "reason": "Deliberate one-minute listening exercise, including request"
+            }
+          ]
+        }
+      },
+      "limits": [
+        "Observational comparison, not causal evidence that states help.",
+        "Text timing uses arrival timestamps; it is not exact audio onset or guest-address latency.",
+        "Non-silent sample occupancy is not speaking duration, loudness, or proof of reception by a guest.",
+        "Six output samples correspond to one source sample in the current 16k mono to 48k stereo conversion.",
+        "Aggregate accounting cannot prove absence of individual cuts or overlap. Aside coverage uses transcript playback intervals.",
+        "Missing playback rows hide host intervals; missing telemetry must not be interpreted as successful behavior.",
+        "Prompt compliance, naturalness and substantive overreach require human ratings or a separately validated judge."
+      ]
+    },
+    {
+      "episode": "episode-2026-09-12T20-44-48-002Z",
+      "sources": {
+        "episode-complete.json": {
+          "sha256": "3458f0c08509714b63ceb66a4b5386a96ca00cf6e3977ff73947959c75f7519a",
+          "bytes": 1145
+        },
+        "live-turn-events.jsonl": {
+          "sha256": "cec044fe553d18df7121d5c29b68887cc023263250bfbd4014c567a273615cc7",
+          "bytes": 224815
+        },
+        "transcript.jsonl": {
+          "sha256": "4a9fd773a8305af0c16a4a8c86a0e6aef970b042ec9b1b04290591b85058ad7d",
+          "bytes": 120419
+        },
+        "quartz-transcript.jsonl": {
+          "sha256": "7a2e9a0588c2a035a0e98d350e62f72ba7831d54484c03729e072913d9c05ee2",
+          "bytes": 8830
+        }
+      },
+      "condition": "normal-verbal-contact-prompt-275f005",
+      "mode": [
+        "current"
+      ],
+      "liveSessionSeconds": 312.51,
+      "stateSeconds": {
+        "listening": 241.44,
+        "holding": 5.09,
+        "yielding": 9.69,
+        "aside": 56.29
+      },
+      "stateRevisionViolations": [],
+      "presence": {
+        "generatedVocalizations": 38,
+        "unblockedTranscriptVocalizations": 37,
+        "generatedByObservedState": {
+          "listening": 36,
+          "holding": 1,
+          "aside": 1
+        },
+        "eligibleWaitsAtLeast3s": 14,
+        "waitsWithUnblockedTextProxy": 9,
+        "contactLatencyProxyMs": {
+          "n": 9,
+          "median": 505.0,
+          "p90": 674.0,
+          "max": 674.0
+        },
+        "waits": [
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2231.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 513.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 15408.0,
+            "endOffsetMs": 17639.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1857.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 534.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 18899.0,
+            "endOffsetMs": 20756.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1701.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 600.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 24365.0,
+            "endOffsetMs": 26066.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1471.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 652.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 39457.0,
+            "endOffsetMs": 40928.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2724.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 409.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 40979.0,
+            "endOffsetMs": 43703.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2465.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 667.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 43754.0,
+            "endOffsetMs": 46219.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1479.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 656.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 48902.0,
+            "endOffsetMs": 50381.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2293.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 50829.0,
+            "endOffsetMs": 53122.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2404.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 595.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 59753.0,
+            "endOffsetMs": 62157.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4345.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 441.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 70988.0,
+            "endOffsetMs": 75333.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4636.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 572.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 75382.0,
+            "endOffsetMs": 80018.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2776.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 450.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 82457.0,
+            "endOffsetMs": 85233.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3402.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 505.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 110976.0,
+            "endOffsetMs": 114378.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2259.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 426.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 121710.0,
+            "endOffsetMs": 123969.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2418.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 125208.0,
+            "endOffsetMs": 127626.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2443.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 130374.0,
+            "endOffsetMs": 132817.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 3215.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 610.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 140996.0,
+            "endOffsetMs": 144211.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2897.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 632.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 163640.0,
+            "endOffsetMs": 166537.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2178.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 440.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 171349.0,
+            "endOffsetMs": 173527.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3285.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 174670.0,
+            "endOffsetMs": 177955.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2353.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 430.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 193828.0,
+            "endOffsetMs": 196181.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3640.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 414.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 227076.0,
+            "endOffsetMs": 230716.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3294.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 557.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 232339.0,
+            "endOffsetMs": 235633.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3131.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 243948.0,
+            "endOffsetMs": 247079.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3478.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 462.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 248813.0,
+            "endOffsetMs": 252291.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3621.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 467.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 256689.0,
+            "endOffsetMs": 260310.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3321.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 262730.0,
+            "endOffsetMs": 266051.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2927.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 267846.0,
+            "endOffsetMs": 270773.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3089.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 277994.0,
+            "endOffsetMs": 281083.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 3174.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 674.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 284524.0,
+            "endOffsetMs": 287698.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 3808.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 306598.0,
+            "endOffsetMs": 310406.0
+          }
+        ]
+      },
+      "handoff": {
+        "elapsedMs": {
+          "n": 6,
+          "median": 1623.5,
+          "p90": 1736,
+          "max": 1736
+        },
+        "failed": 0,
+        "withoutAcknowledgment": 0,
+        "review": [
+          {
+            "offsetMs": 27802.0,
+            "elapsedMs": 1736,
+            "failed": false
+          },
+          {
+            "offsetMs": 86876.0,
+            "elapsedMs": 1643,
+            "failed": false
+          },
+          {
+            "offsetMs": 145789.0,
+            "elapsedMs": 1578,
+            "failed": false
+          },
+          {
+            "offsetMs": 197825.0,
+            "elapsedMs": 1644,
+            "failed": false
+          },
+          {
+            "offsetMs": 289170.0,
+            "elapsedMs": 1472,
+            "failed": false
+          },
+          {
+            "offsetMs": 312009.0,
+            "elapsedMs": 1604,
+            "failed": false
+          }
+        ]
+      },
+      "playback": {
+        "hostRowsWithTiming": 6,
+        "hostIntervals": [
+          {
+            "startOffsetMs": 27807.0,
+            "durationMs": 1881.0,
+            "observedDuringLiveMs": 1881.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 86879.0,
+            "durationMs": 17620.0,
+            "observedDuringLiveMs": 17620.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 145794.0,
+            "durationMs": 13158.0,
+            "observedDuringLiveMs": 13158.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 197827.0,
+            "durationMs": 8800.0,
+            "observedDuringLiveMs": 8800.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 289174.0,
+            "durationMs": 11601.0,
+            "observedDuringLiveMs": 11601.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 312011.0,
+            "durationMs": 3221.0,
+            "observedDuringLiveMs": 3221.0,
+            "outsideAsideMs": 0
+          }
+        ],
+        "asideCoverageAvailable": true,
+        "hostMsOutsideAside": 0,
+        "recovery": [
+          {
+            "hostEndOffsetMs": 29688.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 11
+          },
+          {
+            "hostEndOffsetMs": 104499.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 7
+          },
+          {
+            "hostEndOffsetMs": 158952.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 4
+          },
+          {
+            "hostEndOffsetMs": 206627.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 10
+          },
+          {
+            "hostEndOffsetMs": 300775.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 315232.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          }
+        ],
+        "listeningResumeMs": {
+          "n": 6,
+          "median": 0.0,
+          "p90": 1.0,
+          "max": 1.0
+        },
+        "audioAccountingAvailable": true,
+        "blockedNonSilentFraction": 0.004117724880224526,
+        "unaccountedSourceSamples": 0.0,
+        "generatedActivitySeconds": 26.45575,
+        "consumedActivitySeconds": 26.3468125,
+        "medianActiveWindowPeakDbFS": -25.4,
+        "paths": {
+          "inputSent": {
+            "samples": 4832320,
+            "nonSilentSamples": 2230016,
+            "durationMs": 302020
+          },
+          "outputReceived": {
+            "samples": 4811200,
+            "nonSilentSamples": 423292,
+            "durationMs": 300700
+          },
+          "outputConsumed": {
+            "samples": 23510400,
+            "nonSilentSamples": 2529294,
+            "durationMs": 244900
+          },
+          "outputBlocked": {
+            "samples": 886400,
+            "nonSilentSamples": 1743,
+            "durationMs": 55400
+          }
+        }
+      },
+      "context": {
+        "hostTranscriptRows": 6,
+        "deliveredTranscriptMessages": 6,
+        "sent": 151,
+        "sendFailures": 0,
+        "sentWithoutLoggedAcceptance": 0
+      },
+      "coverage": {
+        "diagnosticWindows": 63,
+        "stateUpdates": 25,
+        "transcriptDeltas": 57,
+        "annotations": {
+          "condition": "normal-verbal-contact-prompt-275f005"
+        }
+      },
+      "limits": [
+        "Observational comparison, not causal evidence that states help.",
+        "Text timing uses arrival timestamps; it is not exact audio onset or guest-address latency.",
+        "Non-silent sample occupancy is not speaking duration, loudness, or proof of reception by a guest.",
+        "Six output samples correspond to one source sample in the current 16k mono to 48k stereo conversion.",
+        "Aggregate accounting cannot prove absence of individual cuts or overlap. Aside coverage uses transcript playback intervals.",
+        "Missing playback rows hide host intervals; missing telemetry must not be interpreted as successful behavior.",
+        "Prompt compliance, naturalness and substantive overreach require human ratings or a separately validated judge."
+      ]
+    }
+  ],
+  "skipped": []
+}

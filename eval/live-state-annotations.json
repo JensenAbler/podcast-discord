@@ -1,0 +1,26 @@
+{
+  "episode-2026-09-12T18-07-45-788Z": {
+    "condition": "normal-nonlexical-before-presence-revision"
+  },
+  "episode-2026-09-12T18-57-27-283Z": {
+    "condition": "normal-nonlexical-before-presence-revision"
+  },
+  "episode-2026-09-12T19-54-39-530Z": {
+    "condition": "normal-nonlexical-before-presence-revision",
+    "excludePresenceIntervals": [
+      {
+        "startMs": 159000,
+        "endMs": 211500,
+        "reason": "Deliberate thirty-second listening exercise, including request"
+      },
+      {
+        "startMs": 273000,
+        "endMs": 355500,
+        "reason": "Deliberate one-minute listening exercise, including request"
+      }
+    ]
+  },
+  "episode-2026-09-12T20-44-48-002Z": {
+    "condition": "normal-verbal-contact-prompt-275f005"
+  }
+}
