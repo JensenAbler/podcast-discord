@@ -166,3 +166,33 @@ test('receipt correlation excludes silence, muted speech and incomplete vocaliza
         t.close();
     }
 });
+
+test('current state follows transcript, plan and auxiliary context', () => {
+    const g = new PodcastGenerator({ apiKey: 'test' });
+    const prompt = g.buildUserPrompt('Jensen: A completed thought.', 'confidence-marker', {
+        idleCheck: true, idleSeconds: 45, currentTime: '2026-09-12T22:01:25.817Z',
+        currentEpisodeTimestamp: '00:07:24', consecutiveSilenceTurns: 7,
+        episodePlanStructure: 'plan-marker'
+    });
+    const state = prompt.indexOf('No new participant speech');
+    for (const text of ['Jensen: A completed thought.', 'plan-marker', 'confidence-marker']) {
+        assert.ok(prompt.indexOf(text) >= 0 && prompt.indexOf(text) < state);
+    }
+    assert.ok(prompt.endsWith('Consecutive prior Alpha-Clawd silence decisions: 7'));
+    assert.equal(prompt.match(/This is a dead-air check/g).length, 1);
+});
+test('ordinary turns retain backchannels and end with current timing', () => {
+    const g = new PodcastGenerator({ apiKey: 'test' });
+    g.observeSpokenTranscript({ speaker: 'Jensen', text: 'We are testing the prompt.', timestamp: '2026-09-12T20:45:28Z' });
+    g.observeSpokenTranscript({ speaker: 'Alpha-Clawd', text: 'Mm, okay.', source: 'quartz', timestamp: '2026-09-12T20:45:29Z', playbackStatus: 'completed' });
+    const messages = g.buildMessages({ currentTime: '2026-09-12T20:45:30Z' });
+    const prompt = messages.find(m => m.role === 'user').content;
+    assert.ok(prompt.includes('Alpha-Clawd: Mm, okay.'));
+    assert.ok(prompt.endsWith('Current generator call time: 2026-09-12T20:45:30Z'));
+    assert.ok(!prompt.includes('dead-air check'));
+    assert.equal(messages.at(-1).content, g.buildDecisionPrompt({}));
+});
+test('a turn without timing metadata has no empty current-state block', () => {
+    const g = new PodcastGenerator({ apiKey: 'test' });
+    assert.equal(g.buildUserPrompt('Jensen: Hello.'), 'Jensen: Hello.');
+});

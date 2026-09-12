@@ -942,24 +942,25 @@ class PodcastGenerator {
 
     buildUserPrompt(transcript, wordData, options = {}) {
         const lines = [];
+        const currentState = [];
         const directiveText = this.getCurrentDirectiveText(transcript, options.utterances || []);
         const turnDirectives = this.detectConversationDirectives(directiveText);
 
         if (options.idleCheck && Number.isFinite(Number(options.idleSeconds))) {
-            lines.push(`No new participant speech for about ${Math.max(0, Math.round(Number(options.idleSeconds)))} seconds.`);
-            lines.push('This is a dead-air check. As silence stretches or prior silence decisions accumulate, you may offer a brief bridge, synthesis, or next question to keep the episode alive while respecting explicit standby/listening cues.');
+            currentState.push(`No new participant speech for about ${Math.max(0, Math.round(Number(options.idleSeconds)))} seconds.`);
+            currentState.push('This is a dead-air check. As silence stretches or prior silence decisions accumulate, you may offer a brief bridge, synthesis, or next question to keep the episode alive while respecting explicit standby/listening cues.');
         }
 
         const currentTime = String(options.currentTime || options.generatorCalledAt || '').trim();
         if (currentTime) {
-            lines.push(`Current generator call time: ${currentTime}`);
+            currentState.push(`Current generator call time: ${currentTime}`);
         }
         const currentEpisodeTimestamp = String(options.currentEpisodeTimestamp || '').trim();
         if (currentEpisodeTimestamp) {
-            lines.push(`Current episode timestamp: ${currentEpisodeTimestamp}`);
+            currentState.push(`Current episode timestamp: ${currentEpisodeTimestamp}`);
         }
         if (Number.isFinite(Number(options.consecutiveSilenceTurns))) {
-            lines.push(`Consecutive prior Alpha-Clawd silence decisions: ${Math.max(0, Math.floor(Number(options.consecutiveSilenceTurns)))}`);
+            currentState.push(`Consecutive prior Alpha-Clawd silence decisions: ${Math.max(0, Math.floor(Number(options.consecutiveSilenceTurns)))}`);
         }
 
         if (options.episodeOpening) {
@@ -1113,6 +1114,11 @@ class PodcastGenerator {
 
         if (wordData) {
             lines.push('', 'STT confidence hints:', wordData);
+        }
+
+        // Present the current situation after the conversation and supporting context.
+        if (currentState.length > 0) {
+            lines.push('', ...currentState);
         }
 
         return lines.join('\n');
