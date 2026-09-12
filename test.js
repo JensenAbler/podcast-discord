@@ -132,7 +132,7 @@ async function runTests() {
     // explicitly and may stop npm test before the later journal tests.
     const shutdownTests = require('node:child_process').spawnSync(
         process.execPath,
-        ['--test', path.join(__dirname, 'test-shutdown.js')],
+        ['--test', path.join(__dirname, 'test-shutdown.js'), path.join(__dirname, 'test-inline-backchannels.js')],
         { stdio: 'inherit', timeout: 15_000 }
     );
     if (shutdownTests.error || shutdownTests.status !== 0) {

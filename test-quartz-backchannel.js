@@ -401,3 +401,55 @@ test('Live uses session transcript timing even when offsets exceed microphone sa
     assert.equal(observed.timing.status, 'estimated');
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });
+
+test('played transcript follows packet consumption through split buffers and Alpha preemption', async () => {
+    const entries = [];
+    const t = playback({ onPlayedTranscript: e => entries.push(e) });
+    const voice = Buffer.alloc(640, 50);
+    t.callbacks.onAudio(voice.subarray(0, 320), { startMs: 0, endMs: 10, sessionId: 's' });
+    t.callbacks.onAudio(voice.subarray(320), { startMs: 10, endMs: 20, sessionId: 's' });
+    t.callbacks.onTranscript({ text: ' Mm.', startMs: 0, endMs: 20, sessionId: 's' });
+    t.p.stream.read();
+    t.callbacks.onAudio(voice, { startMs: 1000, endMs: 1020, sessionId: 's' });
+    t.callbacks.onTranscript({ text: ' Okay.', startMs: 1000, endMs: 1020, sessionId: 's' });
+    t.alpha.transition('buffering'); // encoded packet never consumed
+    await t.p.stop();
+    assert.equal(entries[0].transcription, 'Mm.');
+    assert.equal(entries[0].playbackStatus, 'completed');
+    assert.equal(entries[1].transcription, '');
+    assert.equal(entries[1].playbackStatus, 'not_started');
+    assert.equal(t.alpha.plays, 0);
+});
+test('muted output advances the provider output clock independently of the input mixer', async () => {
+    const t = transport();
+    await connected(t);
+    const spans = [];
+    t.client.onAudio = (_pcm, span) => spans.push(span);
+    const event = { type: 'session.output_audio.delta', delta: Buffer.alloc(3200).toString('base64') };
+    t.socket.event(event);
+    t.client.setAlphaPlaying(true);
+    t.socket.event(event);
+    t.client.setAlphaPlaying(false);
+    t.socket.event(event);
+    assert.deepEqual(spans.map(s => [s.startMs, s.endMs]), [[0,100], [200,300]]);
+    const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
+});
+
+test('receipt ledger accounts for prefetched packets discarded on mute', async () => {
+    const entries = [];
+    const t = playback({ onPlayedTranscript: e => entries.push(e) });
+    const now = Date.now();
+    const span = { startMs: 1000, endMs: 1040, sessionId: 's', receivedAt: now };
+    const pcm = Buffer.alloc(1280, 50);
+    t.callbacks.onOutputAudio(pcm, span);
+    t.callbacks.onAudio(pcm, span);
+    t.callbacks.onTranscript({ text: 'Okay.', startMs: 2000, endMs: 2040, sessionId: 's',
+        correlation: 'receipt', audioStartedAt: now - 40, audioEndedAt: now });
+    t.p.stream.read();
+    t.alpha.transition('buffering');
+    await t.p.stop();
+    assert.equal(entries[0].transcription, '');
+    assert.equal(entries[0].playbackStatus, 'incomplete');
+    assert.equal(entries[0].backchannelEvidence.consumedVoicedFrames, 1);
+    assert.equal(entries[0].backchannelEvidence.discardedVoicedFrames, 1);
+});

@@ -76,6 +76,13 @@ class EvalTests(unittest.TestCase):
         self.assertEqual(r["playback"]["hostMsOutsideAside"], 0)
         self.assertEqual(r["playback"]["hostIntervals"][0]["observedDuringLiveMs"], 0)
 
+    def test_inline_backchannels_are_not_substantive_alpha_playback(self):
+        r = run([state(0, "listening", 1)], transcript=[
+            {"speakerRole": "host", "source": "quartz", "text": "Mm.",
+             "playbackStartedAt": 1000, "playbackEndedAt": 1200}])
+        self.assertEqual(r["playback"]["hostRowsWithTiming"], 0)
+        self.assertEqual(r["playback"]["hostMsOutsideAside"], 0)
+
     def test_grouping_preserves_sessions(self):
         a, b = sound(1000), sound(1200);b["sessionId"] = "b"
         self.assertEqual(len(mod.vocalizations([a, b])), 2)

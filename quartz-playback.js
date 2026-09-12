@@ -2,6 +2,7 @@ const { Readable } = require('stream');
 const OpusScript = require('opusscript');
 const { createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
 const { GptLiveBackchannel } = require('./gpt-live-backchannel');
+const { PlayedBackchannelTranscript } = require('./played-backchannel-transcript');
 
 // A separate player keeps acknowledgments out of Alpha's transmitter queue and
 // its onStart/onFinish callbacks. The existing player always wins.
@@ -17,6 +18,8 @@ class QuartzPlayback {
         this.encoderFactory = options.encoderFactory || (() => new OpusScript(48000, 2, OpusScript.Application.AUDIO));
         this.stream = null;
         this.queue = Buffer.alloc(0);
+        this.queueSpans = [];
+        this.playedTranscript = new PlayedBackchannelTranscript(options.onPlayedTranscript || (() => {}));
         this.closed = false;
         this.alphaLease = false;
         this.alphaQueue = Promise.resolve();
@@ -33,8 +36,12 @@ class QuartzPlayback {
             turnControl: options.turnControl,
             onDelegation: options.onDelegation,
             onInputTranscript: options.onInputTranscript,
-            onAudio: pcm => this.enqueue(pcm),
-            onTranscript: options.onTranscript,
+            onOutputAudio: (pcm, span) => this.playedTranscript.receive(pcm, span),
+            onAudio: (pcm, span) => this.enqueue(pcm, span),
+            onTranscript: event => {
+                options.onTranscript?.(event);
+                this.playedTranscript.transcript(event);
+            },
             onLog: this.onLog,
             onError: this.onError,
             onInstructionsAccepted: id => {
@@ -148,15 +155,19 @@ class QuartzPlayback {
         this.client.setAlphaPlaying(this.blocked);
     }
 
-    enqueue(pcm) {
-        if (this.closed || this.blocked || !Buffer.isBuffer(pcm) || !pcm.length) return;
+    enqueue(pcm, span) {
+        if (this.closed || this.blocked || !Buffer.isBuffer(pcm) || !pcm.length) {
+            this.playedTranscript.discard(span); return;
+        }
         // Transport backpressure only; no content gate or acknowledgment timer.
         if (this.queue.length + pcm.length > 160000) {
             this.onLog('Dropping stale Quartz output after playback backlog');
+            this.playedTranscript.discard(span);
             this.clearOutput();
             return;
         }
         this.queue = Buffer.concat([this.queue, pcm]);
+        this.queueSpans.push({ ...span, bytes: pcm.length });
         if (!this.stream) this.createStream();
         this.fill();
     }
@@ -173,6 +184,7 @@ class QuartzPlayback {
         });
         stream.encoder = encoder;
         stream.packets = packets;
+        stream.pendingPackets = new Set();
         // Journal PCM when the corresponding Opus packet is consumed by the
         // Discord resource, not when it first arrives from the provider.
         const read = stream.read.bind(stream);
@@ -183,10 +195,12 @@ class QuartzPlayback {
             if (entry?.voiced) owner.pendingVoicedFrames--;
             if (pcm && !owner.blocked && !owner.closed) {
                 packets.delete(packet);
+                stream.pendingPackets.delete(entry);
                 owner.lastConsumedAt = Date.now();
                 owner.quietFrames = entry.voiced ? 0 : owner.quietFrames + 1;
                 owner.client.audioDiagnostics?.record('outputConsumed', pcm, 48000, 2);
                 owner.onPcm(pcm);
+                for (const span of entry.spans) owner.playedTranscript.consume(span, owner.lastConsumedAt);
             }
             return packet;
         };
@@ -202,6 +216,17 @@ class QuartzPlayback {
         if (!stream || stream.destroyed || !stream.wantsPacket || this.blocked || this.closed || this.queue.length < 640) return;
         const mono = this.queue.subarray(0, 640); // 20 ms, 16 kHz mono s16le
         this.queue = this.queue.subarray(640);
+        const spans = [];
+        let bytes = 640;
+        while (bytes && this.queueSpans.length) {
+            const span = this.queueSpans[0];
+            const taken = Math.min(bytes, span.bytes);
+            spans.push({ sessionId: span.sessionId, startMs: span.startMs, endMs: span.startMs + taken / 32 });
+            span.startMs += taken / 32;
+            span.bytes -= taken;
+            bytes -= taken;
+            if (!span.bytes) this.queueSpans.shift();
+        }
         const stereo = Buffer.alloc(3840); // 20 ms, 48 kHz stereo s16le
         for (let i = 0; i < 320; i++) {
             const sample = mono.readInt16LE(i * 2);
@@ -211,10 +236,13 @@ class QuartzPlayback {
             const packet = Buffer.from(stream.encoder.encode(stereo, 960));
             const voiced = hasVoice(mono);
             if (voiced) this.pendingVoicedFrames++;
-            stream.packets.set(packet, { pcm: stereo, voiced });
+            const entry = { pcm: stereo, voiced, spans };
+            stream.packets.set(packet, entry);
+            stream.pendingPackets.add(entry);
             stream.wantsPacket = false;
             stream.push(packet);
         } catch (error) {
+            for (const span of spans) this.playedTranscript.discard(span);
             this.onError(error);
             this.clearOutput();
         }
@@ -223,7 +251,9 @@ class QuartzPlayback {
     clearOutput() {
         const stream = this.stream;
         this.stream = null;
+        for (const span of [...this.queueSpans, ...Array.from(stream?.pendingPackets || []).flatMap(entry => entry.spans)]) this.playedTranscript.discard(span);
         this.queue = Buffer.alloc(0);
+        this.queueSpans = [];
         this.pendingVoicedFrames = 0;
         // Set stream=null before stop(), whose Idle event can reenter here.
         if (stream) {
@@ -244,7 +274,7 @@ class QuartzPlayback {
         this.player.off(AudioPlayerStatus.Idle, this.onPlayerIdle);
         this.clearOutput();
         this.connection.subscribe(this.alphaPlayer);
-        this.stopPromise = this.client.stop();
+        this.stopPromise = Promise.resolve(this.client.stop()).finally(() => this.playedTranscript.close());
         return this.stopPromise;
     }
 }

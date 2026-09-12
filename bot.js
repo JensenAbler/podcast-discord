@@ -357,6 +357,9 @@ class AlphaClawdVoiceBot {
         
         // Set up voice manager utterance handler
         this.voiceManager.onQuartzInputTranscript = (guildId, event) => this.observeAdmissionLive(guildId, event);
+        this.voiceManager.onSavedTranscript = (guildId, entry) => {
+            if (this.isRecordingActive(guildId)) this.podcastGenerator.observeSpokenTranscript?.(entry);
+        };
         this.voiceManager.setUtteranceHandler((guildId, utterance) => this.handleParticipantUtterance(guildId, utterance));
 
         // Set up speaking start/stop handlers to prevent buffer flush while user is speaking

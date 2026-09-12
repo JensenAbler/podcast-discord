@@ -31,6 +31,9 @@ class GptLiveBackchannel {
         this.environmentRevision = 0;
         this.socketFactory = options.socketFactory || ((url, config) => new WebSocket(url, config));
         this.onAudio = options.onAudio || (() => {});
+        this.outputOffsetMs = 0;
+        this.outputTranscriptClock = new LiveTranscriptClock();
+        this.onOutputAudio = options.onOutputAudio || (() => {});
         this.onTranscript = options.onTranscript || (() => {});
         this.onError = options.onError || (() => {});
         this.onClose = options.onClose || (() => {});
@@ -103,6 +106,7 @@ class GptLiveBackchannel {
                         clearTimeout(this.startTimer);
                         this.started = true;
                         this.sessionId = event.session?.id;
+                        this.outputOffsetMs = 0;
                         this.mixer.start();
                         this.diagnosticsTimer = setInterval(() => this.audioDiagnostics.flush(), 5000);
                         this.diagnosticsTimer.unref?.();
@@ -119,13 +123,20 @@ class GptLiveBackchannel {
                         // Never retain muted audio for later replay.
                         const pcm = Buffer.from(event.delta, 'base64');
                         this.audioDiagnostics.record('outputReceived', pcm, 16000, 1);
-                        if (this.started && !this.blocked) this.onAudio(pcm);
+                        const startMs = Number.isFinite(event.start_ms) ? event.start_ms : this.outputOffsetMs;
+                        const endMs = startMs + pcm.length / 32; // output PCM, never the input mixer clock
+                        this.outputOffsetMs = endMs; // advance even when muted
+                        this.onOutputAudio(pcm, { startMs, endMs, sessionId: this.sessionId, receivedAt: Date.now(), blocked: !this.started || this.blocked });
+                        if (this.started && !this.blocked) this.onAudio(pcm, { startMs, endMs, sessionId: this.sessionId });
                         else this.audioDiagnostics.record('outputBlocked', pcm, 16000, 1);
                     } else if (event.type === 'session.output_transcript.delta') {
                         this.transcriptClock.map(event.start_ms, event.end_ms);
                         this.onTranscript({
                             text: event.delta, startMs: event.start_ms, endMs: event.end_ms,
-                            playbackBlocked: this.blocked, sessionId: this.sessionId
+                            playbackBlocked: this.blocked, sessionId: this.sessionId,
+                            outputAudioFrontierMs: this.outputOffsetMs,
+                            correlation: 'receipt',
+                            ...this.outputTranscriptClock.map(event.start_ms, event.end_ms)
                         });
                     } else if (event.type === 'session.delegation.created') {
                         this.onLog('Delegation received: ' + JSON.stringify({ id: event.delegation?.id, target: event.delegation?.target, offsetMs: event.offset_ms, environment: this.environment, blocked: this.blocked, mode: this.turnControl ? 'live-alpha' : 'current' }));

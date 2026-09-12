@@ -330,6 +330,8 @@ class PodcastGenerator {
             2
         );
         this.history = [];
+        this.spokenTranscript = [];
+        this.hasBackchannels = false;
         this.questionMoratoriumTurns = 0;
         this.standbyMode = false;
         this.episodeStructureNotes = [];
@@ -342,6 +344,8 @@ class PodcastGenerator {
 
     startSession(options = {}) {
         this.history = [];
+        this.spokenTranscript = [];
+        this.hasBackchannels = false;
         this.questionMoratoriumTurns = 0;
         this.standbyMode = false;
         this.episodeStructureNotes = [];
@@ -355,6 +359,8 @@ class PodcastGenerator {
 
     endSession() {
         this.history = [];
+        this.spokenTranscript = [];
+        this.hasBackchannels = false;
         this.questionMoratoriumTurns = 0;
         this.standbyMode = false;
         this.episodeStructureNotes = [];
@@ -735,12 +741,40 @@ class PodcastGenerator {
         throw new Error(`${label} returned invalid JSON`);
     }
 
+    observeSpokenTranscript(entry = {}) {
+        if (entry.admission?.status === 'candidate' ||
+            ['failed', 'not_started'].includes(entry.playbackStatus)) return;
+        const text = String(entry.transcription || entry.text || '').trim();
+        if (!text) return;
+        if (entry.source === 'quartz') this.hasBackchannels = true;
+        const start = entry.playbackStartedAt || entry.speechStartedAt || entry.timestamp;
+        const end = entry.playbackEndedAt || entry.speechEndedAt || start;
+        this.spokenTranscript.push({ speaker: entry.speaker || 'Speaker', transcription: text,
+            speechStartedAt: start, speechEndedAt: end, timestamp: start });
+    }
+
+    sharedTranscriptFor(input) {
+        const entries = [...this.spokenTranscript, ...(input.utterances || [])];
+        const seen = new Set();
+        return entries.filter(entry => {
+            const text = String(entry.transcription || entry.text || '').trim();
+            if (!text || entry.admission?.status === 'candidate') return false;
+            const key = JSON.stringify([entry.speaker, this.parseTimestamp(entry.speechStartedAt || entry.timestamp), text]);
+            if (seen.has(key)) return false;
+            seen.add(key); return true;
+        }).sort((a,b) => (this.parseTimestamp(a.speechStartedAt || a.timestamp) || 0) -
+            (this.parseTimestamp(b.speechStartedAt || b.timestamp) || 0));
+    }
+
     buildMessages(input = {}) {
         const transcript = input.transcript || this.formatUtterances(input.utterances || []);
 
+        // Use one audible timeline once backchannels exist. Legacy remembered
+        // decisions stay internal; they are not spoken transcript entries.
+        if (this.hasBackchannels) input = { ...input, conversationUtterances: this.sharedTranscriptFor(input) };
         const messages = [
             { role: 'system', content: this.buildSystemPrompt() },
-            ...this.getRecentHistory(),
+            ...(this.hasBackchannels ? [] : this.getRecentHistory()),
             { role: 'user', content: this.buildUserPrompt(transcript, input.wordData, input) },
             { role: 'system', content: this.buildDecisionPrompt(input) }
         ];
@@ -944,7 +978,7 @@ class PodcastGenerator {
             }
         }
 
-        const inlineTranscript = this.formatTranscriptWithPauses(options.utterances || []);
+        const inlineTranscript = this.formatTranscriptWithPauses(options.conversationUtterances || options.utterances || []);
         if (lines.length > 0) {
             lines.push('');
         }

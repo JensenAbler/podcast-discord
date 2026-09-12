@@ -588,8 +588,8 @@ class VoiceManager {
             }),
             onTranscript: event => {
                 host.turnController?.observe({ kind: 'quartz', text: event.text, playbackBlocked: event.playbackBlocked });
-                // Generated transcript fragments are observations, not completed
-                // Alpha turns. Keep them out of the conversation buffer and ASR.
+                // Raw generated fragments remain forensic observations; the playback
+                // callback below adds delivered text to the shared transcript.
                 if (!this.isRecording.get(guildId) || !recordingPath) return;
                 try {
                     fs.appendFileSync(path.join(recordingPath, 'quartz-transcript.jsonl'),
@@ -597,6 +597,11 @@ class VoiceManager {
                 } catch (error) {
                     console.error('[Quartz] Transcript save failed:', error.message);
                 }
+            },
+            onPlayedTranscript: entry => {
+                if (!this.isRecording.get(guildId) || this.recordingPaths.get(guildId) !== recordingPath) return;
+                try { this.saveTranscriptEntry(guildId, entry); }
+                catch (error) { console.error('[Quartz] Played transcript save failed:', error.message); }
             },
             onLog: message => {
                 console.log('[Quartz] ' + message);
@@ -644,6 +649,7 @@ class VoiceManager {
     }
 
     observeQuartzTranscript(guildId, entry) {
+        if (entry.source === 'quartz') return; // Live already knows its own output.
         const host = this.quartzBackchannels?.get(guildId);
         if (!host?.client?.started || host.closed) return;
         if (entry.admission?.status === 'candidate') return;
@@ -1064,6 +1070,7 @@ class VoiceManager {
             synthesisText: utterance.synthesisText ?? null,
             synthesisInputComplete: utterance.synthesisInputComplete ?? null,
             generatedTranscription: utterance.generatedTranscription ?? null,
+            backchannelEvidence: utterance.backchannelEvidence ?? null,
             playbackStatus: utterance.playbackStatus || null,
             playbackInterrupted: utterance.playbackInterrupted ?? null,
             playbackUnderrunDetected: utterance.playbackUnderrunDetected ?? null,
@@ -1118,6 +1125,7 @@ class VoiceManager {
         const entry = JSON.stringify(cleanEntry);
         fs.appendFileSync(transcriptPath, entry + '\n');
         this.observeQuartzTranscript?.(guildId, utterance);
+        this.onSavedTranscript?.(guildId, utterance);
         
         const wordCount = cleanEntry.wordCount;
         const lowConfCount = cleanEntry.lowConfidenceWords.length;

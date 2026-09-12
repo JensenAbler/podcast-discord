@@ -135,7 +135,7 @@ def evaluate(events, transcript, quartz, metadata, annotation=None):
         w["startOffsetMs"] = round(w.pop("start") - start, 2)
         w["endOffsetMs"] = round(w.pop("end") - start, 2)
     eligible = [w for w in waits if not w["censored"] and not w["excluded"] and w["durationMs"] >= 3000]
-    host_rows = [r for r in transcript if r.get("speakerRole") == "host" and r.get("playbackStartedAt") and r.get("playbackEndedAt")]
+    host_rows = [r for r in transcript if r.get("speakerRole") == "host" and r.get("source") != "quartz" and r.get("playbackStartedAt") and r.get("playbackEndedAt")]
     hosts, recovery = [], []
     for r in host_rows:
         a, b = ms(r["playbackStartedAt"]), ms(r["playbackEndedAt"])
