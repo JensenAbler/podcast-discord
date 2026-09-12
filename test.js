@@ -5706,7 +5706,7 @@ async function runTests() {
         const markAsrPendingEvents = [];
         const markAsrCompleteEvents = [];
         let playCalled = false;
-        let transcriptSaved = false;
+        let transcriptSaved = null;
         let cooldownStarted = false;
         let rememberedTurn = false;
         bot.participantActivityVersion = new Map([[guildId, 0]]);
@@ -5757,8 +5757,8 @@ async function runTests() {
                 isPlaying: false,
                 queueLength: 0
             }),
-            saveTranscriptEntry: () => {
-                transcriptSaved = true;
+            saveTranscriptEntry: (_guildId, entry) => {
+                transcriptSaved = entry;
             }
         };
         bot.podcastGenerator = {
@@ -5793,8 +5793,10 @@ async function runTests() {
         if (staleRequeues.length !== 1 || staleRequeues[0].utterances[0]?.transcription !== 'first part of the thought') {
             throw new Error(`Stale direct response did not requeue the original flushed utterance: ${JSON.stringify(staleRequeues)}`);
         }
-        if (playCalled || transcriptSaved || cooldownStarted || rememberedTurn) {
-            throw new Error(`Stale direct response should not play, save transcript, remember history, or start cooldown: ${JSON.stringify({ playCalled, transcriptSaved, cooldownStarted, rememberedTurn })}`);
+        if (playCalled || transcriptSaved?.playbackStatus !== 'not_started' ||
+            transcriptSaved?.synthesisText !== 'This response should go stale.' ||
+            transcriptSaved?.transcription === transcriptSaved?.synthesisText || cooldownStarted || rememberedTurn) {
+            throw new Error(`Stale direct response should retain only an unplayed diagnostic record without history or cooldown: ${JSON.stringify({ playCalled, transcriptSaved, cooldownStarted, rememberedTurn })}`);
         }
         if (bot.directResponseInFlight.has(guildId)) {
             throw new Error('Stale direct response did not clear the in-flight marker');
@@ -6145,8 +6147,10 @@ async function runTests() {
         if (staleRequeues.length !== 1 || staleRequeues[0].utterances[0]?.transcription !== 'continuing right as playback starts') {
             throw new Error(`Stale response at playback start did not requeue the flushed utterance: ${JSON.stringify(staleRequeues)}`);
         }
-        if (playCalled || transcriptSaved || cooldownStarted || rememberedTurn) {
-            throw new Error(`Playback-start stale response should not play, save transcript, remember history, or start cooldown: ${JSON.stringify({ playCalled, transcriptSaved, cooldownStarted, rememberedTurn })}`);
+        if (playCalled || transcriptSaved?.playbackStatus !== 'not_started' ||
+            transcriptSaved?.synthesisText !== 'This response should go stale.' ||
+            transcriptSaved?.transcription === transcriptSaved?.synthesisText || cooldownStarted || rememberedTurn) {
+            throw new Error(`Playback-start stale response should retain only unplayed evidence without history or cooldown: ${JSON.stringify({ playCalled, transcriptSaved, cooldownStarted, rememberedTurn })}`);
         }
 
         console.log('  Idle checks, buffer flushes, and stale direct replies respect participant floor-taking');

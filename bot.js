@@ -1,4 +1,5 @@
 const { ConversationAdmission, assess } = require('./conversation-admission');
+const { captureSynthesisInput, deliveryRecord } = require('./speech-delivery');
 /**
  * Alpha-Clawd Discord Voice Bot
  * 
@@ -2498,6 +2499,7 @@ class AlphaClawdVoiceBot {
         capture.isStream = true;
 
         audio.once('error', (error) => {
+            capture.providerError = { stage: 'synthesis', message: error.message || String(error) };
             playbackAudio.destroy(error);
             recordingAudio.destroy(error);
         });
@@ -2518,6 +2520,13 @@ class AlphaClawdVoiceBot {
         });
         recordingAudio.once('close', settleCompletion);
 
+        audio.once('close', () => {
+            if (audio.readableEnded) return;
+            capture.providerError ||= { stage: 'synthesis', message: 'Audio stream closed before end' };
+            audio.unpipe(recordingAudio);
+            recordingAudio.destroy();
+            playbackAudio.destroy();
+        });
         audio.pipe(playbackAudio);
         audio.pipe(recordingAudio);
 
@@ -2636,6 +2645,7 @@ class AlphaClawdVoiceBot {
             playbackTiming,
             botAudioRecorded,
             ttsCompletedAt: capture.completedAt,
+            providerError: capture.providerError || null,
             playbackUnderrunDetected
         };
     }
@@ -6858,6 +6868,7 @@ class AlphaClawdVoiceBot {
             console.warn(`[Bot] Streaming generator settled with error during ${context}: ${err.message}`);
             return {
                 shouldRespond: response.shouldRespond,
+                providerError: { stage: 'generator', message: err.message || String(err) },
                 speech: '',
                 text: '',
                 chosenAngle: '',
@@ -7012,10 +7023,17 @@ class AlphaClawdVoiceBot {
         const quartzForResponse = this.voiceManager?.quartzBackchannels?.get(guildId);
         if (quartzForResponse) quartzForResponse.previewRun = response;
         this.stopBigBrainToolTone(guildId, 'host response starting');
+        let synthesisCapture = null;
+        let deliverySaved = false;
+        let deliveryError = null;
+        let deliveryFinalResponse = response;
+        let deliveryTiming = {};
+        let deliveryAttempted = false;
+        let deliveryTtsStartedAt = null;
+        const generatedAt = response.generatedAt || new Date().toISOString();
 
         try {
             const isStreaming = Boolean(response?.isStreaming && response.speechStream);
-            const generatedAt = response.generatedAt || new Date().toISOString();
             const previewText = isStreaming
                 ? '(streaming)'
                 : `${(response.speech || '').substring(0, 50)}...`;
@@ -7050,6 +7068,7 @@ class AlphaClawdVoiceBot {
                 // Preserve streaming generation/TTS; publish only actual spoken
                 // text once complete, never the generator's private reasoning.
                 response.completed.then(final => {
+                    deliveryFinalResponse = final;
                     if (quartzForResponse && !quartzForResponse.closed &&
                         quartzForResponse.previewRun === response &&
                         this.voiceManager?.quartzBackchannels?.get(guildId) === quartzForResponse) {
@@ -7058,8 +7077,9 @@ class AlphaClawdVoiceBot {
                 }).catch(() => {});
             }
             const ttsStartedAt = new Date().toISOString();
-            const speechSource = isStreaming ? response.speechStream : response.speech;
-            const audio = await this.synthesizeLiveTTS(speechSource, {
+            deliveryTtsStartedAt = ttsStartedAt;
+            synthesisCapture = captureSynthesisInput(isStreaming ? response.speechStream : response.speech);
+            const audio = await this.synthesizeLiveTTS(synthesisCapture.source, {
                 voiceId: this.voiceId
             });
             const ttsSetupCompletedAt = this.isReadableAudio(audio) ? null : new Date().toISOString();
@@ -7093,8 +7113,12 @@ class AlphaClawdVoiceBot {
             }
 
             this.markIdleDecisionHandled(guildId);
+            deliveryAttempted = true;
             const playbackResult = await this.playTtsAndRecord(guildId, audio, {
                 alphaPreview: response.speech || '',
+                onStart: timing => { deliveryTiming = { ...timing }; },
+                onFinish: timing => { deliveryTiming = { ...timing }; },
+                onError: (_error, timing) => { deliveryTiming = { ...timing }; },
                 preparePlaybackStart: async () => {
                     await this.preserveDirectResponseWhileUncertain(guildId, options, 'after handoff');
                 },
@@ -7131,19 +7155,26 @@ class AlphaClawdVoiceBot {
                 ? Math.max(0, playbackEndedMs - playbackStartedMs)
                 : 0;
 
-            // For the streaming path the LLM call may not be fully done
-            // when playback ends (Fish often outpaces Groq on the tail of
-            // a long response). Wait for the full output so transcript +
-            // history use the authoritative text and bigBrain values.
+            // Final generation supplies tool metadata; the independently
+            // captured synthesis input supplies the delivered transcript.
             let finalResponse = await this.settleGeneratorResponse(response, 'playback');
-
+            deliveryFinalResponse = finalResponse;
+            deliveryTiming = { ...playback.timing, ...playbackTiming };
             const playbackUnderrunDetected = playbackResult.playbackUnderrunDetected === true;
+            const delivery = deliveryRecord(synthesisCapture, {
+                timing: deliveryTiming, finalResponse, underrun: playbackUnderrunDetected,
+                providerError: playbackResult.providerError
+            });
+            const playbackIncomplete = delivery.playbackStatus !== 'completed';
+            // History and Live must see the synthesis input that completed
+            // playback, even if the provider failed after emitting speech.
+            if (!playbackIncomplete) finalResponse = {
+                ...finalResponse, speech: synthesisCapture.text, text: synthesisCapture.text
+            };
             const transcriptEntry = {
                 speaker: 'Alpha-Clawd',
                 speakerRole: 'host',
-                transcription: playbackUnderrunDetected
-                    ? '[Playback underrun: generated host response was not fully audible.]'
-                    : finalResponse.speech,
+                ...delivery,
                 timestamp: generatedAt,
                 generatedAt,
                 ttsStartedAt,
@@ -7153,11 +7184,6 @@ class AlphaClawdVoiceBot {
                 playbackEndedAt,
                 duration: playbackDuration
             };
-            if (playbackUnderrunDetected) {
-                transcriptEntry.generatedTranscription = finalResponse.speech;
-                transcriptEntry.playbackUnderrunDetected = true;
-                transcriptEntry.audioEvents = ['playback_underrun'];
-            }
             if (source) {
                 transcriptEntry.source = source;
             }
@@ -7178,16 +7204,17 @@ class AlphaClawdVoiceBot {
                 transcriptEntry.presentedAwarenessShelfItems = presentedAwarenessShelfItems;
             }
             this.voiceManager.saveTranscriptEntry(guildId, transcriptEntry);
+            deliverySaved = true;
             this.observeInternalThoughtTranscriptEntry(guildId, transcriptEntry);
             this.observeShowRunnerTranscriptEntry(guildId, transcriptEntry);
-            this.applyEpisodePlanResponse(guildId, finalResponse, {
+            if (!playbackIncomplete) this.applyEpisodePlanResponse(guildId, finalResponse, {
                 playbackStartedAt,
                 playbackEndedAt
             });
             this.resetConsecutiveGeneratorSilences(guildId);
 
-            if (playbackUnderrunDetected) {
-                console.warn('[Bot] Skipping generator history write for truncated host playback');
+            if (playbackIncomplete) {
+                console.warn('[Bot] Skipping generator history write for incomplete host playback');
             } else if (typeof options.rememberTranscript === 'string') {
                 const supplements = this.conversationAdmissions?.get(guildId)?.supplements || [];
                 const remembered = [options.rememberTranscript, ...supplements].join('\n');
@@ -7206,7 +7233,25 @@ class AlphaClawdVoiceBot {
             console.log(`[Bot] Direct generator playback complete (${source}), starting cooldown`);
             this.conversationBuffer.startCooldown();
             return { played: true, stale: false, finalResponse };
+        } catch (error) {
+            deliveryError = { stage: deliveryAttempted ? 'playback' : 'synthesis',
+                message: error.message || String(error) };
+            throw error;
         } finally {
+            // Preserve failures and discarded synthesis too; never fabricate a
+            // spoken transcript from a partially consumed or unplayed input.
+            if (synthesisCapture && !deliverySaved) {
+                this.voiceManager.saveTranscriptEntry(guildId, {
+                    speaker: 'Alpha-Clawd', speakerRole: 'host', source,
+                    timestamp: generatedAt, generatedAt,
+                    ttsStartedAt: deliveryTtsStartedAt,
+                    ...deliveryTiming,
+                    ...deliveryRecord(synthesisCapture, {
+                        timing: deliveryTiming, finalResponse: deliveryFinalResponse,
+                        providerError: deliveryError
+                    })
+                });
+            }
             if (quartzForResponse?.previewRun === response) quartzForResponse.previewRun = null;
             if (!alreadyInFlight) {
                 this.directResponseInFlight.delete(guildId);

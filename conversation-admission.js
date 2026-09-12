@@ -59,8 +59,10 @@ function assess(utterance, context = {}) {
     const liveMatch = context.liveMatch === true;
     const referenceText = context.previousText || context.liveText;
     const shifted = !!referenceText && script(text) !== script(referenceText);
-    const units = matchingTokens(text).length;
-    const scriptOutlier = shifted && units >= 4;
+    // Outlier detection uses the original units, including repetitions and
+    // fillers. Matching normalization is only for comparing recognizers.
+    const units = tokens(text).length;
+    const scriptOutlier = shifted && units > 0;
     // A recognizer emitting a sentence from a very short acoustic event also
     // needs lexical support. This tests transcription plausibility, not intent.
     const spanMs = Math.max(e?.speechSpanMs || 0, e?.voicedMs || 0);
@@ -84,7 +86,7 @@ function assess(utterance, context = {}) {
     if (continuation && brief) reasons.push('supported-continuation');
     if (shifted) reasons.push('script-change');
     if (echo) reasons.push('possible-host-echo');
-    if (scriptOutlier) reasons.push('substantial-script-change');
+    if (scriptOutlier) reasons.push('script-change-requires-corroboration');
     if (densityOutlier) reasons.push('text-audio-density-outlier');
     if (corroborationRequired && !corroborated) reasons.push('awaiting-live-corroboration');
     // Corroborated audible words are valid regardless of source or relevance.
@@ -96,7 +98,7 @@ function assess(utterance, context = {}) {
         effect: accepted ? responseEffect(text, context.pendingTexts) : 'none',
         reasons: reasons.length ? reasons : ['insufficient-evidence'],
         evidence: { liveMatch, liveMatchScore: context.liveMatchScore ?? null,
-            liveMatchUnits: context.liveMatchUnits ?? null,
+            liveMatchUnits: context.liveMatchUnits ?? null, outlierUnits: units,
             liveWindow: context.liveWindow || null, corroborationRequired,
             sustained, brief, density, shifted: !!shifted, echo: !!echo,
             acousticAvailable: !!e }

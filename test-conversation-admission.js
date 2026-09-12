@@ -61,7 +61,7 @@ test('brief supported acknowledgments survive without Live and language switches
     const brief = { voicedMs: 80, maxRunMs: 60, audioDurationMs: 500 };
     assert.equal(assess(utterance('yeah', brief)).status, 'accepted');
     assert.equal(assess(utterance('谢谢', brief), { previousText: 'English context' }).status, 'candidate');
-    assert.equal(assess(utterance('谢谢', strong), { previousText: 'English context' }).status, 'accepted');
+    assert.equal(assess(utterance('谢谢', strong), { previousText: 'English context' }).status, 'candidate');
     assert.equal(assess(utterance('a legitimate longer quiet continuation', brief), {
         previousText: 'the previous clause', gapMs: 500 }).status, 'accepted');
     assert.equal(assess(utterance('a longer hallucinated statement', weak)).status, 'candidate');
@@ -326,4 +326,29 @@ test('Live evidence covers a long utterance without allowing an unmatched oversi
     assert.equal(p.live.length, 2);
     assert.equal(agreement('word '.repeat(501) + 'unmatched', 'word'), false);
     assert.equal(agreement(Array.from({length: 501}, (_, i) => 'word' + i).join(' '), Array.from({length: 500}, (_, i) => 'word' + i).join(' ')), false);
+});
+
+test('short script outliers cannot bypass corroboration through repetitions or brevity', () => {
+    const { compareRecognition } = require('./conversation-admission');
+    for (const text of ['切，切，切。', '刘刘刘，刘德华。', '你们看。', '而且。', '我，我。', 'ああ。', 'ให้เหรอคะ?']) {
+        const context = { previousText: 'We are speaking English.' };
+        const candidate = assess(utterance(text), context);
+        assert.equal(candidate.status, 'candidate', text);
+        assert.equal(candidate.evidence.corroborationRequired, true, text);
+        const comparison = compareRecognition(text, text);
+        assert.equal(assess(utterance(text), { ...context, liveMatch: comparison.matched,
+            liveMatchScore: comparison.score }).status, 'accepted', text);
+    }
+    const text = '刘刘刘，刘德华。';
+    assert.equal(assess(utterance(text)).evidence.outlierUnits, 6);
+    assert.equal(compareRecognition(text, text).units, 3);
+});
+test('density outliers count repetitions while lexical matching can normalize them', () => {
+    const u = utterance('go go go go go go', { voicedMs: 250, maxRunMs: 250, speechSpanMs: 250 });
+    const candidate = assess(u, { previousText: 'English context' });
+    assert.equal(candidate.status, 'candidate');
+    assert.ok(candidate.reasons.includes('text-audio-density-outlier'));
+    assert.equal(assess(u, { previousText: 'English context', liveMatch: true, liveMatchScore: 1 }).status, 'accepted');
+    assert.equal(assess(utterance('yeah', { voicedMs: 80, maxRunMs: 60, speechSpanMs: 100 }),
+        { previousText: 'English context' }).status, 'accepted');
 });

@@ -233,7 +233,7 @@ class AudioTransmitter {
         this.currentResource = null;
 
         if (typeof stoppedPlayback?.options?.onFinish === 'function') {
-            stoppedPlayback.options.onFinish();
+            stoppedPlayback.options.onFinish({ interrupted: true });
         }
 
         for (const item of queuedItems) {

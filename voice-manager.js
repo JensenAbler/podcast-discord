@@ -647,6 +647,8 @@ class VoiceManager {
         const host = this.quartzBackchannels?.get(guildId);
         if (!host?.client?.started || host.closed) return;
         if (entry.admission?.status === 'candidate') return;
+        if (entry.speakerRole === 'host' &&
+            ['not_started', 'failed'].includes(entry.playbackStatus)) return;
         const text = entry.transcription || entry.text;
         if (!text) return;
         const alpha = entry.speakerRole === 'host';
@@ -774,8 +776,9 @@ class VoiceManager {
                         options.onStart(timing);
                     }
                 },
-                onFinish: () => {
+                onFinish: (result = {}) => {
                     timing.playbackEndedAt = new Date().toISOString();
+                    timing.playbackInterrupted = result.interrupted === true;
                     if (typeof options.onFinish === 'function') {
                         options.onFinish(timing);
                     }
@@ -1026,7 +1029,7 @@ class VoiceManager {
         const providerError = utterance.providerError || null;
         // Preserve forensic record of audio events (phantom mic-feedback
         // transcripts, etc.) even when normalized transcription is empty.
-        if (!transcriptionText && audioEvents.length === 0 && !providerError && !utterance.admission) return;
+        if (!transcriptionText && audioEvents.length === 0 && !providerError && !utterance.admission && !utterance.synthesisText && !utterance.playbackStatus) return;
 
         const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
         
@@ -1058,6 +1061,13 @@ class VoiceManager {
             source: utterance.source || null,
             fallbackReason: utterance.fallbackReason || null,
             providerError,
+            synthesisText: utterance.synthesisText ?? null,
+            synthesisInputComplete: utterance.synthesisInputComplete ?? null,
+            generatedTranscription: utterance.generatedTranscription ?? null,
+            playbackStatus: utterance.playbackStatus || null,
+            playbackInterrupted: utterance.playbackInterrupted ?? null,
+            playbackUnderrunDetected: utterance.playbackUnderrunDetected ?? null,
+            playbackErrorAt: utterance.playbackErrorAt || null,
             injectedAwarenessInjections: Array.isArray(utterance.injectedAwarenessInjections)
                 ? utterance.injectedAwarenessInjections.map((item) => ({
                     id: item.id || '',
