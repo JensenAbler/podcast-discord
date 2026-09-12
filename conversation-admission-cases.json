@@ -128,8 +128,8 @@
       "hostText": "the answer is seven"
     },
     "expected": {
-      "status": "candidate",
-      "effect": "none"
+      "status": "accepted",
+      "effect": "supersede"
     }
   },
   {

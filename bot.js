@@ -1719,15 +1719,9 @@ class AlphaClawdVoiceBot {
 
     admissionHostContext(guildId, utterance = {}) {
         const host = this.voiceManager?.quartzBackchannels?.get(guildId);
-        // A mixed Live transcript cannot establish which of several guests spoke.
-        const members = this.voiceManager?.connections?.get(guildId)?.joinConfig?.channelId;
-        const channel = members && this.client?.channels?.cache?.get(members);
-        const singleSpeaker = channel?.members
-            ? Array.from(channel.members.values()).filter(member => !member.user?.bot).length === 1
-            : false;
         const at = Date.parse(utterance.speechStartedAt);
         const playback = this.hostPlaybackState?.get(guildId);
-        return { singleSpeaker, hostText: playback?.text || host?.alphaPreview || '',
+        return { hostText: playback?.text || host?.alphaPreview || '',
             duringHostPlayback: Number.isFinite(at) && this.getHostPlaybackContext(guildId, at).duringHostPlayback };
     }
 

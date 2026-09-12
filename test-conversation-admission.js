@@ -67,19 +67,19 @@ test('brief supported acknowledgments survive without Live and language switches
     assert.equal(assess(utterance('a longer hallucinated statement', weak)).status, 'candidate');
 });
 
-test('agreement preserves word order and cannot supply participant identity in a group', () => {
+test('agreement preserves word order and corroborates audible words in group audio', () => {
     assert.equal(agreement('red blue green', 'green blue red'), false);
     const p = new ConversationAdmission(), u = utterance('Can you explain?', weak);
     p.observeLive({ text: u.transcription, audioStartedAt: Date.parse(u.speechStartedAt),
         audioEndedAt: Date.parse(u.speechEndedAt) });
-    assert.equal(p.evaluate(u, { singleSpeaker: false }).status, 'candidate');
+    assert.equal(p.evaluate(u, { singleSpeaker: false }).status, 'accepted');
     assert.equal(p.evaluate(u, { singleSpeaker: true }).status, 'accepted');
     assert.equal(assess({ ...u, providerError: {} }, { liveMatch: true }).status, 'candidate');
 });
 
-test('possible host echo plus weak audio stays uncertain even with Live agreement', () => {
+test('corroborated echo is admitted for the model to interpret', () => {
     assert.equal(assess(utterance('the answer is seven', weak), {
-        duringHostPlayback: true, hostText: 'the answer is seven', liveMatch: true }).status, 'candidate');
+        duringHostPlayback: true, hostText: 'the answer is seven', liveMatch: true }).status, 'accepted');
 });
 
 test('acknowledgments and repeated requests preserve; corrections and new details supersede', () => {
@@ -242,4 +242,88 @@ test('receiver evidence reaches admission before speaker history; accepted speec
         assert.equal(r.speakerTracker.history.length, supported ? 1 : 0);
         assert.equal(b.conversationBuffer.entries.length, supported ? 1 : 0);
     }
+});
+
+test('approximate matching tolerates fillers, repetitions, punctuation and modest omissions', () => {
+    assert.equal(agreement("We're we're trying to filter out.", "Uh, we're trying to filter out"), true);
+    assert.equal(agreement("Hey Alpha, how's it going?", "Alpha, how's it going"), true);
+    assert.equal(agreement("So it may I don't know it might not be the best test but",
+        "So it main I don't know it might not be the best test but"), true);
+    assert.equal(agreement('yes', 'yesterday'), false);
+    assert.equal(agreement('red blue green', 'green blue red'), false);
+    assert.equal(agreement('Um', 'Uh'), false, 'filler alone cannot corroborate an utterance');
+});
+
+test('substantial script outliers need strong lexical corroboration despite strong sound', () => {
+    for (const text of ['还曾经考取的最高荣誉。', '今天我们讨论另外一个问题。', 'Это совершенно другое предложение.', 'هذه جملة مختلفة تماما.']) {
+        const u = utterance(text);
+        assert.equal(assess(u, { previousText: 'We were speaking English.' }).status, 'candidate', text);
+        assert.equal(assess(u, { previousText: 'We were speaking English.', liveMatch: true, liveMatchScore: 1 }).status, 'accepted');
+        assert.equal(assess(u, { previousText: 'We were speaking English.', liveMatch: true, liveMatchScore: 0.8 }).status, 'candidate');
+    }
+    assert.equal(assess(utterance('今天我们讨论另外一个问题。', { ...strong, voicedMs: 1800 }),
+        { previousText: '我们一直用中文交谈。' }).status, 'accepted', 'Chinese conversation has no blanket veto');
+});
+
+test('Chinese lexical agreement compares characters, not an entire sentence as one token', () => {
+    assert.equal(agreement('今天我们讨论另外一个问题。', '今天我们讨论另外一个问题'), true);
+    assert.equal(agreement('今天我们讨论另外一个问题。', '昨天他们去了遥远的地方'), false);
+});
+
+test('a large amount of text from a tiny acoustic event needs corroboration', () => {
+    const u = utterance('This is a very long sentence allegedly spoken in a fraction of a second',
+        { voicedMs: 260, speechSpanMs: 300, maxRunMs: 260, audioDurationMs: 2300 });
+    assert.equal(assess(u, { previousText: 'ordinary English' }).status, 'candidate');
+    assert.equal(assess(u, { previousText: 'ordinary English', liveMatch: true, liveMatchScore: 1 }).status, 'accepted');
+});
+
+test('delayed Live fragments promote a script outlier once without delaying ordinary answers', async () => {
+    const b = bot(), start = Date.now() - 3000;
+    b.getConversationAdmission('g').recent.set('a', utterance('An English conversation', strong, start - 2000));
+    const u = utterance('今天我们讨论另外一个问题。', { ...strong, voicedMs: 1600 }, start);
+    acoustic(b, u);
+    await b.handleParticipantUtterance('g', u);
+    assert.equal(u.admission.status, 'candidate');
+    assert.equal(b.didParticipantResumeSince('g', 0), false);
+    const event = { text: '今天我们讨论另外一个问题。',
+        audioStartedAt: Date.parse(u.speechEndedAt) + 600,
+        audioEndedAt: Date.parse(u.speechEndedAt) + 1000 };
+    b.observeAdmissionLive('g', event);
+    b.observeAdmissionLive('g', event);
+    assert.equal(b.conversationBuffer.entries.length, 1);
+    assert.equal(b.didParticipantResumeSince('g', 0), true);
+});
+
+test('agreement outside the bounded audio window cannot corroborate a current outlier', () => {
+    const p = new ConversationAdmission(), u = utterance('今天我们讨论另外一个问题。');
+    p.recent.set('a', utterance('English context', strong, Date.now() - 5000));
+    p.observeLive({ text: u.transcription, audioStartedAt: Date.parse(u.speechStartedAt) - 20000,
+        audioEndedAt: Date.parse(u.speechStartedAt) - 18000 });
+    assert.equal(p.evaluate(u, {}).status, 'candidate');
+});
+
+test('background-origin metadata does not veto corroborated words', () => {
+    assert.equal(assess(utterance('The television says tomorrow will be sunny.', weak), {
+        liveMatch: true, liveMatchScore: 1, backgroundSpeech: true }).status, 'accepted');
+});
+
+test('latest episode replay gains corroboration without changing admitted speech or using future text', () => {
+    const { replayEpisode } = require('./replay-live-match');
+    const fixture = require('./conversation-admission-episode-case.json');
+    const rows = replayEpisode(fixture);
+    assert.equal(rows.filter(r => r.originalLiveMatch).length, 0);
+    assert.equal(rows.filter(r => r.liveMatch).length, 8);
+    assert.equal(rows.filter(r => r.eventualLiveMatch).length, 9);
+    assert.ok(rows.every(r => r.status === r.expectedStatus));
+    assert.equal(rows[0].liveMatch, false, 'last greeting fragment had not arrived yet');
+    assert.equal(rows[0].eventualLiveMatch, true);
+});
+
+test('Live evidence covers a long utterance without allowing an unmatched oversized tail', () => {
+    const p = new ConversationAdmission();
+    p.observeLive({ text: 'first words', audioStartedAt: 1000, audioEndedAt: 1200 });
+    p.observeLive({ text: ' last words', audioStartedAt: 61000, audioEndedAt: 61200 });
+    assert.equal(p.live.length, 2);
+    assert.equal(agreement('word '.repeat(501) + 'unmatched', 'word'), false);
+    assert.equal(agreement(Array.from({length: 501}, (_, i) => 'word' + i).join(' '), Array.from({length: 500}, (_, i) => 'word' + i).join(' ')), false);
 });

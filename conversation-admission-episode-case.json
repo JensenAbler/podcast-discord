@@ -1,0 +1,668 @@
+{
+  "episode": "episode-2026-09-12T17-21-26-958Z",
+  "provenance": "Recorded recognizer outputs and arrival times; not audio-verified labels. Admission expectations preserve the observed accepted conversation.",
+  "utterances": [
+    {
+      "speechStartedAt": "2026-09-12T17:21:40.210Z",
+      "speechEndedAt": "2026-09-12T17:21:41.531Z",
+      "asrStartedAt": "2026-09-12T17:21:42.140Z",
+      "asrCompletedAt": "2026-09-12T17:21:42.370Z",
+      "acousticEvidence": {
+        "voicedMs": 1180,
+        "speechSpanMs": 1341,
+        "audioDurationMs": 1820,
+        "maxRunMs": 660,
+        "speakingFrames": 59,
+        "totalFrames": 91
+      },
+      "userId": "guest",
+      "transcription": "Hey Alpha, how's it going?",
+      "expectedStatus": "accepted",
+      "originalLiveMatch": false
+    },
+    {
+      "speechStartedAt": "2026-09-12T17:21:51.391Z",
+      "speechEndedAt": "2026-09-12T17:21:54.242Z",
+      "asrStartedAt": "2026-09-12T17:21:54.823Z",
+      "asrCompletedAt": "2026-09-12T17:21:55.403Z",
+      "acousticEvidence": {
+        "voicedMs": 2480,
+        "speechSpanMs": 2871,
+        "audioDurationMs": 3380,
+        "maxRunMs": 700,
+        "speakingFrames": 124,
+        "totalFrames": 169
+      },
+      "userId": "guest",
+      "transcription": "We're testing some new improvements that we made to you.",
+      "expectedStatus": "accepted",
+      "originalLiveMatch": false
+    },
+    {
+      "speechStartedAt": "2026-09-12T17:22:04.744Z",
+      "speechEndedAt": "2026-09-12T17:22:06.364Z",
+      "asrStartedAt": "2026-09-12T17:22:06.983Z",
+      "asrCompletedAt": "2026-09-12T17:22:07.281Z",
+      "acousticEvidence": {
+        "voicedMs": 1120,
+        "speechSpanMs": 1640,
+        "audioDurationMs": 2180,
+        "maxRunMs": 440,
+        "speakingFrames": 56,
+        "totalFrames": 109
+      },
+      "userId": "guest",
+      "transcription": "Basically.",
+      "expectedStatus": "accepted",
+      "originalLiveMatch": false
+    },
+    {
+      "speechStartedAt": "2026-09-12T17:22:07.526Z",
+      "speechEndedAt": "2026-09-12T17:22:10.025Z",
+      "asrStartedAt": "2026-09-12T17:22:10.444Z",
+      "asrCompletedAt": "2026-09-12T17:22:10.699Z",
+      "acousticEvidence": {
+        "voicedMs": 1960,
+        "speechSpanMs": 2519,
+        "audioDurationMs": 2860,
+        "maxRunMs": 660,
+        "speakingFrames": 98,
+        "totalFrames": 143
+      },
+      "userId": "guest",
+      "transcription": "We're we're trying to filter out.",
+      "expectedStatus": "accepted",
+      "originalLiveMatch": false
+    },
+    {
+      "speechStartedAt": "2026-09-12T17:22:10.764Z",
+      "speechEndedAt": "2026-09-12T17:22:14.306Z",
+      "asrStartedAt": "2026-09-12T17:22:14.905Z",
+      "asrCompletedAt": "2026-09-12T17:22:15.159Z",
+      "acousticEvidence": {
+        "voicedMs": 2940,
+        "speechSpanMs": 3562,
+        "audioDurationMs": 4100,
+        "maxRunMs": 680,
+        "speakingFrames": 147,
+        "totalFrames": 205
+      },
+      "userId": "guest",
+      "transcription": "Meaningless noise that comes through my end.",
+      "expectedStatus": "accepted",
+      "originalLiveMatch": false
+    },
+    {
+      "speechStartedAt": "2026-09-12T17:22:26.335Z",
+      "speechEndedAt": "2026-09-12T17:22:33.917Z",
+      "asrStartedAt": "2026-09-12T17:22:34.537Z",
+      "asrCompletedAt": "2026-09-12T17:22:35.019Z",
+      "acousticEvidence": {
+        "voicedMs": 6020,
+        "speechSpanMs": 7602,
+        "audioDurationMs": 8060.000000000001,
+        "maxRunMs": 940,
+        "speakingFrames": 301,
+        "totalFrames": 403
+      },
+      "userId": "guest",
+      "transcription": "Uh well, this conversation is going pretty well, although it's not the noisiest environment we've ever tested it in. Um.",
+      "expectedStatus": "accepted",
+      "originalLiveMatch": false
+    },
+    {
+      "speechStartedAt": "2026-09-12T17:22:34.849Z",
+      "speechEndedAt": "2026-09-12T17:22:37.770Z",
+      "asrStartedAt": "2026-09-12T17:22:38.359Z",
+      "asrCompletedAt": "2026-09-12T17:22:38.883Z",
+      "acousticEvidence": {
+        "voicedMs": 2260,
+        "speechSpanMs": 2941,
+        "audioDurationMs": 3440,
+        "maxRunMs": 560,
+        "speakingFrames": 113,
+        "totalFrames": 172
+      },
+      "userId": "guest",
+      "transcription": "So it may—I don't know—it might not be the best test, but.",
+      "expectedStatus": "accepted",
+      "originalLiveMatch": false
+    },
+    {
+      "speechStartedAt": "2026-09-12T17:22:38.684Z",
+      "speechEndedAt": "2026-09-12T17:22:39.194Z",
+      "asrStartedAt": "2026-09-12T17:22:39.819Z",
+      "asrCompletedAt": "2026-09-12T17:22:39.970Z",
+      "acousticEvidence": {
+        "voicedMs": 540,
+        "speechSpanMs": 530,
+        "audioDurationMs": 1100,
+        "maxRunMs": 540,
+        "speakingFrames": 27,
+        "totalFrames": 55
+      },
+      "userId": "guest",
+      "transcription": "",
+      "expectedStatus": "candidate",
+      "originalLiveMatch": false
+    },
+    {
+      "speechStartedAt": "2026-09-12T17:22:39.936Z",
+      "speechEndedAt": "2026-09-12T17:22:45.430Z",
+      "asrStartedAt": "2026-09-12T17:22:46.012Z",
+      "asrCompletedAt": "2026-09-12T17:22:46.705Z",
+      "acousticEvidence": {
+        "voicedMs": 4500,
+        "speechSpanMs": 5514,
+        "audioDurationMs": 6040,
+        "maxRunMs": 900,
+        "speakingFrames": 225,
+        "totalFrames": 302
+      },
+      "userId": "guest",
+      "transcription": "It's data, and we're gonna feed it back in and see what happens if we try to improve it more.",
+      "expectedStatus": "accepted",
+      "originalLiveMatch": false
+    },
+    {
+      "speechStartedAt": "2026-09-12T17:23:00.091Z",
+      "speechEndedAt": "2026-09-12T17:23:02.405Z",
+      "asrStartedAt": "2026-09-12T17:23:02.999Z",
+      "asrCompletedAt": "2026-09-12T17:23:03.240Z",
+      "acousticEvidence": {
+        "voicedMs": 1500,
+        "speechSpanMs": 2334,
+        "audioDurationMs": 2860,
+        "maxRunMs": 420,
+        "speakingFrames": 75,
+        "totalFrames": 143
+      },
+      "userId": "guest",
+      "transcription": "Okay. Yeah. See you in the next one.",
+      "expectedStatus": "accepted",
+      "originalLiveMatch": false
+    }
+  ],
+  "live": [
+    {
+      "text": " Alpha",
+      "audioStartedAt": 1789233701399,
+      "audioEndedAt": 1789233701605,
+      "observedAt": "2026-09-12T17:21:42.038Z"
+    },
+    {
+      "text": ", how's",
+      "audioStartedAt": 1789233701605,
+      "audioEndedAt": 1789233701816,
+      "observedAt": "2026-09-12T17:21:42.216Z"
+    },
+    {
+      "text": " it going",
+      "audioStartedAt": 1789233701817,
+      "audioEndedAt": 1789233702024,
+      "observedAt": "2026-09-12T17:21:42.375Z"
+    },
+    {
+      "text": " Uh",
+      "audioStartedAt": 1789233711875,
+      "audioEndedAt": 1789233712086,
+      "observedAt": "2026-09-12T17:21:52.475Z"
+    },
+    {
+      "text": ", we're",
+      "audioStartedAt": 1789233712085,
+      "audioEndedAt": 1789233712289,
+      "observedAt": "2026-09-12T17:21:52.620Z"
+    },
+    {
+      "text": " testing",
+      "audioStartedAt": 1789233712700,
+      "audioEndedAt": 1789233712908,
+      "observedAt": "2026-09-12T17:21:53.274Z"
+    },
+    {
+      "text": " some",
+      "audioStartedAt": 1789233712909,
+      "audioEndedAt": 1789233713115,
+      "observedAt": "2026-09-12T17:21:53.497Z"
+    },
+    {
+      "text": " new",
+      "audioStartedAt": 1789233713115,
+      "audioEndedAt": 1789233713319,
+      "observedAt": "2026-09-12T17:21:53.628Z"
+    },
+    {
+      "text": " improvements that",
+      "audioStartedAt": 1789233713934,
+      "audioEndedAt": 1789233714136,
+      "observedAt": "2026-09-12T17:21:54.552Z"
+    },
+    {
+      "text": " we",
+      "audioStartedAt": 1789233714137,
+      "audioEndedAt": 1789233714345,
+      "observedAt": "2026-09-12T17:21:54.695Z"
+    },
+    {
+      "text": " made",
+      "audioStartedAt": 1789233714346,
+      "audioEndedAt": 1789233714554,
+      "observedAt": "2026-09-12T17:21:54.877Z"
+    },
+    {
+      "text": " to",
+      "audioStartedAt": 1789233714554,
+      "audioEndedAt": 1789233714756,
+      "observedAt": "2026-09-12T17:21:55.089Z"
+    },
+    {
+      "text": " you",
+      "audioStartedAt": 1789233714757,
+      "audioEndedAt": 1789233714961,
+      "observedAt": "2026-09-12T17:21:55.279Z"
+    },
+    {
+      "text": " Um",
+      "audioStartedAt": 1789233725881,
+      "audioEndedAt": 1789233726085,
+      "observedAt": "2026-09-12T17:22:06.374Z"
+    },
+    {
+      "text": ", basically",
+      "audioStartedAt": 1789233726700,
+      "audioEndedAt": 1789233726907,
+      "observedAt": "2026-09-12T17:22:07.201Z"
+    },
+    {
+      "text": " Uh",
+      "audioStartedAt": 1789233728349,
+      "audioEndedAt": 1789233728552,
+      "observedAt": "2026-09-12T17:22:08.850Z"
+    },
+    {
+      "text": ", we're",
+      "audioStartedAt": 1789233729375,
+      "audioEndedAt": 1789233729577,
+      "observedAt": "2026-09-12T17:22:09.925Z"
+    },
+    {
+      "text": " trying to",
+      "audioStartedAt": 1789233729578,
+      "audioEndedAt": 1789233729779,
+      "observedAt": "2026-09-12T17:22:10.122Z"
+    },
+    {
+      "text": " filter",
+      "audioStartedAt": 1789233729986,
+      "audioEndedAt": 1789233730191,
+      "observedAt": "2026-09-12T17:22:10.633Z"
+    },
+    {
+      "text": " out",
+      "audioStartedAt": 1789233730396,
+      "audioEndedAt": 1789233730600,
+      "observedAt": "2026-09-12T17:22:11.498Z"
+    },
+    {
+      "text": " Um",
+      "audioStartedAt": 1789233731838,
+      "audioEndedAt": 1789233732041,
+      "observedAt": "2026-09-12T17:22:12.305Z"
+    },
+    {
+      "text": ", meaningless",
+      "audioStartedAt": 1789233732451,
+      "audioEndedAt": 1789233732655,
+      "observedAt": "2026-09-12T17:22:12.899Z"
+    },
+    {
+      "text": " noise that",
+      "audioStartedAt": 1789233733070,
+      "audioEndedAt": 1789233733273,
+      "observedAt": "2026-09-12T17:22:13.631Z"
+    },
+    {
+      "text": " comes",
+      "audioStartedAt": 1789233733885,
+      "audioEndedAt": 1789233734089,
+      "observedAt": "2026-09-12T17:22:14.363Z"
+    },
+    {
+      "text": " through",
+      "audioStartedAt": 1789233734295,
+      "audioEndedAt": 1789233734507,
+      "observedAt": "2026-09-12T17:22:14.821Z"
+    },
+    {
+      "text": " my",
+      "audioStartedAt": 1789233734508,
+      "audioEndedAt": 1789233734715,
+      "observedAt": "2026-09-12T17:22:14.963Z"
+    },
+    {
+      "text": " end",
+      "audioStartedAt": 1789233734920,
+      "audioEndedAt": 1789233735121,
+      "observedAt": "2026-09-12T17:22:15.583Z"
+    },
+    {
+      "text": " Uh",
+      "audioStartedAt": 1789233747593,
+      "audioEndedAt": 1789233747796,
+      "observedAt": "2026-09-12T17:22:28.085Z"
+    },
+    {
+      "text": ", well",
+      "audioStartedAt": 1789233747797,
+      "audioEndedAt": 1789233748002,
+      "observedAt": "2026-09-12T17:22:28.320Z"
+    },
+    {
+      "text": ", this",
+      "audioStartedAt": 1789233748004,
+      "audioEndedAt": 1789233748216,
+      "observedAt": "2026-09-12T17:22:28.468Z"
+    },
+    {
+      "text": " conversation",
+      "audioStartedAt": 1789233748827,
+      "audioEndedAt": 1789233749036,
+      "observedAt": "2026-09-12T17:22:29.300Z"
+    },
+    {
+      "text": " is",
+      "audioStartedAt": 1789233749036,
+      "audioEndedAt": 1789233749240,
+      "observedAt": "2026-09-12T17:22:29.506Z"
+    },
+    {
+      "text": " going",
+      "audioStartedAt": 1789233749239,
+      "audioEndedAt": 1789233749443,
+      "observedAt": "2026-09-12T17:22:29.682Z"
+    },
+    {
+      "text": " pretty",
+      "audioStartedAt": 1789233749443,
+      "audioEndedAt": 1789233749648,
+      "observedAt": "2026-09-12T17:22:30.013Z"
+    },
+    {
+      "text": " well",
+      "audioStartedAt": 1789233750058,
+      "audioEndedAt": 1789233750261,
+      "observedAt": "2026-09-12T17:22:30.493Z"
+    },
+    {
+      "text": ", although",
+      "audioStartedAt": 1789233750668,
+      "audioEndedAt": 1789233750870,
+      "observedAt": "2026-09-12T17:22:31.130Z"
+    },
+    {
+      "text": " it's",
+      "audioStartedAt": 1789233750869,
+      "audioEndedAt": 1789233751072,
+      "observedAt": "2026-09-12T17:22:31.336Z"
+    },
+    {
+      "text": " not the",
+      "audioStartedAt": 1789233751072,
+      "audioEndedAt": 1789233751275,
+      "observedAt": "2026-09-12T17:22:31.534Z"
+    },
+    {
+      "text": " noisiest",
+      "audioStartedAt": 1789233751680,
+      "audioEndedAt": 1789233751882,
+      "observedAt": "2026-09-12T17:22:32.129Z"
+    },
+    {
+      "text": " environment",
+      "audioStartedAt": 1789233752094,
+      "audioEndedAt": 1789233752297,
+      "observedAt": "2026-09-12T17:22:32.562Z"
+    },
+    {
+      "text": " we've",
+      "audioStartedAt": 1789233752297,
+      "audioEndedAt": 1789233752500,
+      "observedAt": "2026-09-12T17:22:32.767Z"
+    },
+    {
+      "text": " ever",
+      "audioStartedAt": 1789233752499,
+      "audioEndedAt": 1789233752706,
+      "observedAt": "2026-09-12T17:22:32.927Z"
+    },
+    {
+      "text": " tested",
+      "audioStartedAt": 1789233752911,
+      "audioEndedAt": 1789233753116,
+      "observedAt": "2026-09-12T17:22:33.387Z"
+    },
+    {
+      "text": " it in",
+      "audioStartedAt": 1789233753116,
+      "audioEndedAt": 1789233753320,
+      "observedAt": "2026-09-12T17:22:33.545Z"
+    },
+    {
+      "text": " Um",
+      "audioStartedAt": 1789233754358,
+      "audioEndedAt": 1789233754577,
+      "observedAt": "2026-09-12T17:22:34.779Z"
+    },
+    {
+      "text": " So it",
+      "audioStartedAt": 1789233755389,
+      "audioEndedAt": 1789233755594,
+      "observedAt": "2026-09-12T17:22:35.846Z"
+    },
+    {
+      "text": " main",
+      "audioStartedAt": 1789233755595,
+      "audioEndedAt": 1789233755810,
+      "observedAt": "2026-09-12T17:22:36.042Z"
+    },
+    {
+      "text": " I don't",
+      "audioStartedAt": 1789233756424,
+      "audioEndedAt": 1789233756632,
+      "observedAt": "2026-09-12T17:22:36.897Z"
+    },
+    {
+      "text": " know",
+      "audioStartedAt": 1789233756633,
+      "audioEndedAt": 1789233756836,
+      "observedAt": "2026-09-12T17:22:37.081Z"
+    },
+    {
+      "text": ", it",
+      "audioStartedAt": 1789233756836,
+      "audioEndedAt": 1789233757040,
+      "observedAt": "2026-09-12T17:22:37.272Z"
+    },
+    {
+      "text": " might",
+      "audioStartedAt": 1789233757040,
+      "audioEndedAt": 1789233757242,
+      "observedAt": "2026-09-12T17:22:37.555Z"
+    },
+    {
+      "text": " not be",
+      "audioStartedAt": 1789233757244,
+      "audioEndedAt": 1789233757447,
+      "observedAt": "2026-09-12T17:22:37.679Z"
+    },
+    {
+      "text": " the",
+      "audioStartedAt": 1789233757448,
+      "audioEndedAt": 1789233757652,
+      "observedAt": "2026-09-12T17:22:37.871Z"
+    },
+    {
+      "text": " best",
+      "audioStartedAt": 1789233757653,
+      "audioEndedAt": 1789233757856,
+      "observedAt": "2026-09-12T17:22:38.044Z"
+    },
+    {
+      "text": " test",
+      "audioStartedAt": 1789233758059,
+      "audioEndedAt": 1789233758263,
+      "observedAt": "2026-09-12T17:22:38.609Z"
+    },
+    {
+      "text": ", but",
+      "audioStartedAt": 1789233758264,
+      "audioEndedAt": 1789233758468,
+      "observedAt": "2026-09-12T17:22:38.767Z"
+    },
+    {
+      "text": " Um",
+      "audioStartedAt": 1789233759686,
+      "audioEndedAt": 1789233759890,
+      "observedAt": "2026-09-12T17:22:40.130Z"
+    },
+    {
+      "text": " It's",
+      "audioStartedAt": 1789233760500,
+      "audioEndedAt": 1789233760701,
+      "observedAt": "2026-09-12T17:22:40.904Z"
+    },
+    {
+      "text": " data",
+      "audioStartedAt": 1789233760905,
+      "audioEndedAt": 1789233761107,
+      "observedAt": "2026-09-12T17:22:41.297Z"
+    },
+    {
+      "text": ". And",
+      "audioStartedAt": 1789233761929,
+      "audioEndedAt": 1789233762132,
+      "observedAt": "2026-09-12T17:22:42.363Z"
+    },
+    {
+      "text": " we're",
+      "audioStartedAt": 1789233762132,
+      "audioEndedAt": 1789233762335,
+      "observedAt": "2026-09-12T17:22:42.620Z"
+    },
+    {
+      "text": " gonna",
+      "audioStartedAt": 1789233762335,
+      "audioEndedAt": 1789233762539,
+      "observedAt": "2026-09-12T17:22:42.823Z"
+    },
+    {
+      "text": " feed",
+      "audioStartedAt": 1789233762540,
+      "audioEndedAt": 1789233762745,
+      "observedAt": "2026-09-12T17:22:43.003Z"
+    },
+    {
+      "text": " it",
+      "audioStartedAt": 1789233762747,
+      "audioEndedAt": 1789233762950,
+      "observedAt": "2026-09-12T17:22:43.241Z"
+    },
+    {
+      "text": " back",
+      "audioStartedAt": 1789233762950,
+      "audioEndedAt": 1789233763154,
+      "observedAt": "2026-09-12T17:22:43.394Z"
+    },
+    {
+      "text": " in",
+      "audioStartedAt": 1789233763155,
+      "audioEndedAt": 1789233763370,
+      "observedAt": "2026-09-12T17:22:43.565Z"
+    },
+    {
+      "text": " and",
+      "audioStartedAt": 1789233763574,
+      "audioEndedAt": 1789233763782,
+      "observedAt": "2026-09-12T17:22:43.963Z"
+    },
+    {
+      "text": " see",
+      "audioStartedAt": 1789233763988,
+      "audioEndedAt": 1789233764196,
+      "observedAt": "2026-09-12T17:22:44.431Z"
+    },
+    {
+      "text": " what",
+      "audioStartedAt": 1789233764196,
+      "audioEndedAt": 1789233764402,
+      "observedAt": "2026-09-12T17:22:44.599Z"
+    },
+    {
+      "text": " happens",
+      "audioStartedAt": 1789233764815,
+      "audioEndedAt": 1789233765028,
+      "observedAt": "2026-09-12T17:22:45.247Z"
+    },
+    {
+      "text": " if we",
+      "audioStartedAt": 1789233765028,
+      "audioEndedAt": 1789233765230,
+      "observedAt": "2026-09-12T17:22:45.410Z"
+    },
+    {
+      "text": " try",
+      "audioStartedAt": 1789233765432,
+      "audioEndedAt": 1789233765637,
+      "observedAt": "2026-09-12T17:22:45.839Z"
+    },
+    {
+      "text": " improve it",
+      "audioStartedAt": 1789233765839,
+      "audioEndedAt": 1789233766043,
+      "observedAt": "2026-09-12T17:22:46.255Z"
+    },
+    {
+      "text": " more",
+      "audioStartedAt": 1789233766246,
+      "audioEndedAt": 1789233766457,
+      "observedAt": "2026-09-12T17:22:46.665Z"
+    },
+    {
+      "text": " Okay",
+      "audioStartedAt": 1789233781367,
+      "audioEndedAt": 1789233781569,
+      "observedAt": "2026-09-12T17:23:01.719Z"
+    },
+    {
+      "text": ", yeah,",
+      "audioStartedAt": 1789233782200,
+      "audioEndedAt": 1789233782405,
+      "observedAt": "2026-09-12T17:23:02.684Z"
+    },
+    {
+      "text": " uh, see",
+      "audioStartedAt": 1789233782405,
+      "audioEndedAt": 1789233782610,
+      "observedAt": "2026-09-12T17:23:02.834Z"
+    },
+    {
+      "text": " you in the",
+      "audioStartedAt": 1789233782610,
+      "audioEndedAt": 1789233782819,
+      "observedAt": "2026-09-12T17:23:03.004Z"
+    },
+    {
+      "text": " next",
+      "audioStartedAt": 1789233782818,
+      "audioEndedAt": 1789233783028,
+      "observedAt": "2026-09-12T17:23:03.180Z"
+    },
+    {
+      "text": " one",
+      "audioStartedAt": 1789233783230,
+      "audioEndedAt": 1789233783431,
+      "observedAt": "2026-09-12T17:23:03.739Z"
+    }
+  ]
+}
