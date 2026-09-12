@@ -1,3 +1,4 @@
+const { LiveTranscriptClock } = require('./live-transcript-clock');
 const WebSocket = require('ws');
 const { LIVE_ALPHA_PROMPT, LIVE_ENVIRONMENT_POLICY } = require('./live-turn-controller');
 const { RealtimePcmMixer } = require('./realtime-pcm-mixer');
@@ -25,6 +26,7 @@ class GptLiveBackchannel {
         this.turnControl = options.turnControl === true;
         this.onDelegation = options.onDelegation || (() => {});
         this.onInputTranscript = options.onInputTranscript || (() => {});
+        this.transcriptClock = new LiveTranscriptClock();
         this.environment = 'listening';
         this.environmentRevision = 0;
         this.socketFactory = options.socketFactory || ((url, config) => new WebSocket(url, config));
@@ -48,14 +50,6 @@ class GptLiveBackchannel {
                 if (this.started && !this.closing) {
                     // Continuous input (including silence) drives Live's own timing.
                     const sent = this.send({ type: 'session.input_audio.append', audio: frame.toString('base64') });
-                    if (sent) {
-                        this.inputAudioMs = this.inputAudioMs || 0;
-                        this.inputClock = this.inputClock || [];
-                        const durationMs = frame.length / 32;
-                        this.inputClock.push({ startMs: this.inputAudioMs, endMs: this.inputAudioMs + durationMs, at: Date.now() - durationMs });
-                        this.inputAudioMs += durationMs;
-                        if (this.inputClock.length > 2000) this.inputClock.shift();
-                    }
                     this.audioDiagnostics.record(sent ? 'inputSent' : 'inputSendFailed', frame, 16000, 1);
                 }
             }
@@ -119,11 +113,8 @@ class GptLiveBackchannel {
                         this.onInstructionsAccepted(event.client_event_id);
                         this.onLog('Context accepted: ' + event.client_event_id);
                     } else if (event.type === 'session.input_transcript.delta') {
-                        const anchor = this.inputClock?.find(frame => frame.startMs <= event.start_ms && frame.endMs > event.start_ms);
-                        const endAnchor = this.inputClock?.find(frame => frame.startMs < event.end_ms && frame.endMs >= event.end_ms);
                         this.onInputTranscript({ text: event.delta, startMs: event.start_ms, endMs: event.end_ms,
-                            audioStartedAt: anchor ? anchor.at + event.start_ms - anchor.startMs : null,
-                            audioEndedAt: endAnchor ? endAnchor.at + event.end_ms - endAnchor.startMs : null });
+                            ...this.transcriptClock.map(event.start_ms, event.end_ms) });
                     } else if (event.type === 'session.output_audio.delta') {
                         // Never retain muted audio for later replay.
                         const pcm = Buffer.from(event.delta, 'base64');
@@ -131,6 +122,7 @@ class GptLiveBackchannel {
                         if (this.started && !this.blocked) this.onAudio(pcm);
                         else this.audioDiagnostics.record('outputBlocked', pcm, 16000, 1);
                     } else if (event.type === 'session.output_transcript.delta') {
+                        this.transcriptClock.map(event.start_ms, event.end_ms);
                         this.onTranscript({
                             text: event.delta, startMs: event.start_ms, endMs: event.end_ms,
                             playbackBlocked: this.blocked, sessionId: this.sessionId

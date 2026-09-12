@@ -390,19 +390,14 @@ test('consumption diagnostics count packets only after the resource reads them',
     await t.p.stop();
 });
 
-test('Live input transcript clocks map audio offsets rather than late event arrival time', async () => {
+test('Live uses session transcript timing even when offsets exceed microphone samples', async () => {
     const t = transport(); await connected(t);
     let observed;
     t.client.onInputTranscript = e => { observed = e; };
-    t.client.inputClock = [
-        { startMs: 100, endMs: 120, at: 5000 },
-        { startMs: 120, endMs: 140, at: 5020 }
-    ];
-    t.socket.event({ type: 'session.input_transcript.delta', delta: 'yes', start_ms: 105, end_ms: 135 });
-    assert.equal(observed.audioStartedAt, 5005);
-    assert.equal(observed.audioEndedAt, 5035);
-    t.socket.event({ type: 'session.input_transcript.delta', delta: 'old', start_ms: 0, end_ms: 20 });
-    assert.equal(observed.audioStartedAt, null);
-    assert.equal(observed.audioEndedAt, null);
+    t.client.inputAudioMs = 100; // deliberately unrelated to the provider timeline
+    t.socket.event({ type: 'session.input_transcript.delta', delta: 'yes', start_ms: 920000, end_ms: 920200 });
+    assert.ok(Number.isFinite(observed.audioStartedAt));
+    assert.equal(observed.audioEndedAt - observed.audioStartedAt, 200);
+    assert.equal(observed.timing.status, 'estimated');
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });

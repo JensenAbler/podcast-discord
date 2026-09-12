@@ -1026,7 +1026,7 @@ class VoiceManager {
         const providerError = utterance.providerError || null;
         // Preserve forensic record of audio events (phantom mic-feedback
         // transcripts, etc.) even when normalized transcription is empty.
-        if (!transcriptionText && audioEvents.length === 0 && !providerError) return;
+        if (!transcriptionText && audioEvents.length === 0 && !providerError && !utterance.admission) return;
 
         const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
         

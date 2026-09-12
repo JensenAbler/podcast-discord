@@ -1485,12 +1485,21 @@ class AlphaClawdVoiceBot {
         return this.RecordingState?.[name] || name;
     }
 
+    getIdleStartedAt(guildId) {
+        return Math.max(this.lastParticipantSpeechAt.get(guildId) || 0,
+            this.hostPlaybackState?.get(guildId)?.endedAt || 0);
+    }
+
     canRunIdleDecision(guildId) {
         if (this.isLiveAlphaSession(guildId)) return false;
         if (this.useGatewayGenerator()) return false;
         if (!this.isRecordingActive(guildId)) return false;
         if (!this.lastParticipantSpeechAt.has(guildId)) return false;
         if (this.directResponseInFlight.has(guildId)) return false;
+        const hostEndedAt = this.hostPlaybackState?.get(guildId)?.endedAt;
+        // Give the guest a full existing idle-check interval after Alpha ends.
+        if (Number.isFinite(hostEndedAt) &&
+            Date.now() - hostEndedAt < this.idleDecisionIntervalMs) return false;
 
         const bufferState = this.conversationBuffer.getState();
         if (
@@ -2222,7 +2231,7 @@ class AlphaClawdVoiceBot {
 
         try {
             const lastSpeechAt = this.lastParticipantSpeechAt.get(guildId) || Date.now();
-            const idleSeconds = (Date.now() - lastSpeechAt) / 1000;
+            const idleSeconds = Math.max(0, (Date.now() - this.getIdleStartedAt(guildId)) / 1000);
             const participantActivityBaseline = this.getParticipantActivityVersion(guildId);
             this.markIdleDecisionHandled(guildId, lastSpeechAt);
             const turnIdIntent = this.getLatestParticipantTurnIdIntent(guildId);
@@ -2234,7 +2243,7 @@ class AlphaClawdVoiceBot {
             });
             const episodePlanStructure = this.getEpisodePlanStructureForGenerator(guildId, generatorTiming);
 
-            console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s without participant speech`);
+            console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s with the floor available`);
             this.voiceManager?.updateQuartzProgress?.(guildId, 'thinking');
             const response = await this.beginGeneratorTurn({
                 transcript: '',
