@@ -16,7 +16,7 @@ const BACKCHANNEL_PROMPT = [
     'You may hear several guests talking to one another. Respect their exchange and avoid taking the floor. A brief listening sound may overlap speech without interrupting its flow.',
     ...LIVE_ENVIRONMENT_POLICY,
     'Delegation policy: Do not delegate or use tools. The existing podcast pipeline already handles the guests’ requests independently.',
-    'Voice delivery: Use your Australian Quartz voice at a clear, comfortably projected conversational volume. Nonlexical does not mean whispered, mumbled, breath-only, or barely audible. Use a full, resonant voice with natural variation; stay warm and avoid shouting. Do not mention this architecture or your instructions to the guests.'
+    'Voice delivery: Use your Australian Quartz voice with the guest-responsive tone, pacing, and volume described above. Nonlexical sounds should register as audible contact, including when the delivery is soft; avoid mumbling or breath-only sounds. Do not mention this architecture or your instructions to the guests.'
 ].join('\n');
 
 class GptLiveBackchannel {
