@@ -132,7 +132,7 @@ async function runTests() {
     // explicitly and may stop npm test before the later journal tests.
     const shutdownTests = require('node:child_process').spawnSync(
         process.execPath,
-        ['--test', path.join(__dirname, 'test-shutdown.js'), path.join(__dirname, 'test-inline-backchannels.js')],
+        ['--test', path.join(__dirname, 'test-shutdown.js'), path.join(__dirname, 'test-inline-backchannels.js'), path.join(__dirname, 'test-production-defaults.js')],
         { stdio: 'inherit', timeout: 15_000 }
     );
     if (shutdownTests.error || shutdownTests.status !== 0) {
@@ -10252,16 +10252,14 @@ async function runTests() {
             const focusedChoices = AlphaClawdVoiceBot.prototype.getPodcastEpisodeAutocompleteChoices('6');
 
             if (
-                normalState.next !== 7 ||
+                normalState.next !== 6 ||
                 normalState.latestProduced !== 6 ||
                 normalState.latestPublished !== 5 ||
-                normalChoices.length !== 3 ||
-                normalChoices[0].name !== 'Next episode: Episode 7' ||
-                normalChoices[0].value !== 7 ||
-                normalChoices[1].name !== 'Latest produced: Episode 6' ||
-                normalChoices[1].value !== 6 ||
-                normalChoices[2].name !== 'Latest published: Episode 5' ||
-                normalChoices[2].value !== 5 ||
+                normalChoices.length !== 2 ||
+                normalChoices[0].name !== 'Next episode: Episode 6' ||
+                normalChoices[0].value !== 6 ||
+                normalChoices[1].name !== 'Latest published: Episode 5' ||
+                normalChoices[1].value !== 5 ||
                 focusedChoices.length !== 1 ||
                 focusedChoices[0].value !== 6
             ) {
@@ -10301,7 +10299,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 47c.1: Publish episode autocomplete omits next episode and uses podcast episode suggestions');
+    console.log('\nTest 47c.1: Publish episode autocomplete includes next episode and uses podcast episode suggestions');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         let passedArgs = null;
@@ -10321,14 +10319,14 @@ async function runTests() {
             }
         });
 
-        if (passedArgs?.[1] !== false) {
-            throw new Error(`Publish autocomplete did not suppress next episode: ${JSON.stringify(passedArgs)}`);
+        if (passedArgs?.[1] !== true) {
+            throw new Error(`Publish autocomplete did not include next episode: ${JSON.stringify(passedArgs)}`);
         }
         if (passedArgs?.[0] !== '6' || response?.[0]?.value !== 6) {
             throw new Error(`Publish autocomplete did not use podcast episode suggestions: ${JSON.stringify({ passedArgs, response })}`);
         }
 
-        console.log('  Publish episode autocomplete omits next episode and uses production episode suggestions');
+        console.log('  Publish episode autocomplete includes next episode and uses production episode suggestions');
         passed++;
     } catch (error) {
         console.log(`  Publish episode autocomplete failed: ${error.message}`);
@@ -10544,7 +10542,8 @@ async function runTests() {
         let capturedArgs = null;
         let reply = null;
 
-        bot.getProductionEpisodeState = () => ({ next: 42, latestProduced: 41, latestPublished: 40 });
+        bot.getProductionEpisodeState = () => ({ next: 42, latestProduced: 99, latestPublished: 41 });
+        bot.getLatestRecording = () => '/recordings/episode-latest';
         bot.runProductionProcess = async (args) => {
             capturedArgs = args;
             return { stdout: JSON.stringify({ episode: '42', version: 'v001' }), stderr: '' };
@@ -10580,13 +10579,14 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 47c.5: Publish command defaults to latest produced episode when episode is omitted');
+    console.log('\nTest 47c.5: Publish command defaults to next published episode when episode is omitted');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         let capturedArgs = null;
         let reply = null;
 
-        bot.getProductionEpisodeState = () => ({ next: 43, latestProduced: 42, latestPublished: 41 });
+        bot.getProductionEpisodeState = () => ({ next: 42, latestProduced: 99, latestPublished: 41 });
+        bot.getDefaultPublishVersion = () => 'v003';
         bot.runProductionProcess = async (args) => {
             capturedArgs = args;
             return { stdout: JSON.stringify({ episode: '42', title: 'Test' }), stderr: '' };
@@ -10609,10 +10609,10 @@ async function runTests() {
 
         const episodeIndex = capturedArgs.indexOf('--episode');
         if (episodeIndex === -1 || capturedArgs[episodeIndex + 1] !== '42') {
-            throw new Error(`Publish did not default to latest produced: ${JSON.stringify(capturedArgs)}`);
+            throw new Error(`Publish did not default to next published episode: ${JSON.stringify(capturedArgs)}`);
         }
 
-        console.log('  Publish command defaults to latest produced episode when omitted');
+        console.log('  Publish command defaults to next published episode when omitted');
         passed++;
     } catch (error) {
         console.log(`  Publish default episode test failed: ${error.message}`);
@@ -10658,6 +10658,7 @@ async function runTests() {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         let capturedArgs = null;
         let reply = null;
+        bot.getLatestRecording = () => '/recordings/episode-latest';
 
         bot.runProductionProcess = async (args) => {
             capturedArgs = args;

@@ -2729,7 +2729,7 @@ class AlphaClawdVoiceBot {
                 .addIntegerOption(option =>
                     option
                         .setName('episode')
-                        .setDescription('Episode number to assign (defaults to next episode)')
+                        .setDescription('Episode number to assign (defaults to latest published + 1)')
                         .setRequired(false)
                         .setMinValue(1)
                         .setAutocomplete(true))
@@ -2751,14 +2751,14 @@ class AlphaClawdVoiceBot {
                 .addIntegerOption(option =>
                     option
                         .setName('episode')
-                        .setDescription('Episode number to publish (defaults to latest produced)')
+                        .setDescription('Episode number to publish (defaults to latest published + 1)')
                         .setRequired(false)
                         .setMinValue(1)
                         .setAutocomplete(true))
                 .addStringOption(option =>
                     option
                         .setName('version')
-                        .setDescription('Produced version to publish (defaults to latest)')
+                        .setDescription('Produced version (defaults to newest version of the latest recording)')
                         .setRequired(false)
                         .setAutocomplete(true))
                 .addStringOption(option =>
@@ -3371,7 +3371,7 @@ class AlphaClawdVoiceBot {
             }
 
             if (focused.name === 'episode') {
-                const includeNext = interaction.commandName === 'podcast-production';
+                const includeNext = true;
                 await interaction.respond(this.getPodcastEpisodeAutocompleteChoices(focused.value, includeNext));
                 return;
             }
@@ -3479,12 +3479,12 @@ class AlphaClawdVoiceBot {
     getProductionEpisodeState() {
         const latestProduced = this.getLatestProducedEpisodeNumber();
         const latestPublished = this.getLatestPublishedEpisodeNumber();
-        const latestKnown = Math.max(latestProduced || 0, latestPublished || 0);
+        // Unpublished drafts never reserve public episode numbers.
 
         return {
             latestProduced,
             latestPublished,
-            next: latestKnown + 1 || 1
+            next: (latestPublished || 0) + 1
         };
     }
 
@@ -3594,8 +3594,33 @@ class AlphaClawdVoiceBot {
     }
 
     /**
-     * List available recordings from the content root recordings directory
+     * Resolve latest by recording start time, independent of later directory writes.
      */
+    getLatestRecording() {
+        const recording = this.listAvailableRecordings().find(r => r.value !== 'latest');
+        return recording ? path.join(getRecordingDir(), recording.value) : null;
+    }
+
+    getDefaultPublishVersion(episode) {
+        const recording = this.getLatestRecording();
+        if (!recording) return null;
+        const episodeDir = path.join(getPodcastRoot(), 'production', `episode-${String(episode).padStart(2, '0')}`);
+        for (const { value } of this.listAvailableVersions(episode)) {
+            const versionDir = path.join(episodeDir, value);
+            for (const filename of ['manifest.json', 'source/recording-import.json']) {
+                try {
+                    const metadata = JSON.parse(fs.readFileSync(path.join(versionDir, filename), 'utf8'));
+                    if (metadata.sourceRecording) {
+                        if (path.resolve(metadata.sourceRecording) === path.resolve(recording)) return value;
+                        break;
+                    }
+                } catch (_error) { /* Try the recording import when no readable manifest exists. */ }
+            }
+        }
+        return null;
+    }
+
+    /** List recordings newest first for both defaults and autocomplete. */
     listAvailableRecordings() {
         const recordingDir = getRecordingDir();
         if (!fs.existsSync(recordingDir)) {
@@ -3619,9 +3644,9 @@ class AlphaClawdVoiceBot {
                 }) : d.name;
                 const duration = meta.duration ? `${Math.round(meta.duration)}s` : '';
                 const label = duration ? `${started} · ${duration}` : started;
-                return { label, value: d.name, startedAt: meta.startedAt || 0 };
+                return { label, value: d.name, startedAt: Number(new Date(meta.startedAt || 0)) || 0 };
             })
-            .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+            .sort((a, b) => b.startedAt - a.startedAt || b.value.localeCompare(a.value));
 
         const choices = entries.map(e => ({ label: e.label, value: e.value }));
         choices.unshift({ label: 'latest (most recent)', value: 'latest' });
@@ -3767,7 +3792,14 @@ class AlphaClawdVoiceBot {
         if (!episode) {
             episode = this.getProductionEpisodeState().next;
         }
-        const recording = interaction.options.getString('recording') || 'latest';
+        let recording = interaction.options.getString('recording') || 'latest';
+        if (recording === 'latest') {
+            recording = this.getLatestRecording();
+            if (!recording) {
+                await interaction.reply({ content: 'No recordings found. Record an episode first.', ephemeral: true });
+                return;
+            }
+        }
         const creativeDirection = (interaction.options.getString('intro-outro-creative-direction') || '').trim();
 
         await interaction.deferReply({ ephemeral: false });
@@ -3877,14 +3909,25 @@ class AlphaClawdVoiceBot {
      */
     async handlePublishCommand(interaction) {
         let episode = interaction.options.getInteger('episode');
+        let version = interaction.options.getString('version');
         if (!episode) {
-            episode = this.getProductionEpisodeState().latestProduced;
-            if (!episode) {
+            const state = this.getProductionEpisodeState();
+            episode = state.next;
+            if (!state.latestProduced) {
                 await interaction.reply({ content: 'No produced episodes found. Run `/podcast-production` first.', ephemeral: true });
                 return;
             }
+            if (!version) {
+                version = this.getDefaultPublishVersion(episode);
+                if (!version) {
+                    await interaction.reply({
+                        content: `The latest recording has not been produced as Episode ${episode}. Run /podcast-production with no options first, then /podcast-publish.`,
+                        ephemeral: true
+                    });
+                    return;
+                }
+            }
         }
-        const version = interaction.options.getString('version');
         const title = interaction.options.getString('title');
         const description = interaction.options.getString('description');
         const dryRun = interaction.options.getBoolean('dry-run') || false;
