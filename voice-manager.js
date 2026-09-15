@@ -725,8 +725,8 @@ class VoiceManager {
             if (audioError) throw audioError;
             await transmitter.play(audio, {
                 ...options,
-                onFinish: () => {
-                    try { options.onFinish?.(); } finally { release?.(); }
+                onFinish: result => {
+                    try { options.onFinish?.(result); } finally { release?.(); }
                 },
                 onError: error => {
                     try { options.onError?.(error); } finally { release?.(); }

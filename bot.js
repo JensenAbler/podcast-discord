@@ -79,6 +79,7 @@ const { GatewayWsClient } = require('./gateway-ws-client');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { getPodcastRoot, getRecordingDir } = require('./paths');
 const { PodcastGenerator } = require('./podcast-generator');
+const { buildEvolveCommand, handleEvolveCommand } = require('./evolve-controls');
 const { InternalThoughtManager } = require('./internal-thought-manager');
 const { ShowRunnerGenerator } = require('./showrunner-generator');
 const { EpisodePlanStore } = require('./episode-plan-store');
@@ -1495,6 +1496,7 @@ class AlphaClawdVoiceBot {
     }
 
     canRunIdleDecision(guildId) {
+        if (this.preparedClips?.has(guildId) || this.evolveCommandLocks?.has(guildId)) return false;
         if (this.isLiveAlphaSession(guildId)) return false;
         if (this.useGatewayGenerator()) return false;
         if (!this.isRecordingActive(guildId)) return false;
@@ -2696,6 +2698,7 @@ class AlphaClawdVoiceBot {
      */
     buildSlashCommands() {
         return [
+            buildEvolveCommand(),
             new SlashCommandBuilder()
                 .setName('podcast-join')
                 .setDescription('Join voice channel and start recording')
@@ -2817,6 +2820,9 @@ class AlphaClawdVoiceBot {
 
         try {
             switch (commandName) {
+                case 'podcast-evolve':
+                    await handleEvolveCommand(this, interaction);
+                    break;
                 case 'podcast-join':
                     await this.handleJoinCommand(interaction);
                     break;
@@ -4973,6 +4979,10 @@ class AlphaClawdVoiceBot {
     }
 
     async leavePodcastSession(guildId, options = {}) {
+        const clip = this.preparedClips?.get(guildId);
+        if (clip) await clip.stop().catch(error => console.warn('[Evolve] Clip stopped with error: ' + error.message));
+        this.evolveSessions?.get(guildId)?.save();
+        this.evolveSessions?.delete(guildId);
         const wasRecording = this.recordingState.get(guildId) === this.RecordingState.RECORDING;
         const wasConnected = this.voiceManager.isConnected(guildId);
         const channelId = this.recordingTextChannels.get(guildId) || options.channelId || null;
@@ -5304,6 +5314,10 @@ class AlphaClawdVoiceBot {
     }
 
     async handleDirectGeneratorFlush(guildId, utterances, transcript, wordData, turnOptions = {}) {
+        if (this.preparedClips?.has(guildId) || (this.evolveCommandLocks?.has(guildId) && !turnOptions.evolveControl)) {
+            this.conversationBuffer?.requeueUtterances?.(utterances, 'Evolve control or prepared clip active');
+            return { played: false };
+        }
         if (this.isLiveAlphaSession(guildId) && !turnOptions.liveDelegation) return { played: false };
         if (turnOptions.liveController?.closed) return { played: false, stale: true };
         if (!this.isRecordingActive(guildId)) {
@@ -5566,6 +5580,7 @@ class AlphaClawdVoiceBot {
     }
 
     discardStaleDirectResponse(guildId, options = {}, stage = 'before playback') {
+        if (this.preparedClips?.has(guildId)) return true;
         if (options.liveController?.closed || options.admissionPolicy?.closed) return true;
         if (!this.isRecordingActive(guildId)) {
             const source = options.source || 'buffer';
@@ -7681,6 +7696,8 @@ class AlphaClawdVoiceBot {
      * Stop the bot
      */
     async stop() {
+        for (const clip of this.preparedClips?.values() || []) await clip.stop().catch(() => {});
+        for (const session of this.evolveSessions?.values() || []) session.save();
         this.discordContextClosing = true;
         const contextClosed = Promise.resolve()
             .then(() => this.discordContextInterpreter?.close?.())
