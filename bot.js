@@ -2667,7 +2667,9 @@ class AlphaClawdVoiceBot {
         this.client.on('interactionCreate', async (interaction) => {
             console.log(`[Bot] Interaction received: ${interaction.type}, isCommand: ${interaction.isChatInputCommand()}, isAutocomplete: ${interaction.isAutocomplete()}`);
             try {
-                if (interaction.isAutocomplete()) {
+                if (interaction.isButton?.() && interaction.customId.startsWith('evolve-reveal:')) {
+                    await handleEvolveCommand(this, interaction);
+                } else if (interaction.isAutocomplete()) {
                     await this.handleAutocomplete(interaction);
                 } else if (interaction.isChatInputCommand()) {
                     console.log(`[Bot] Handling command: ${interaction.commandName}`);

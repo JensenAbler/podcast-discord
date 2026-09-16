@@ -20,7 +20,7 @@ function inventory(root) {
         try {
             const file = contained(root, relative);
             if (!fs.readFileSync(file, 'utf8').trim()) throw new Error('Empty transcript');
-            episodes.push({ id, title, transcriptFile: relative, complete: true, provenance: 'Full published live-STT transcript linked by feed; accuracy and nonverbal coverage require human audit' });
+            episodes.push({ id, title, transcriptFile: relative, complete: true, provenance: /Transcript \(production script/i.test(body) ? 'Published production script; may include directions and differ from final audio' : 'Full published live-STT transcript linked by feed; accuracy and nonverbal coverage require human audit' });
         } catch (e) { missing.push({ id, title, reason: e.message }); }
     }
     episodes.sort((a,b) => Number(a.id) - Number(b.id));

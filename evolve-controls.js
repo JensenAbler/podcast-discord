@@ -1,9 +1,9 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getPodcastRoot } = require('./paths');
-const { EvolveSession, validateManifest } = require('./evolve-session');
+const { EvolveSession, validateManifest, hash } = require('./evolve-session');
 const { inventory } = require('./evolve-prepare');
 
 function buildEvolveCommand() {
@@ -15,7 +15,9 @@ function assertIdle(bot, guildId) {
     if (bot.preparedClips?.has(guildId) || bot.directResponseInFlight?.has(guildId) || bot.idleDecisionInFlight?.has(guildId) || playback.isPlaying || playback.queueLength || bot.hasPendingBigBrain?.(guildId) || bot.hasPendingBigHeart?.(guildId)) throw new Error('Wait for the current response to finish, then use /reveal again. No transcript was advanced.');
 }
 async function handleEvolveCommand(bot, interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    const confirming = interaction.isButton?.() === true;
+    if (confirming) await interaction.deferUpdate();
+    else await interaction.deferReply({ ephemeral: true });
     const guild = interaction.guildId, user = interaction.user.id;
     bot.evolveSessions ||= new Map(); bot.evolveCommandLocks ||= new Set();
     let locked = false;
@@ -47,6 +49,19 @@ async function handleEvolveCommand(bot, interaction) {
             bot.podcastGenerator.evolveSession = session;
         }
         if (session.state.ownerId !== user) throw new Error('This retrospective is controlled by its original operator');
+        const index = session.state.phase === 'predicting' ? session.state.index : session.state.index + 1;
+        const episode = session.state.manifest.episodes[index];
+        if (!episode) throw new Error('All available transcripts have already been revealed. You can keep talking.');
+        const buttonId = 'evolve-reveal:' + hash(session.file).slice(0,16) + ':' + index;
+        if (!confirming) {
+            return await interaction.editReply({
+                content: 'About to reveal **Episode ' + episode.id + ': ' + episode.title + '**.\nAlpha has not received this transcript yet.',
+                allowedMentions: { parse: [] },
+                components: [new ActionRowBuilder().addComponents(new ButtonBuilder()
+                    .setCustomId(buttonId).setLabel('Reveal this episode').setStyle(ButtonStyle.Primary))]
+            });
+        }
+        if (interaction.customId !== buttonId) throw new Error('This preview is out of date. Use /reveal to preview the next episode.');
         const before = JSON.parse(JSON.stringify(session.state));
         let cue;
         try {
@@ -60,12 +75,12 @@ async function handleEvolveCommand(bot, interaction) {
         const next = session.state.manifest.episodes[session.state.index + 1];
         const missing = session.state.index === 0 && session.state.missing?.length
             ? '\nEpisodes without published transcripts were skipped: ' + session.state.missing.map(e => e.id ?? e.title).join(', ') + '.' : '';
-        await interaction.editReply('Revealed: ' + session.current().title + '.'
+        await interaction.editReply({ components: [], allowedMentions: { parse: [] }, content: 'Revealed: ' + session.current().title + '.'
             + (next ? '\nNext /reveal: ' + next.title + '.' : '\nThat was the last available transcript. You can keep talking.')
-            + missing);
+            + missing });
         await bot.handleDirectGeneratorFlush(guild, [], cue, null, { evolveControl: true });
     } catch (error) {
-        await interaction.editReply('Reveal: ' + error.message);
+        await interaction.editReply({ content: 'Reveal: ' + error.message, components: [], allowedMentions: { parse: [] } });
     } finally {
         if (locked) {
             bot.evolveCommandLocks.delete(guild);

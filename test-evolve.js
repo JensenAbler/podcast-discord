@@ -171,24 +171,31 @@ test('reveal auto-loads, advances once, retains full context, resumes and rolls 
   if(calls===1)assert.doesNotMatch(messages,/FULL TRANSCRIPT 2/);else assert.match(messages,/FULL TRANSCRIPT 2/);
   gen.observeSpokenTranscript({speaker:'Alpha-Clawd',transcription:'Reflection '+calls,playbackStatus:'completed'});
  }};
- async function reveal(user='owner'){
-  await handleEvolveCommand(bot,{guildId:'g',user:{id:user},memberPermissions:{has:()=>true},
+ async function reveal(user='owner', customId=null){
+  await handleEvolveCommand(bot,{guildId:'g',user:{id:user},customId,isButton:()=>!!customId,memberPermissions:{has:()=>true},
    guild:{members:{fetch:async()=>({voice:{channelId:'v'}}),me:{voice:{channelId:'v'}}}},
-   async deferReply(){},async editReply(r){replies.push(r);}});
+   async deferReply(){},async deferUpdate(){},async editReply(r){replies.push(r);}});
  }
- await reveal();assert.equal(calls,1);assert.equal(gen.evolveSession.state.index,0);
- assert.match(replies.at(-1),/Next \/reveal: Episode 2/);
+ await reveal();assert.equal(calls,0);assert.equal(gen.evolveSession.state.index,-1);
+ assert.match(replies.at(-1).content,/About to reveal .*Episode 1/);
+ assert.doesNotMatch(gen.evolveSession.context(),/FULL TRANSCRIPT 1/);
+ const first=replies.at(-1).components[0].toJSON().components[0].custom_id;
+ await reveal('owner',first);assert.equal(calls,1);assert.equal(gen.evolveSession.state.index,0);
+ assert.match(replies.at(-1).content,/Next \/reveal: Episode 2/);
+ await reveal('owner',first);assert.equal(calls,1);
+ assert.match(replies.at(-1).content,/out of date/);
  await reveal('other');assert.equal(calls,1);
- busy=true;await reveal();busy=false;assert.equal(gen.evolveSession.state.index,0);
+ await reveal();const second=replies.at(-1).components[0].toJSON().components[0].custom_id;
+ busy=true;await reveal('owner',second);busy=false;assert.equal(gen.evolveSession.state.index,0);
  const budget=gen.maxRequestTokens;gen.maxRequestTokens=1;
- await reveal();assert.equal(gen.evolveSession.state.index,0);
+ await reveal('owner',second);assert.equal(gen.evolveSession.state.index,0);
  assert.equal(JSON.parse(fs.readFileSync(path.join(recording,'evolve-state.json'))).index,0);
  gen.maxRequestTokens=budget;
  bot.evolveSessions.clear();gen.evolveSession=null;
- await reveal();assert.equal(calls,2);assert.equal(gen.evolveSession.state.index,1);
+ await reveal('owner',second);assert.equal(calls,2);assert.equal(gen.evolveSession.state.index,1);
  assert.match(gen.evolveSession.context(),/Reflection 1/);
  await reveal();assert.equal(calls,2);assert.equal(gen.evolveSession.state.index,1);
- assert.match(replies.at(-1),/already been revealed/);
+ assert.match(replies.at(-1).content,/already been revealed/);
  assert.equal(bot.evolveCommandLocks.size,0);
 });
 test('playback failures preserve consumed audio and never inject future cues',async t=>{
