@@ -93,6 +93,18 @@ class EvolveSession {
         this.state.phase = 'reflected';
         this.event('reflection', { episodeId: this.current().id, reflection });
     }
+    // The host controls predictions and discussion by voice; each command reveals one episode.
+    // Mutate in memory only: the caller preflights context before persisting this transition.
+    revealNext() {
+        const index = this.state.phase === 'predicting' ? this.state.index : this.state.index + 1;
+        if (index >= this.state.manifest.episodes.length) throw new Error('All available transcripts have already been revealed. You can keep talking.');
+        this.state.index = index;
+        this.state.phase = 'reflecting';
+        this.state.responseStart = this.state.timeline.length;
+        const e = this.current();
+        this.state.events.push({ type: 'reveal', at: new Date().toISOString(), episodeId: e.id, transcriptSha256: e.sha256 });
+        return 'Jensen has revealed the complete transcript of ' + e.title + ', now included in your retrospective context. Reflect on it in the ongoing interview. If you made a prediction earlier, compare it with what happened. Follow Jensen’s pace; do not introduce the next episode yourself.';
+    }
     current() { return this.state.manifest.episodes[this.state.index]; }
     prompt(text) {
         if (this.state.phase !== 'reflected' || this.state.index !== this.state.manifest.episodes.length - 1) throw new Error('Finish the retrospective before the prompt stage');

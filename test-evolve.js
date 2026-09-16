@@ -128,11 +128,10 @@ test('real ffmpeg decoding produces expected PCM and invalid input rejects',asyn
  fs.writeFileSync(path.join(dir,'bad'),'not audio');
  await assert.rejects(decodeAudio(path.join(dir,'bad')),/decoding failed/);
 });
-test('single grouped Discord command has explicit controls and operator permissions',()=>{
+test('reveal is a single command with no options',()=>{
  const c=buildEvolveCommand().toJSON();
- assert.equal(c.name,'podcast-evolve');assert.ok(c.default_member_permissions);
- assert.ok(c.options[0].choices.some(x=>x.value==='reveal'));
- assert.ok(c.options.some(x=>x.name==='audio'));
+ assert.equal(c.name,'reveal');assert.ok(c.default_member_permissions);
+ assert.equal(c.options?.length || 0,0);
 });
 test('feed inventory deduplicates by actual published reference and reports missing material',t=>{
  const dir=temp(t);fs.mkdirSync(path.join(dir,'episodes'));fs.writeFileSync(path.join(dir,'episodes','ep5_transcript.txt'),'FULL');
@@ -153,38 +152,44 @@ test('production voice handoff preserves interruption result through Quartz rele
  const result=await playback.finished;
  assert.equal(result.playbackInterrupted,true);assert.equal(released,1);
 });
-test('Discord controls load, predict, reveal and save reflection through generator observation',async t=>{
+test('reveal auto-loads, advances once, retains full context, resumes and rolls back budget failures',async t=>{
  const {handleEvolveCommand}=require('./evolve-controls');
- const {PermissionFlagsBits}=require('discord.js');
- const root=temp(t);const prior=process.env.CLAWCAST_CONTENT_ROOT;process.env.CLAWCAST_CONTENT_ROOT=root;
+ const root=temp(t), prior=process.env.CLAWCAST_CONTENT_ROOT;
+ process.env.CLAWCAST_CONTENT_ROOT=root;
  t.after(()=>{if(prior===undefined)delete process.env.CLAWCAST_CONTENT_ROOT;else process.env.CLAWCAST_CONTENT_ROOT=prior;});
- fs.mkdirSync(path.join(root,'evolve'));fs.mkdirSync(path.join(root,'recordings','now'),{recursive:true});
- fs.writeFileSync(path.join(root,'evolve','test.json'),JSON.stringify({version:1,episodes:[{id:'1',title:'Only title',complete:true,transcript:'UNREVEALED FULL TEXT'}]}));
- const gen=new PodcastGenerator({apiKey:'test'});
+ fs.mkdirSync(path.join(root,'episodes'));
+ const recording=path.join(root,'recordings','now');fs.mkdirSync(recording,{recursive:true});
+ for(const n of [1,2])fs.writeFileSync(path.join(root,'episodes',n+'_transcript.txt'),'FULL TRANSCRIPT '+n);
+ fs.writeFileSync(path.join(root,'feed.xml'),'<rss><channel>'+[2,1].map(n=>'<item><title>Episode '+n+'</title><itunes:episode>'+n+'</itunes:episode><description>https://example.org/episodes/'+n+'_transcript.txt</description></item>').join('')+'</channel></rss>');
+ const gen=new PodcastGenerator({apiKey:'test'}), replies=[];let calls=0, busy=false;
  const bot={podcastGenerator:gen,isRecordingActive:()=>true,useGatewayGenerator:()=>false,isLiveAlphaSession:()=>false,
- directResponseInFlight:new Set(),idleDecisionInFlight:new Set(),
- voiceManager:{getPlaybackStatus:()=>({isPlaying:false,queueLength:0}),recordingPaths:new Map([['g',path.join(root,'recordings','now')]])},
+ voiceManager:{getPlaybackStatus:()=>({isPlaying:busy,queueLength:0}),recordingPaths:new Map([['g',recording]])},
  async handleDirectGeneratorFlush(g,u,c,w,opts){
-  assert.equal(opts.evolveControl,true);
+  calls++;assert.equal(opts.evolveControl,true);
   const messages=JSON.stringify(gen.buildMessages({transcript:c}));
-  if(gen.evolveSession.state.phase==='predicting')assert.doesNotMatch(messages,/UNREVEALED FULL TEXT/);
-  else assert.match(messages,/UNREVEALED FULL TEXT/);
-  gen.observeSpokenTranscript({speaker:'Alpha-Clawd',transcription:'My stage response',playbackStatus:'completed'});
+  assert.match(messages,/FULL TRANSCRIPT 1/);
+  if(calls===1)assert.doesNotMatch(messages,/FULL TRANSCRIPT 2/);else assert.match(messages,/FULL TRANSCRIPT 2/);
+  gen.observeSpokenTranscript({speaker:'Alpha-Clawd',transcription:'Reflection '+calls,playbackStatus:'completed'});
  }};
- const replies=[];
- async function control(action){
-  const interaction={guildId:'g',user:{id:'owner'},memberPermissions:{has:p=>p===PermissionFlagsBits.ManageGuild},
+ async function reveal(user='owner'){
+  await handleEvolveCommand(bot,{guildId:'g',user:{id:user},memberPermissions:{has:()=>true},
    guild:{members:{fetch:async()=>({voice:{channelId:'v'}}),me:{voice:{channelId:'v'}}}},
-   options:{getString:n=>n==='action'?action:n==='asset'?'test':null,getAttachment:()=>null},
-   async deferReply(){},async editReply(r){replies.push(r);}};
-  await handleEvolveCommand(bot,interaction);
+   async deferReply(){},async editReply(r){replies.push(r);}});
  }
- await control('load');assert.ok(gen.evolveSession);
- await control('next');assert.equal(gen.evolveSession.state.phase,'predicting');
- await control('reveal');assert.equal(gen.evolveSession.state.phase,'reflecting');
- await control('reflect');assert.equal(gen.evolveSession.state.phase,'reflected');
+ await reveal();assert.equal(calls,1);assert.equal(gen.evolveSession.state.index,0);
+ assert.match(replies.at(-1),/Next \/reveal: Episode 2/);
+ await reveal('other');assert.equal(calls,1);
+ busy=true;await reveal();busy=false;assert.equal(gen.evolveSession.state.index,0);
+ const budget=gen.maxRequestTokens;gen.maxRequestTokens=1;
+ await reveal();assert.equal(gen.evolveSession.state.index,0);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(recording,'evolve-state.json'))).index,0);
+ gen.maxRequestTokens=budget;
+ bot.evolveSessions.clear();gen.evolveSession=null;
+ await reveal();assert.equal(calls,2);assert.equal(gen.evolveSession.state.index,1);
+ assert.match(gen.evolveSession.context(),/Reflection 1/);
+ await reveal();assert.equal(calls,2);assert.equal(gen.evolveSession.state.index,1);
+ assert.match(replies.at(-1),/already been revealed/);
  assert.equal(bot.evolveCommandLocks.size,0);
- assert.ok(!replies.some(r=>typeof r==='string'&&r.startsWith('Evolve:')));
 });
 test('playback failures preserve consumed audio and never inject future cues',async t=>{
  const b=playbackBot(t);

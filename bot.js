@@ -2820,7 +2820,7 @@ class AlphaClawdVoiceBot {
 
         try {
             switch (commandName) {
-                case 'podcast-evolve':
+                case 'reveal':
                     await handleEvolveCommand(this, interaction);
                     break;
                 case 'podcast-join':
