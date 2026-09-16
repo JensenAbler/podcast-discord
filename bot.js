@@ -79,7 +79,7 @@ const { GatewayWsClient } = require('./gateway-ws-client');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { getPodcastRoot, getRecordingDir } = require('./paths');
 const { PodcastGenerator } = require('./podcast-generator');
-const { buildEvolveCommand, handleEvolveCommand } = require('./evolve-controls');
+const { buildEvolveCommand, handleEvolveCommand, refreshRevealDescription } = require('./evolve-controls');
 const { InternalThoughtManager } = require('./internal-thought-manager');
 const { ShowRunnerGenerator } = require('./showrunner-generator');
 const { EpisodePlanStore } = require('./episode-plan-store');
@@ -2793,22 +2793,38 @@ class AlphaClawdVoiceBot {
 
         try {
             console.log('[Bot] Registering slash commands...');
+            let registered;
             
             if (this.guildId) {
                 // Register for specific guild (faster, for testing)
-                await rest.put(
+                registered = await rest.put(
                     Routes.applicationGuildCommands(this.clientId, this.guildId),
                     { body: commands.map(c => c.toJSON()) }
                 );
                 console.log(`[Bot] Commands registered for guild ${this.guildId}`);
             } else {
                 // Register globally (takes up to an hour)
-                await rest.put(
+                registered = await rest.put(
                     Routes.applicationCommands(this.clientId),
                     { body: commands.map(c => c.toJSON()) }
                 );
                 console.log('[Bot] Commands registered globally');
             }
+            const reveal = registered.find(command => command.name === 'reveal');
+            if (reveal) {
+                const route = this.guildId
+                    ? Routes.applicationGuildCommand(this.clientId, this.guildId, reveal.id)
+                    : Routes.applicationCommand(this.clientId, reveal.id);
+                this.revealCommandRegistration = {
+                    description: reveal.description,
+                    update: description => rest.patch(route, { body: { description } })
+                };
+                await refreshRevealDescription(this);
+                clearInterval(this.revealDescriptionTimer);
+                this.revealDescriptionTimer = setInterval(() => void refreshRevealDescription(this), 30000);
+                this.revealDescriptionTimer.unref();
+            }
+
         } catch (error) {
             console.error('[Bot] Failed to register commands:', error);
         }
@@ -4821,6 +4837,7 @@ class AlphaClawdVoiceBot {
                 plan: episodePlanSelection.plan
             } : null
         });
+        void refreshRevealDescription(this);
         this.startInternalThoughtSession(guildId, recordingInfo);
         this.startEpisodePlanTracker(guildId, episodePlanSelection, recordingInfo);
 
@@ -7698,6 +7715,8 @@ class AlphaClawdVoiceBot {
      * Stop the bot
      */
     async stop() {
+        this.revealDescriptionClosing = true;
+        clearInterval(this.revealDescriptionTimer);
         for (const clip of this.preparedClips?.values() || []) await clip.stop().catch(() => {});
         for (const session of this.evolveSessions?.values() || []) session.save();
         this.discordContextClosing = true;

@@ -6,6 +6,37 @@ const { getPodcastRoot } = require('./paths');
 const { EvolveSession, validateManifest, hash } = require('./evolve-session');
 const { inventory } = require('./evolve-prepare');
 
+
+function revealDescription(bot, root = getPodcastRoot()) {
+    const guild = bot.guildId || bot.getActiveGuildId?.();
+    let state = bot.evolveSessions?.get(guild)?.state;
+    if (!state && guild && bot.isRecordingActive?.(guild)) {
+        const dir = bot.voiceManager?.recordingPaths?.get(guild);
+        const file = dir && path.join(dir, 'evolve-state.json');
+        if (file && fs.existsSync(file)) state = JSON.parse(fs.readFileSync(file, 'utf8'));
+    }
+    const episode = state
+        ? state.manifest.episodes[state.phase === 'predicting' ? state.index : state.index + 1]
+        : inventory(root).episodes[0];
+    const text = episode
+        ? 'Reveal Episode ' + episode.id + ': ' + episode.title
+        : state ? 'All available episode transcripts have been revealed' : 'No published episode transcripts available';
+    return text.replace(/\s+/g, ' ').trim().slice(0, 100);
+}
+// Serialize updates so a slow older request cannot overwrite the next episode.
+function refreshRevealDescription(bot) {
+    bot.revealDescriptionUpdate = (bot.revealDescriptionUpdate || Promise.resolve()).then(async () => {
+        if (!bot.revealCommandRegistration || bot.revealDescriptionClosing) return;
+        const description = revealDescription(bot);
+        const registration = bot.revealCommandRegistration;
+        if (description === registration.description) return;
+        await registration.update(description);
+        registration.description = description;
+        console.log('[Evolve] Command picker: ' + description);
+    }).catch(error => console.warn('[Evolve] Command description refresh failed: ' + error.message));
+    return bot.revealDescriptionUpdate;
+}
+
 function buildEvolveCommand() {
     return new SlashCommandBuilder().setName('reveal').setDescription('Reveal the next full episode transcript to Alpha')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild);
@@ -72,6 +103,7 @@ async function handleEvolveCommand(bot, interaction) {
             session.state = before;
             throw error;
         }
+        void refreshRevealDescription(bot);
         const next = session.state.manifest.episodes[session.state.index + 1];
         const missing = session.state.index === 0 && session.state.missing?.length
             ? '\nEpisodes without published transcripts were skipped: ' + session.state.missing.map(e => e.id ?? e.title).join(', ') + '.' : '';
@@ -88,4 +120,4 @@ async function handleEvolveCommand(bot, interaction) {
         }
     }
 }
-module.exports = { buildEvolveCommand, handleEvolveCommand, assertIdle };
+module.exports = { buildEvolveCommand, handleEvolveCommand, assertIdle, revealDescription, refreshRevealDescription };

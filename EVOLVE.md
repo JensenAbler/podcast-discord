@@ -15,3 +15,5 @@ Only a member with Manage Server permission in the bot's voice channel can revea
 Prepared-clip playback and prompt/proposal helpers remain internal modules, with no additional Discord controls exposed.
 
 Validation: npm test and node --test test-evolve.js. Automated tests use mocked provider/Discord interactions plus real FFmpeg decoding. Live provider and Discord voice rehearsal remains a separate check.
+
+The /reveal command picker description shows the next episode number and title before submission. It refreshes on registration, recording start, and successful reveal, with a 30-second retry/refresh. Discord may cache descriptions; the existing confirmation still checks the exact episode. Descriptions are shared for the registered server (or the active recording for global registration), capped at Discord’s 100-character limit. A new recording starts with the first available transcript.

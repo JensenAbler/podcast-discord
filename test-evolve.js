@@ -217,3 +217,50 @@ test('an interrupted host response cannot satisfy the prediction gate',t=>{
  s.observe({speaker:'Alpha-Clawd',transcription:'[Host playback incomplete; audible words unverified.]',playbackStatus:'incomplete'});
  assert.throws(()=>s.reveal(),/No audible/);
 });
+
+test('picker previews first, next, pending prediction, completion, and saved state without revealing', t => {
+ const { revealDescription } = require('./evolve-controls');
+ const root = temp(t);
+ fs.writeFileSync(path.join(root,'episode_transcript.txt'),'complete text');
+ fs.writeFileSync(path.join(root,'feed.xml'),'<rss><item><title>Published first</title><itunes:episode>0</itunes:episode><link>https://example.com/episode_transcript.txt</link></item></rss>');
+ const bot = {guildId:'g',evolveSessions:new Map(),isRecordingActive:()=>false};
+ assert.equal(revealDescription(bot,root),'Reveal Episode 0: Published first');
+ const s = session(t);
+ bot.evolveSessions.set('g',s);
+ assert.equal(revealDescription(bot,root),'Reveal Episode 1: First title');
+ assert.equal(s.state.index,-1);
+ s.revealNext();s.save();
+ assert.equal(revealDescription(bot,root),'Reveal Episode 2: Future title');
+ const recording=temp(t);fs.copyFileSync(s.file,path.join(recording,'evolve-state.json'));
+ bot.evolveSessions.clear();bot.isRecordingActive=()=>true;
+ bot.voiceManager={recordingPaths:new Map([['g',recording]])};
+ assert.equal(revealDescription(bot,root),'Reveal Episode 2: Future title');
+ bot.evolveSessions.set('g',s);s.state.phase='predicting';
+ assert.equal(revealDescription(bot,root),'Reveal Episode 1: First title');
+ s.state.phase='reflecting';s.revealNext();
+ assert.match(revealDescription(bot,root),/^All available/);
+ s.state.index=-1;s.state.manifest.episodes[0].title='x'.repeat(200);
+ assert.equal(revealDescription(bot,root).length,100);
+});
+test('picker updates serialize, skip unchanged descriptions, and retry failures', async t => {
+ const { refreshRevealDescription } = require('./evolve-controls');
+ const s=session(t), calls=[];
+ const bot={guildId:'g',evolveSessions:new Map([['g',s]])};
+ let release;
+ bot.revealCommandRegistration={description:'old',update:async description=>{
+  calls.push(description);
+  if(calls.length===1) await new Promise(resolve=>release=resolve);
+ }};
+ const first=refreshRevealDescription(bot);
+ await new Promise(resolve=>setImmediate(resolve));
+ s.revealNext();const second=refreshRevealDescription(bot);release();
+ await Promise.all([first,second]);
+ assert.deepEqual(calls,['Reveal Episode 1: First title','Reveal Episode 2: Future title']);
+ await refreshRevealDescription(bot);assert.equal(calls.length,2);
+ s.revealNext();let fail=true;
+ bot.revealCommandRegistration.update=async description=>{if(fail)throw new Error('temporary');calls.push(description);};
+ await refreshRevealDescription(bot);
+ assert.equal(bot.revealCommandRegistration.description,'Reveal Episode 2: Future title');
+ fail=false;await refreshRevealDescription(bot);
+ assert.match(bot.revealCommandRegistration.description,/^All available/);
+});
