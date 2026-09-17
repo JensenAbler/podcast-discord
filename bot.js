@@ -1838,6 +1838,7 @@ class AlphaClawdVoiceBot {
             this.setInternalThoughtUserSpeaking(guildId, userId, true);
             this.conversationBuffer?.setUserSpeaking?.(userId, true);
             this.holdGeminiLiveParticipantActivity(guildId, userId);
+            this.voiceManager?.updateQuartzProgress?.(guildId, 'guest speaking');
             return;
         }
 
@@ -1874,6 +1875,10 @@ class AlphaClawdVoiceBot {
                     : null;
             }
             this.scheduleGeminiLiveParticipantActivityEnd(guildId);
+            const otherSpeakers = this.participantSignalStates?.get?.(guildId);
+            if (![...(otherSpeakers?.values?.() || [])].some(signal => signal.floorConfirmed)) {
+                this.voiceManager?.updateQuartzProgress?.(guildId, 'guest finished');
+            }
             return;
         }
 
@@ -1928,6 +1933,9 @@ class AlphaClawdVoiceBot {
         state.floorHasFreshSpeechEvidence = true;
         state.continuationUsed = false;
         state.continuationUntil = null;
+        if (!alreadyHadFreshSpeechEvidence) {
+            this.voiceManager?.updateQuartzProgress?.(guildId, 'guest speaking');
+        }
         this.beginGeminiLiveParticipantActivity(
             guildId,
             userId,

@@ -214,14 +214,28 @@ class GptLiveBackchannel {
 
     updateAlphaProgress(stage, preview = '') {
         this.onLog('Alpha progress: ' + JSON.stringify({ stage, environment: this.environment }));
-        if (stage === 'thinking') {
-            // A decision is still pending. Keep vocal contact available without
-            // turning every speculative evaluation into a floor-state change.
-            return this.append('session.thinking.append',
-                'Alpha is evaluating whether to respond; no answer is committed. Brief contact remains available while this decision is pending. Prefer nonlexical sounds; short acknowledgments are allowed, but do not promise an answer or claim committed processing.');
+        if (stage === 'guest speaking') {
+            if (this.turnControl) return;
+            this.guestSpeaking = true;
+            if (!this.blocked && this.environment === 'holding') {
+                return this.setEnvironment('listening', 'A guest has resumed speaking. Release the floor and listen; brief listening acknowledgments remain available.');
+            }
+            return;
+        }
+        if (stage === 'guest finished') {
+            if (this.turnControl) return;
+            this.guestSpeaking = false;
+        }
+        if (stage === 'thinking' || stage === 'guest finished') {
+            // Hold the wait at the participant endpoint, before ASR/generation/TTS.
+            // Evaluation may still choose silence; holding is not a promise to answer.
+            if (this.turnControl || this.blocked || this.environment === 'yielding' || this.guestSpeaking) return;
+            if (this.environment === 'holding') return;
+            return this.setEnvironment('holding',
+                'The guest has left an opening and Alpha is evaluating whether to respond; no answer is committed. Promptly acknowledge the opening, preferably nonlexically, and maintain audible contact through the wait with natural breathing room. Do not wait for voice preparation. If a guest resumes, release the floor and listen. Do not promise an answer or claim committed processing.');
         }
         if (stage === 'finished') {
-            if (!this.turnControl && !this.blocked && this.environment !== 'listening') {
+            if (!this.turnControl && !this.blocked && this.environment === 'holding') {
                 return this.setEnvironment('listening');
             }
             return;
@@ -237,7 +251,7 @@ class GptLiveBackchannel {
             return this.setEnvironment('listening',
                 'Alpha has decided not to take this turn. Let the current sound or phrase finish gracefully and leave room for the guests. Do not announce or justify the silence decision. Resume brief listening acknowledgments when appropriate.');
         }
-        if (stage === 'preparing voice' && !this.blocked && this.environment === 'listening') {
+        if (stage === 'preparing voice' && !this.turnControl && !this.guestSpeaking && !this.blocked && this.environment === 'listening') {
             this.setEnvironment('holding');
         }
         // Late text-completion updates never downgrade YIELDING or ASIDE.

@@ -294,7 +294,7 @@ test('normal mode follows all four environments while Alpha alone controls turns
     assert.match(BACKCHANNEL_PROMPT, /Alpha has a separate existing pipeline/);
     for (const state of ['LISTENING', 'HOLDING', 'YIELDING', 'ASIDE']) assert.ok(BACKCHANNEL_PROMPT.includes(state));
     t.client.updateAlphaProgress('thinking');
-    assert.equal(t.client.environment, 'listening');
+    assert.equal(t.client.environment, 'holding');
     t.client.updateAlphaProgress('preparing voice');
     assert.equal(t.client.environment, 'holding');
     t.client.updateAlphaProgress('idle');
@@ -335,17 +335,17 @@ test('normal mode forwards complete delivered context without enabling delegatio
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });
 
-test('normal startup remains listening during a pending evaluation', async () => {
+test('normal startup preserves holding during a pending evaluation', async () => {
     const t = transport();
     t.client.updateAlphaProgress('thinking');
     await connected(t);
-    assert.equal(t.client.environment, 'listening');
+    assert.equal(t.client.environment, 'holding');
     t.client.updateAlphaProgress('idle');
     assert.equal(t.client.environment, 'listening');
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });
 
-test('repeated decision checks preserve listening and never gate vocal contact', async () => {
+test('decision checks hold promptly and release after silence without gating contact', async () => {
     const t = transport(); await connected(t);
     const revision = t.client.environmentRevision;
     for (let i = 0; i < 3; i++) {
@@ -353,7 +353,7 @@ test('repeated decision checks preserve listening and never gate vocal contact',
         t.client.updateAlphaProgress('idle');
         t.client.updateAlphaProgress('finished');
     }
-    assert.equal(t.client.environmentRevision, revision);
+    assert.equal(t.client.environmentRevision, revision + 6);
     assert.equal(t.client.blocked, false);
     assert.ok(t.socket.sent.some(e => e.content?.includes('evaluating whether')));
     t.socket.event({ type: 'session.output_audio.delta', delta: Buffer.alloc(640, 20).toString('base64') });
@@ -452,4 +452,68 @@ test('receipt ledger accounts for prefetched packets discarded on mute', async (
     assert.equal(entries[0].playbackStatus, 'incomplete');
     assert.equal(entries[0].backchannelEvidence.consumedVoicedFrames, 1);
     assert.equal(entries[0].backchannelEvidence.discardedVoicedFrames, 1);
+});
+
+test('participant endpoint holds before generation, resumes after interruption, and protects handoff', async () => {
+    const t = transport(); await connected(t);
+    t.client.updateAlphaProgress('guest speaking');
+    t.client.updateAlphaProgress('thinking');
+    assert.equal(t.client.environment, 'listening');
+    t.client.updateAlphaProgress('guest finished');
+    assert.equal(t.client.environment, 'holding');
+    assert.match(t.socket.sent.at(-1).content, /no answer is committed/);
+    const revision = t.client.environmentRevision;
+    t.client.updateAlphaProgress('thinking');
+    assert.equal(t.client.environmentRevision, revision, 'no duplicate holding updates');
+    t.client.updateAlphaProgress('guest speaking');
+    assert.equal(t.client.environment, 'listening');
+    t.client.updateAlphaProgress('preparing voice');
+    assert.equal(t.client.environment, 'listening');
+    t.client.updateAlphaProgress('guest finished');
+    assert.equal(t.client.environment, 'holding');
+    t.client.requestHandoff();
+    for (const stage of ['thinking', 'guest finished', 'finished', 'idle']) {
+        t.client.updateAlphaProgress(stage);
+        assert.equal(t.client.environment, 'yielding');
+    }
+    t.client.setAlphaPlaying(true);
+    t.client.updateAlphaProgress('thinking');
+    assert.equal(t.client.environment, 'aside');
+    t.client.setAlphaPlaying(false);
+    assert.equal(t.client.environment, 'listening');
+    const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
+});
+
+test('normal floor signals do not override the experimental controller', async () => {
+    const t = transport(); await connected(t);
+    t.client.turnControl = true;
+    for (const stage of ['guest speaking', 'guest finished', 'thinking', 'preparing voice']) {
+        t.client.updateAlphaProgress(stage);
+        assert.equal(t.client.environment, 'listening');
+    }
+    const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
+});
+
+test('confirmed participant endpoints signal Quartz before ASR, respecting other speakers and VAD noise', async () => {
+    const { AlphaClawdVoiceBot } = require('./bot');
+    const t = transport(); await connected(t);
+    const states = new Map();
+    const bot = Object.create(AlphaClawdVoiceBot.prototype);
+    bot.participantSignalStates = new Map([['g', states]]);
+    bot.getParticipantSignalState = (_g, id) => states.get(id);
+    bot.clearProvisionalParticipantActivity = () => {};
+    bot.setInternalThoughtUserSpeaking = () => {};
+    bot.scheduleGeminiLiveParticipantActivityEnd = () => {};
+    bot.voiceManager = { updateQuartzProgress: (_g, stage) => t.client.updateAlphaProgress(stage) };
+    states.set('noise', { floorConfirmed: false });
+    bot.noteRawParticipantVadStop('g', 'noise');
+    assert.equal(t.client.environment, 'listening', 'noise must not request holding');
+    bot.participantSignalStates.set('g', states);
+    states.set('one', { floorConfirmed: true, floorHasFreshSpeechEvidence: true });
+    states.set('two', { floorConfirmed: true, floorHasFreshSpeechEvidence: true });
+    bot.noteRawParticipantVadStop('g', 'one');
+    assert.equal(t.client.environment, 'listening', 'another guest still owns the floor');
+    bot.noteRawParticipantVadStop('g', 'two');
+    assert.equal(t.client.environment, 'holding', 'endpoint signals holding synchronously, without waiting for ASR or generation');
+    const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });
