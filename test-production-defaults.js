@@ -63,11 +63,21 @@ test('default workflow follows published sequence and latest recording, ignoring
         await bot.handleProductionCommand(interaction({ episode: 20, recording: old }));
         assert.equal(calls[3][calls[3].indexOf('--episode') + 1], '20');
         assert.equal(calls[3][calls[3].indexOf('--recording') + 1], old);
+        await bot.handleProductionCommand(interaction({ append: true, recording: latest }));
+        assert.equal(calls.length, 4);
+        assert.match(reply.content, /Choose the episode to append/);
+        await bot.handleProductionCommand(interaction({ episode: 11, append: true, recording: latest }));
+        assert.equal(calls.length, 5);
+        assert.ok(calls[4].includes('--append'));
+        assert.equal(calls[4][calls[4].indexOf('--recording') + 1], latest);
+        write('production/episode-11/v006/manifest.json', { sourceRecording: old, sourceRecordings: [old, latest] });
+        write('production/episode-11/v006/episode-11-v006.mp3', 'combined');
+        assert.equal(bot.getDefaultPublishVersion(11), 'v006');
         write('feed.xml', '<rss><channel></channel></rss>');
         assert.equal(bot.getProductionEpisodeState().next, 1);
         fs.rmSync(path.join(root, 'recordings'), { recursive: true });
         await bot.handleProductionCommand(interaction());
-        assert.equal(calls.length, 4);
+        assert.equal(calls.length, 5);
         assert.match(reply.content, /No recordings found/);
     } finally {
         for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }

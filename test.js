@@ -10686,7 +10686,8 @@ async function runTests() {
                     throw new Error(`Unexpected string option ${name}`);
                 },
                 getBoolean: (name) => {
-                    throw new Error(`Production handler should not read boolean option ${name}`);
+                    if (name === 'append') return null;
+                    throw new Error(`Unexpected boolean option ${name}`);
                 }
             },
             deferReply: async () => {},

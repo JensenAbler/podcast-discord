@@ -2754,6 +2754,10 @@ class AlphaClawdVoiceBot {
                         .setDescription('Start typing to see available recordings, or leave blank for latest')
                         .setRequired(false)
                         .setAutocomplete(true))
+                .addBooleanOption(option =>
+                    option.setName('append')
+                        .setDescription('Add this recording to the episode’s latest production as a new version')
+                        .setRequired(false))
                 .addStringOption(option =>
                     option
                         .setName('intro-outro-creative-direction')
@@ -3647,8 +3651,9 @@ class AlphaClawdVoiceBot {
             for (const filename of ['manifest.json', 'source/recording-import.json']) {
                 try {
                     const metadata = JSON.parse(fs.readFileSync(path.join(versionDir, filename), 'utf8'));
-                    if (metadata.sourceRecording) {
-                        if (path.resolve(metadata.sourceRecording) === path.resolve(recording)) return value;
+                    const sources = metadata.sourceRecordings || (metadata.sourceRecording ? [metadata.sourceRecording] : []);
+                    if (sources.length) {
+                        if (sources.some(source => path.resolve(source) === path.resolve(recording))) return value;
                         break;
                     }
                 } catch (_error) { /* Try the recording import when no readable manifest exists. */ }
@@ -3826,6 +3831,11 @@ class AlphaClawdVoiceBot {
 
     async handleProductionCommand(interaction) {
         let episode = interaction.options.getInteger('episode');
+        const append = interaction.options.getBoolean('append') === true;
+        if (append && !episode) {
+            await interaction.reply({ content: 'Choose the episode to append to using the episode option.', ephemeral: true });
+            return;
+        }
         if (!episode) {
             episode = this.getProductionEpisodeState().next;
         }
@@ -3849,6 +3859,7 @@ class AlphaClawdVoiceBot {
             '--skip-finalize',
             '--resume'
         ];
+        if (append) args.push('--append');
         if (creativeDirection) {
             args.push('--regenerate-copy', '--intro-outro-creative-direction', creativeDirection);
         }
@@ -3856,6 +3867,7 @@ class AlphaClawdVoiceBot {
         const discordCommand = this.formatDiscordCommand('podcast-production', {
             episode,
             recording: recording !== 'latest' ? recording : undefined,
+            append: append || undefined,
             'intro-outro-creative-direction': creativeDirection || undefined
         });
         const commandBlock = `\n\`\`\`\n${discordCommand}\n\`\`\``;
@@ -3869,6 +3881,7 @@ class AlphaClawdVoiceBot {
             let summary = '';
             if (data) {
                 summary = `**Episode ${data.episode || episode}** · version ${data.version || '?'}`;
+                if (data.sourceRecordings?.length > 1) summary += `\n${data.sourceRecordings.length} recordings combined in order`;
                 if (data.finalMp3) summary += `\n📁 ${data.finalMp3}`;
                 if (data.durationSeconds) {
                     const mins = Math.floor(data.durationSeconds / 60);

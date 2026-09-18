@@ -193,3 +193,14 @@ unknown-sender counts suggest missing mappings; known-sender traffic without
 PCM points further downstream. UDP counts include transport/control traffic,
 so they are not by themselves proof of human speech. State snapshots are
 observations, not proof that Discord or the user's microphone is healthy.
+
+### Combine recordings into one produced episode
+
+Produce the first recording with `/podcast-production`. To add another recording,
+use `/podcast-production episode:18 recording:<recording> append:true`.
+Append requires an explicit episode number and creates a new version from that
+episode's latest completed production plus the selected recording. Repeat to
+include more recordings, in order. Leave recording blank for the latest recording.
+The result has one intro/outro and a continuous transcript with images.
+Resume still creates separate recordings. Publish the combined version separately
+with `/podcast-publish episode:18 version:<version>`.
