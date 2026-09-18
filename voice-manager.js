@@ -622,6 +622,13 @@ class VoiceManager {
         try {
             await host.start();
             if (!host.closed && recordingPath) {
+                // Inherited speech is context only, never appended to the new transcript/audio.
+                const historyPath = path.join(recordingPath, 'resume-history.json');
+                if (fs.existsSync(historyPath)) {
+                    for (const entry of JSON.parse(fs.readFileSync(historyPath, 'utf8'))) {
+                        host.appendConversation('Previous episode transcript', (entry.speaker || 'Speaker') + ': ' + (entry.text || entry.transcription));
+                    }
+                }
                 // Includes the opening announcement and any guests heard during startup.
                 const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
                 if (fs.existsSync(transcriptPath)) {

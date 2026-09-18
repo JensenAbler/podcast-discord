@@ -336,6 +336,7 @@ class PodcastGenerator {
         this.standbyMode = false;
         this.episodeStructureNotes = [];
         this.evolveSession = null;
+        this.continuationContext = '';
         this.session = {
             topic: 'general discussion',
             recording: false,
@@ -351,6 +352,7 @@ class PodcastGenerator {
         this.standbyMode = false;
         this.episodeStructureNotes = [];
         this.evolveSession = null;
+        this.continuationContext = '';
         this.session = {
             topic: options.topic || 'general discussion',
             recording: options.recording !== false,
@@ -367,6 +369,7 @@ class PodcastGenerator {
         this.standbyMode = false;
         this.episodeStructureNotes = [];
         this.evolveSession = null;
+        this.continuationContext = '';
         this.session.recording = false;
         console.log('[PodcastGenerator] Session ended');
     }
@@ -785,6 +788,7 @@ class PodcastGenerator {
         if (this.evolveSession) {
             const full = [messages[0],
                 { role: 'user', content: this.evolveSession.context() },
+                ...(this.continuationContext ? [{ role: 'user', content: this.continuationContext }] : []),
                 { role: 'user', content: this.buildUserPrompt(transcript, input.wordData, input) },
                 messages[messages.length - 1]];
             const limit = Math.min(this.getPromptTokenBudget(), this.evolveSession.state.manifest.contextLimit - this.maxCompletionTokens - 10000);

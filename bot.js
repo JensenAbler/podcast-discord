@@ -1,3 +1,4 @@
+const { buildResumeCommand, handleResumeCommand, preflightResume, installResume } = require('./podcast-resume');
 const { ConversationAdmission, assess } = require('./conversation-admission');
 const { captureSynthesisInput, deliveryRecord } = require('./speech-delivery');
 /**
@@ -2709,6 +2710,7 @@ class AlphaClawdVoiceBot {
     buildSlashCommands() {
         return [
             buildEvolveCommand(),
+            buildResumeCommand(),
             new SlashCommandBuilder()
                 .setName('podcast-join')
                 .setDescription('Join voice channel and start recording')
@@ -2848,6 +2850,9 @@ class AlphaClawdVoiceBot {
             switch (commandName) {
                 case 'reveal':
                     await handleEvolveCommand(this, interaction);
+                    break;
+                case 'podcast-resume':
+                    await handleResumeCommand(this, interaction);
                     break;
                 case 'podcast-join':
                     await this.handleJoinCommand(interaction);
@@ -4073,7 +4078,16 @@ class AlphaClawdVoiceBot {
     /**
      * Handle /podcast-join command - joins voice channel and starts recording
      */
-    async handleJoinCommand(interaction) {
+    async handleJoinCommand(interaction, resume = null) {
+        if (this.podcastJoinPending) {
+            return interaction.reply({ content: 'A podcast is already joining. Please wait.', ephemeral: true });
+        }
+        this.podcastJoinPending = true;
+        try { return await this.joinPodcastWithConsent(interaction, resume); }
+        finally { this.podcastJoinPending = false; }
+    }
+
+    async joinPodcastWithConsent(interaction, resume = null) {
         const member = interaction.member;
         const voiceChannel = member.voice.channel;
         const guildId = interaction.guildId;
@@ -4100,7 +4114,7 @@ class AlphaClawdVoiceBot {
             });
         }
 
-        const engine = this.normalizeSessionHostMode(interaction.options.getString('engine'));
+        const engine = resume ? 'current' : this.normalizeSessionHostMode(interaction.options.getString('engine'));
         if (engine === 'live-alpha' && (!process.env.PODCAST_LIVE_API_KEY || this.useGatewayGenerator())) {
             return interaction.reply({
                 content: 'Live timing requires PODCAST_LIVE_API_KEY and the direct podcast generator.',
@@ -4118,9 +4132,9 @@ class AlphaClawdVoiceBot {
 
         try {
             // Get topic FIRST (before joining)
-            const topic = interaction.options.getString('topic') || 'the topic at hand';
-            const planRef = interaction.options.getString('plan') || '';
-            const episodePlanSelection = this.loadEpisodePlanSelection(planRef);
+            const topic = resume ? resume.topic : interaction.options.getString('topic') || 'the topic at hand';
+            const planRef = resume ? '' : interaction.options.getString('plan') || '';
+            const episodePlanSelection = resume ? null : this.loadEpisodePlanSelection(planRef);
 
             // Speaker names auto-resolve from Discord member info inside the
             // receiver (see AudioReceiver.getSpeakerInfo).
@@ -4131,6 +4145,7 @@ class AlphaClawdVoiceBot {
             this.consentWaiters.set(guildId, {
                 userId: interaction.user.id,
                 topic: topic,
+                resume,
                 engine,
                 episodePlanSelection,
                 channelId: interaction.channelId,
@@ -4152,6 +4167,7 @@ class AlphaClawdVoiceBot {
 
             await interaction.editReply(
                 `✅ Joined **${voiceChannel.name}**!\n\n` +
+                (resume ? `New episode, continuing from **${resume.recording}**. Previous audio and publication remain unchanged.\n\n` : '') +
                 `🎙️ **Consent Request Sent**\n` +
                 `I've asked participants for recording consent in voice.\n` +
                 `Please type **YES** to proceed or **NO** to cancel.\n\n` +
@@ -4206,8 +4222,15 @@ class AlphaClawdVoiceBot {
 
         if (content === 'yes') {
             await this.grantConsent(guildId, waiter.topic, waiter.engine, waiter.episodePlanSelection, {
-                channelId: waiter.channelId
+                channelId: waiter.channelId,
+                resume: waiter.resume
             });
+            if (waiter.resume) {
+                await message.reply({
+                    content: 'New episode recording started with the previous conversation restored. You can continue speaking.',
+                    allowedMentions: { parse: [], repliedUser: false }
+                });
+            }
         } else if (content === 'no') {
             await this.denyConsent(guildId);
         }
@@ -4816,6 +4839,7 @@ class AlphaClawdVoiceBot {
         if (sessionHostMode === 'live-alpha' && (!process.env.PODCAST_LIVE_API_KEY || this.useGatewayGenerator())) {
             throw new Error('Live timing requires the dedicated Live key and direct generator');
         }
+        if (context.resume) preflightResume(this.podcastGenerator, context.resume, Object.values(this.speakerMap).map(s => s.name + ' (' + (s.role || 'speaker') + ')'));
         this.conversationBuffer?.clear?.();
         this.recordingState.set(guildId, this.RecordingState.RECORDING);
         this.sessionHostModes.set(guildId, sessionHostMode);
@@ -4857,9 +4881,15 @@ class AlphaClawdVoiceBot {
                 speakers: Object.values(this.speakerMap).map(s => `${s.name} (${s.role || 'speaker'})`),
                 episodePlan: episodePlanSelection?.plan
             });
+            if (context.resume) {
+                const session = installResume(this.podcastGenerator, context.resume, recordingInfo.recordingPath);
+                this.evolveSessions ||= new Map();
+                this.evolveSessions.set(guildId, session);
+                void refreshRevealDescription(this);
+            }
             // An optional announcement must not prevent host initialization.
             try {
-                await this.speakRecordingStart(guildId, sessionHostMode, episodePlanSelection);
+                if (!context.resume) await this.speakRecordingStart(guildId, sessionHostMode, episodePlanSelection);
             } catch (error) {
                 console.error('[Bot] Recording start announcement failed; continuing session startup:', error);
             }
@@ -4946,6 +4976,11 @@ class AlphaClawdVoiceBot {
             }
         } catch (error) {
             console.error('[Bot] Error speaking start:', error);
+            if (context.resume) {
+                this.consentWaiters.delete(guildId);
+                await this.leavePodcastSession(guildId, { reason: 'resume-start-failed', channelId: context.channelId });
+                throw error;
+            }
             if (sessionHostMode === 'live-alpha') {
                 await this.voiceManager.stopQuartzBackchannel?.(guildId);
                 this.consentWaiters.delete(guildId);
