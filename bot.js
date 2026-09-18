@@ -3055,59 +3055,49 @@ class AlphaClawdVoiceBot {
             throw new Error('audio attachment was empty');
         }
 
-        return await new Promise((resolve, reject) => {
-            const args = [
-                '-hide_banner',
-                '-loglevel', 'error',
-                '-i', 'pipe:0',
-                '-f', 's16le',
-                '-acodec', 'pcm_s16le',
-                '-ac', '2',
-                '-ar', '48000',
-                'pipe:1'
-            ];
-            const ffmpeg = spawn('ffmpeg', args, { windowsHide: true });
-            const stdout = [];
-            const stderr = [];
-            let settled = false;
-            const timeout = setTimeout(() => {
-                if (settled) return;
-                settled = true;
-                ffmpeg.kill('SIGKILL');
-                reject(new Error('audio decode timed out'));
-            }, this.planningAudioDecodeTimeoutMs || 30000);
-
-            ffmpeg.stdout.on('data', (chunk) => stdout.push(chunk));
-            ffmpeg.stderr.on('data', (chunk) => stderr.push(chunk));
-            ffmpeg.on('error', (error) => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timeout);
-                reject(error);
+        // M4A/MP4 may put their index after the audio. A pipe cannot seek back
+        // to the packets after reading that index, even when FFmpeg exits 0.
+        const directory = await fs.promises.mkdtemp(path.join(require('os').tmpdir(), 'planning-audio-'));
+        const input = path.join(directory, 'input');
+        try {
+            await fs.promises.writeFile(input, audioBuffer, { mode: 0o600 });
+            return await new Promise((resolve, reject) => {
+                const args = [
+                    '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
+                    '-i', input, '-map', '0:a:0', '-vn',
+                    '-f', 's16le', '-acodec', 'pcm_s16le',
+                    '-ac', '2', '-ar', '48000', 'pipe:1'
+                ];
+                const ffmpeg = spawn('ffmpeg', args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+                const stdout = [];
+                let stderr = '';
+                let timedOut = false;
+                const timeout = setTimeout(() => {
+                    timedOut = true;
+                    ffmpeg.kill('SIGKILL');
+                }, this.planningAudioDecodeTimeoutMs || 30000);
+                ffmpeg.stdout.on('data', chunk => stdout.push(chunk));
+                ffmpeg.stderr.on('data', chunk => { stderr = (stderr + chunk.toString('utf8')).slice(-4000); });
+                ffmpeg.on('error', error => {
+                    clearTimeout(timeout);
+                    reject(error);
+                });
+                ffmpeg.on('close', code => {
+                    clearTimeout(timeout);
+                    if (timedOut) return reject(new Error('audio decode timed out'));
+                    if (code !== 0) {
+                        return reject(new Error('audio decode failed' + (stderr.trim() ? ': ' + stderr.trim() : '')));
+                    }
+                    const pcm = Buffer.concat(stdout);
+                    if (!pcm.length) return reject(new Error('audio decode produced no PCM data'));
+                    console.log('[Bot] Podcast planning decoded audio attachment: name=' +
+                        (attachment.name || 'audio') + ', inputBytes=' + audioBuffer.length + ', pcmBytes=' + pcm.length);
+                    resolve(pcm);
+                });
             });
-            ffmpeg.on('close', (code) => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timeout);
-                if (code !== 0) {
-                    const detail = Buffer.concat(stderr).toString('utf8').trim();
-                    reject(new Error(`audio decode failed${detail ? `: ${detail}` : ''}`));
-                    return;
-                }
-                const pcm = Buffer.concat(stdout);
-                if (pcm.length === 0) {
-                    reject(new Error('audio decode produced no PCM data'));
-                    return;
-                }
-                console.log(
-                    `[Bot] Podcast planning decoded audio attachment: ` +
-                    `name=${attachment.name || 'audio'}, inputBytes=${audioBuffer.length}, pcmBytes=${pcm.length}`
-                );
-                resolve(pcm);
-            });
-
-            ffmpeg.stdin.end(audioBuffer);
-        });
+        } finally {
+            await fs.promises.rm(directory, { recursive: true, force: true });
+        }
     }
 
     describePlanningSession(session) {
