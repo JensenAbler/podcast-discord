@@ -29,7 +29,7 @@ function fixture(t) {
     const write = (name, value) => fs.writeFileSync(path.join(dir, name), JSON.stringify(value));
     write('evolve-state.json', state);
     write('episode-complete.json', { guildId: 'g', stoppedAt: '2026-09-17T20:00:00Z' });
-    write('episode-plan.json', { backgroundBrief: 'Original background' });
+    write('episode-plan.json', { basename: 'retrospective', version: 'v001', backgroundBrief: 'Original background' });
     fs.writeFileSync(path.join(dir, 'transcript.jsonl'), entries.map(e => JSON.stringify(e)).join('\n') + '\n');
     fs.writeFileSync(path.join(dir, 'mixed-audio.mp3'), 'published audio sentinel');
     return { root, name, dir, state, write, source: () => loadResumeSource(root, null, 'u', 'g') };
@@ -104,6 +104,8 @@ test('snapshot is pinned and supports a later continuation without duplicating h
     assert.equal(next.entries.length, 2);
     assert.equal(next.state.timeline.length, 2);
     assert.deepEqual(next.plan, source.plan);
+    assert.equal(source.planTag, 'plan:retrospective');
+    assert.equal(next.planTag, source.planTag);
 });
 test('invalid permissions and occupied session fail before joining', async t => {
     const f = fixture(t); let joined = false, reply;
@@ -134,6 +136,7 @@ test('consent starts new recording, restores before idle loop and skips opener',
         gatewayBridge: { async disableAllCronJobs() { return []; } },
         voiceManager: { startRecording(guild, prefix, metadata) {
             assert.equal(prefix, 'episode'); assert.equal(metadata.consentGiven, true);
+            assert.equal(metadata.planTag, 'plan:retrospective');
             fs.writeFileSync(path.join(dest, 'transcript.jsonl'), '');
             return { recordingPath: dest };
         } },

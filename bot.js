@@ -2754,6 +2754,9 @@ class AlphaClawdVoiceBot {
                         .setDescription('Start typing to see available recordings, or leave blank for latest')
                         .setRequired(false)
                         .setAutocomplete(true))
+                .addStringOption(option => option.setName('plan')
+                    .setDescription('Combine all completed recordings tagged with this episode plan')
+                    .setAutocomplete(true))
                 .addBooleanOption(option =>
                     option.setName('append')
                         .setDescription('Add this recording to the episode’s latest production as a new version')
@@ -3405,6 +3408,11 @@ class AlphaClawdVoiceBot {
         const focused = interaction.options.getFocused(true);
 
         try {
+            if (interaction.commandName === 'podcast-production' && focused.name === 'plan') {
+                const { planChoices } = require('./recording-tags');
+                await interaction.respond(planChoices(getRecordingDir(), focused.value, interaction.guildId));
+                return;
+            }
             if (interaction.commandName === 'podcast-join' && focused.name === 'plan') {
                 const choices = this.listEpisodePlanAutocompleteChoices(focused.value);
                 await interaction.respond(choices.length ? choices : [{ name: 'No episode plans found', value: '' }]);
@@ -3418,7 +3426,9 @@ class AlphaClawdVoiceBot {
             }
 
             if (interaction.commandName === 'podcast-production' && focused.name === 'recording') {
-                const recordings = this.listAvailableRecordings();
+                const words = String(focused.value || '').toLowerCase().split(/\s+/).filter(Boolean);
+                const recordings = this.listAvailableRecordings().filter(r =>
+                    words.every(word => (r.searchText || r.label + ' ' + r.value).toLowerCase().includes(word)));
                 const choices = recordings.slice(0, 25).map(r => ({
                     name: r.label,
                     value: r.value
@@ -3685,12 +3695,14 @@ class AlphaClawdVoiceBot {
                     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                 }) : d.name;
                 const duration = meta.duration ? `${Math.round(meta.duration)}s` : '';
-                const label = duration ? `${started} · ${duration}` : started;
-                return { label, value: d.name, startedAt: Number(new Date(meta.startedAt || 0)) || 0 };
+                const { recordingTags } = require('./recording-tags');
+                const tags = recordingTags(dirPath).tags.join(', ');
+                const label = [started, duration, tags].filter(Boolean).join(' · ').slice(0, 100);
+                return { label, searchText: [started, duration, tags, d.name].join(' '), value: d.name, startedAt: Number(new Date(meta.startedAt || 0)) || 0 };
             })
             .sort((a, b) => b.startedAt - a.startedAt || b.value.localeCompare(a.value));
 
-        const choices = entries.map(e => ({ label: e.label, value: e.value }));
+        const choices = entries.map(e => ({ label: e.label, value: e.value, searchText: e.searchText }));
         choices.unshift({ label: 'latest (most recent)', value: 'latest' });
         return choices;
     }
@@ -3830,6 +3842,11 @@ class AlphaClawdVoiceBot {
     }
 
     async handleProductionCommand(interaction) {
+        const plan = (interaction.options.getString('plan') || '').trim();
+        if (plan && (interaction.options.getString('recording') || interaction.options.getBoolean('append'))) {
+            await interaction.reply({ content: 'Choose a plan to combine all its recordings, or use recording/append separately.', ephemeral: true });
+            return;
+        }
         let episode = interaction.options.getInteger('episode');
         const append = interaction.options.getBoolean('append') === true;
         if (append && !episode) {
@@ -3840,7 +3857,7 @@ class AlphaClawdVoiceBot {
             episode = this.getProductionEpisodeState().next;
         }
         let recording = interaction.options.getString('recording') || 'latest';
-        if (recording === 'latest') {
+        if (!plan && recording === 'latest') {
             recording = this.getLatestRecording();
             if (!recording) {
                 await interaction.reply({ content: 'No recordings found. Record an episode first.', ephemeral: true });
@@ -3855,7 +3872,7 @@ class AlphaClawdVoiceBot {
             '/opt/podcast-production/tools/podcast-tool.py',
             'produce-recording',
             '--episode', String(episode),
-            '--recording', recording,
+            ...(plan ? ['--plan', plan, '--guild-id', interaction.guildId] : ['--recording', recording]),
             '--skip-finalize',
             '--resume'
         ];
@@ -3866,7 +3883,8 @@ class AlphaClawdVoiceBot {
 
         const discordCommand = this.formatDiscordCommand('podcast-production', {
             episode,
-            recording: recording !== 'latest' ? recording : undefined,
+            recording: !plan && recording !== 'latest' ? recording : undefined,
+            plan: plan || undefined,
             append: append || undefined,
             'intro-outro-creative-direction': creativeDirection || undefined
         });
@@ -4875,6 +4893,7 @@ class AlphaClawdVoiceBot {
             consentGiven: true,
             hostEngine: sessionHostMode,
             consentTimestamp: consentTimestamp,
+            planTag: context.resume?.planTag || null,
             episodePlan: episodePlanSelection ? {
                 basename: episodePlanSelection.plan.basename,
                 version: episodePlanSelection.plan.version,

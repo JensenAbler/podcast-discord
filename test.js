@@ -10683,6 +10683,7 @@ async function runTests() {
                 getString: (name) => {
                     if (name === 'recording') return 'latest';
                     if (name === 'intro-outro-creative-direction') return 'Make it warmer, stranger, and less recap-heavy.';
+                    if (name === 'plan') return null;
                     throw new Error(`Unexpected string option ${name}`);
                 },
                 getBoolean: (name) => {

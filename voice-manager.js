@@ -24,6 +24,7 @@ const { QuartzPlayback } = require('./quartz-playback');
 const { AudioRecorder } = require('./audio-recorder');
 const { EpisodePostProcessor } = require('./post-processor');
 const { getRecordingDir } = require('./paths');
+const { participantTag, planTag, writeTags } = require('./recording-tags');
 
 class VoiceManager {
     constructor(client, options = {}) {
@@ -288,6 +289,7 @@ class VoiceManager {
         const leftTrackedChannel = oldState.channelId === channelId && newState.channelId !== channelId;
 
         if (joinedTrackedChannel) {
+            this.addMemberTag(guildId, newState.member);
             console.log(`[VoiceManager] User ${userId} joined active voice channel; opening receiver subscription`);
             receiver.subscribeToUser(userId);
             return;
@@ -859,6 +861,14 @@ class VoiceManager {
             episodePlan
         };
         this.recordingMetadata.set(guildId, storedRecordingInfo);
+        storedRecordingInfo.tags = [];
+        storedRecordingInfo.planTag = options.planTag || planTag(episodePlan);
+        if (storedRecordingInfo.planTag) storedRecordingInfo.tags.push(storedRecordingInfo.planTag);
+        this.addParticipantTag(guildId, 'Alpha');
+        const channel = this.client.channels?.cache?.get(this.connectionChannels.get(guildId));
+        for (const member of channel?.members?.values?.() || []) {
+            if (!member.user?.bot) this.addMemberTag(guildId, member);
+        }
 
         // Create transcript file
         const transcriptPath = path.join(recordingPath, 'transcript.jsonl');
@@ -874,6 +884,24 @@ class VoiceManager {
             consentTimestamp: recordingInfo.consentTimestamp,
             episodePlan
         };
+    }
+
+    addParticipantTag(guildId, name) {
+        const metadata = this.recordingMetadata.get(guildId);
+        const dir = this.recordingPaths.get(guildId);
+        if (!metadata || !dir || !this.isRecording.get(guildId)) return;
+        const tag = participantTag(name);
+        if (!tag || metadata.tags?.includes(tag)) return;
+        metadata.tags ||= [];
+        metadata.tags.push(tag);
+        writeTags(dir, metadata.tags, metadata.planTag);
+    }
+
+    addMemberTag(guildId, member) {
+        if (!member || member.user?.bot) return;
+        const mapped = this.receivers.get(guildId)?.options?.speakerMap?.[member.id];
+        this.addParticipantTag(guildId, (typeof mapped === 'string' ? mapped : mapped?.name)
+            || member.displayName || member.user?.username);
     }
 
     writeEpisodePlanSnapshot(recordingPath, input = null) {
@@ -966,7 +994,9 @@ class VoiceManager {
                 given: audioResult ? audioResult.consentGiven : false,
                 timestamp: audioResult ? audioResult.consentTimestamp : null
             },
-            episodePlan: storedMetadata.episodePlan || null
+            episodePlan: storedMetadata.episodePlan || null,
+            tags: storedMetadata.tags || [],
+            planTag: storedMetadata.planTag || null
         };
 
         fs.writeFileSync(finalPath, JSON.stringify(recording, null, 2));
@@ -1129,6 +1159,10 @@ class VoiceManager {
             ]
         };
 
+        if (utterance.admission?.status !== 'candidate' &&
+            !['failed', 'not_started'].includes(utterance.playbackStatus)) {
+            this.addParticipantTag?.(guildId, utterance.speaker);
+        }
         const entry = JSON.stringify(cleanEntry);
         fs.appendFileSync(transcriptPath, entry + '\n');
         this.observeQuartzTranscript?.(guildId, utterance);

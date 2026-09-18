@@ -204,3 +204,11 @@ include more recordings, in order. Leave recording blank for the latest recordin
 The result has one intro/outro and a continuous transcript with images.
 Resume still creates separate recordings. Publish the combined version separately
 with `/podcast-publish episode:18 version:<version>`.
+
+### Participant and episode-plan tags
+
+Recordings carry individual `person:<name>` tags (for example `person:jensen` and `person:alpha`), and an optional `plan:<basename>` tag shared across plan versions and resumes. Participant tags describe the current recording, not inherited conversation history. New recordings persist tags in `recording-tags.json` and final metadata; older recordings derive tags from their own transcripts and saved plan/background. Names are normalized; Alpha-Clawd maps to Alpha and Jensen Abler maps to Jensen.
+
+Use `/podcast-production plan:<plan-name>` to combine all completed recordings for that plan in chronological order, with one intro and outro. Plan autocomplete shows recording counts and is scoped to the current server. An optional `episode` chooses the destination; otherwise the normal next episode is used. Each run creates a new version. Publishing remains a separate command. Don't combine `plan` with `recording` or `append`.
+
+Recording autocomplete supports participant/plan text searches; multiple words must all match (for example `jensen alpha`). Production manifests retain the union of all source tags. CLI: `python3 tools/podcast-tool.py produce-recording --episode 20 --plan <basename> --dry-run` previews selected sources; omit `--dry-run` to produce. `--guild-id` optionally restricts selection to a server.

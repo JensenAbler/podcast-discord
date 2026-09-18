@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { EvolveSession, contained, hash } = require('./evolve-session');
+const { recordingTags } = require('./recording-tags');
 
 function buildResumeCommand() {
     return new SlashCommandBuilder().setName('podcast-resume')
@@ -67,6 +68,7 @@ function loadResumeSource(root, recording, ownerId, guildId) {
                 ? JSON.parse(read(root, name + '/resume-background.json')) : null;
         // Snapshot is pinned during consent. No source files are ever opened for writing.
         return { recording: name, sourcePath: fs.realpathSync(dir), state, entries, plan,
+            planTag: recordingTags(dir).planTag,
             topic: state.manifest.title || 'continued conversation',
             stateSha256: hash(stateBytes), transcriptSha256: hash(transcriptBytes),
             contextSha256: hash(sessionFrom(state).context()) };
