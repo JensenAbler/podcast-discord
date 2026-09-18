@@ -80,7 +80,6 @@ const { GatewayWsClient } = require('./gateway-ws-client');
 const { ConversationBuffer, BufferState } = require('./conversation-buffer');
 const { getPodcastRoot, getRecordingDir } = require('./paths');
 const { PodcastGenerator } = require('./podcast-generator');
-const { buildEvolveCommand, handleEvolveCommand, refreshRevealDescription } = require('./evolve-controls');
 const { InternalThoughtManager } = require('./internal-thought-manager');
 const { ShowRunnerGenerator } = require('./showrunner-generator');
 const { EpisodePlanStore } = require('./episode-plan-store');
@@ -2676,9 +2675,7 @@ class AlphaClawdVoiceBot {
         this.client.on('interactionCreate', async (interaction) => {
             console.log(`[Bot] Interaction received: ${interaction.type}, isCommand: ${interaction.isChatInputCommand()}, isAutocomplete: ${interaction.isAutocomplete()}`);
             try {
-                if (interaction.isButton?.() && interaction.customId.startsWith('evolve-reveal:')) {
-                    await handleEvolveCommand(this, interaction);
-                } else if (interaction.isAutocomplete()) {
+                if (interaction.isAutocomplete()) {
                     await this.handleAutocomplete(interaction);
                 } else if (interaction.isChatInputCommand()) {
                     console.log(`[Bot] Handling command: ${interaction.commandName}`);
@@ -2709,7 +2706,6 @@ class AlphaClawdVoiceBot {
      */
     buildSlashCommands() {
         return [
-            buildEvolveCommand(),
             buildResumeCommand(),
             new SlashCommandBuilder()
                 .setName('podcast-join')
@@ -2810,36 +2806,21 @@ class AlphaClawdVoiceBot {
 
         try {
             console.log('[Bot] Registering slash commands...');
-            let registered;
             
             if (this.guildId) {
                 // Register for specific guild (faster, for testing)
-                registered = await rest.put(
+                await rest.put(
                     Routes.applicationGuildCommands(this.clientId, this.guildId),
                     { body: commands.map(c => c.toJSON()) }
                 );
                 console.log(`[Bot] Commands registered for guild ${this.guildId}`);
             } else {
                 // Register globally (takes up to an hour)
-                registered = await rest.put(
+                await rest.put(
                     Routes.applicationCommands(this.clientId),
                     { body: commands.map(c => c.toJSON()) }
                 );
                 console.log('[Bot] Commands registered globally');
-            }
-            const reveal = registered.find(command => command.name === 'reveal');
-            if (reveal) {
-                const route = this.guildId
-                    ? Routes.applicationGuildCommand(this.clientId, this.guildId, reveal.id)
-                    : Routes.applicationCommand(this.clientId, reveal.id);
-                this.revealCommandRegistration = {
-                    description: reveal.description,
-                    update: description => rest.patch(route, { body: { description } })
-                };
-                await refreshRevealDescription(this);
-                clearInterval(this.revealDescriptionTimer);
-                this.revealDescriptionTimer = setInterval(() => void refreshRevealDescription(this), 30000);
-                this.revealDescriptionTimer.unref();
             }
 
         } catch (error) {
@@ -2855,9 +2836,6 @@ class AlphaClawdVoiceBot {
 
         try {
             switch (commandName) {
-                case 'reveal':
-                    await handleEvolveCommand(this, interaction);
-                    break;
                 case 'podcast-resume':
                     await handleResumeCommand(this, interaction);
                     break;
@@ -4901,7 +4879,6 @@ class AlphaClawdVoiceBot {
                 plan: episodePlanSelection.plan
             } : null
         });
-        void refreshRevealDescription(this);
         this.startInternalThoughtSession(guildId, recordingInfo);
         this.startEpisodePlanTracker(guildId, episodePlanSelection, recordingInfo);
 
@@ -4917,7 +4894,6 @@ class AlphaClawdVoiceBot {
                 const session = installResume(this.podcastGenerator, context.resume, recordingInfo.recordingPath);
                 this.evolveSessions ||= new Map();
                 this.evolveSessions.set(guildId, session);
-                void refreshRevealDescription(this);
             }
             // An optional announcement must not prevent host initialization.
             try {
@@ -7790,8 +7766,6 @@ class AlphaClawdVoiceBot {
      * Stop the bot
      */
     async stop() {
-        this.revealDescriptionClosing = true;
-        clearInterval(this.revealDescriptionTimer);
         for (const clip of this.preparedClips?.values() || []) await clip.stop().catch(() => {});
         for (const session of this.evolveSessions?.values() || []) session.save();
         this.discordContextClosing = true;

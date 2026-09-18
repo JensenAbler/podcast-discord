@@ -7,7 +7,6 @@ const path = require('path');
 const { EvolveSession, validateManifest, contained } = require('./evolve-session');
 const { PodcastGenerator } = require('./podcast-generator');
 const { PreparedClipPlayer, validateCues, decodeAudio } = require('./prepared-clip');
-const { buildEvolveCommand } = require('./evolve-controls');
 const { inventory, prepare } = require('./evolve-prepare');
 function temp(t) { const dir=fs.mkdtempSync(path.join(os.tmpdir(),'evolve-test-')); t.after(()=>fs.rmSync(dir,{recursive:true,force:true})); return dir; }
 function session(t) {
@@ -128,11 +127,6 @@ test('real ffmpeg decoding produces expected PCM and invalid input rejects',asyn
  fs.writeFileSync(path.join(dir,'bad'),'not audio');
  await assert.rejects(decodeAudio(path.join(dir,'bad')),/decoding failed/);
 });
-test('reveal is a single command with no options',()=>{
- const c=buildEvolveCommand().toJSON();
- assert.equal(c.name,'reveal');assert.ok(c.default_member_permissions);
- assert.equal(c.options?.length || 0,0);
-});
 test('feed inventory deduplicates by actual published reference and reports missing material',t=>{
  const dir=temp(t);fs.mkdirSync(path.join(dir,'episodes'));fs.writeFileSync(path.join(dir,'episodes','ep5_transcript.txt'),'FULL');
  fs.writeFileSync(path.join(dir,'feed.xml'),'<rss><channel><item><title>Fifth &amp; final</title><itunes:episode>5</itunes:episode><description>https://example.org/episodes/ep5_transcript.txt</description></item><item><title>Early</title><itunes:episode>0</itunes:episode></item></channel></rss>');
@@ -151,52 +145,6 @@ test('production voice handoff preserves interruption result through Quartz rele
  options.onStart();options.onFinish({interrupted:true});
  const result=await playback.finished;
  assert.equal(result.playbackInterrupted,true);assert.equal(released,1);
-});
-test('reveal auto-loads, advances once, retains full context, resumes and rolls back budget failures',async t=>{
- const {handleEvolveCommand}=require('./evolve-controls');
- const root=temp(t), prior=process.env.CLAWCAST_CONTENT_ROOT;
- process.env.CLAWCAST_CONTENT_ROOT=root;
- t.after(()=>{if(prior===undefined)delete process.env.CLAWCAST_CONTENT_ROOT;else process.env.CLAWCAST_CONTENT_ROOT=prior;});
- fs.mkdirSync(path.join(root,'episodes'));
- const recording=path.join(root,'recordings','now');fs.mkdirSync(recording,{recursive:true});
- for(const n of [1,2])fs.writeFileSync(path.join(root,'episodes',n+'_transcript.txt'),'FULL TRANSCRIPT '+n);
- fs.writeFileSync(path.join(root,'feed.xml'),'<rss><channel>'+[2,1].map(n=>'<item><title>Episode '+n+'</title><itunes:episode>'+n+'</itunes:episode><description>https://example.org/episodes/'+n+'_transcript.txt</description></item>').join('')+'</channel></rss>');
- const gen=new PodcastGenerator({apiKey:'test'}), replies=[];let calls=0, busy=false;
- const bot={podcastGenerator:gen,isRecordingActive:()=>true,useGatewayGenerator:()=>false,isLiveAlphaSession:()=>false,
- voiceManager:{getPlaybackStatus:()=>({isPlaying:busy,queueLength:0}),recordingPaths:new Map([['g',recording]])},
- async handleDirectGeneratorFlush(g,u,c,w,opts){
-  calls++;assert.equal(opts.evolveControl,true);
-  const messages=JSON.stringify(gen.buildMessages({transcript:c}));
-  assert.match(messages,/FULL TRANSCRIPT 1/);
-  if(calls===1)assert.doesNotMatch(messages,/FULL TRANSCRIPT 2/);else assert.match(messages,/FULL TRANSCRIPT 2/);
-  gen.observeSpokenTranscript({speaker:'Alpha-Clawd',transcription:'Reflection '+calls,playbackStatus:'completed'});
- }};
- async function reveal(user='owner', customId=null){
-  await handleEvolveCommand(bot,{guildId:'g',user:{id:user},customId,isButton:()=>!!customId,memberPermissions:{has:()=>true},
-   guild:{members:{fetch:async()=>({voice:{channelId:'v'}}),me:{voice:{channelId:'v'}}}},
-   async deferReply(){},async deferUpdate(){},async editReply(r){replies.push(r);}});
- }
- await reveal();assert.equal(calls,0);assert.equal(gen.evolveSession.state.index,-1);
- assert.match(replies.at(-1).content,/About to reveal .*Episode 1/);
- assert.doesNotMatch(gen.evolveSession.context(),/FULL TRANSCRIPT 1/);
- const first=replies.at(-1).components[0].toJSON().components[0].custom_id;
- await reveal('owner',first);assert.equal(calls,1);assert.equal(gen.evolveSession.state.index,0);
- assert.match(replies.at(-1).content,/Next \/reveal: Episode 2/);
- await reveal('owner',first);assert.equal(calls,1);
- assert.match(replies.at(-1).content,/out of date/);
- await reveal('other');assert.equal(calls,1);
- await reveal();const second=replies.at(-1).components[0].toJSON().components[0].custom_id;
- busy=true;await reveal('owner',second);busy=false;assert.equal(gen.evolveSession.state.index,0);
- const budget=gen.maxRequestTokens;gen.maxRequestTokens=1;
- await reveal('owner',second);assert.equal(gen.evolveSession.state.index,0);
- assert.equal(JSON.parse(fs.readFileSync(path.join(recording,'evolve-state.json'))).index,0);
- gen.maxRequestTokens=budget;
- bot.evolveSessions.clear();gen.evolveSession=null;
- await reveal('owner',second);assert.equal(calls,2);assert.equal(gen.evolveSession.state.index,1);
- assert.match(gen.evolveSession.context(),/Reflection 1/);
- await reveal();assert.equal(calls,2);assert.equal(gen.evolveSession.state.index,1);
- assert.match(replies.at(-1).content,/already been revealed/);
- assert.equal(bot.evolveCommandLocks.size,0);
 });
 test('playback failures preserve consumed audio and never inject future cues',async t=>{
  const b=playbackBot(t);
@@ -218,49 +166,3 @@ test('an interrupted host response cannot satisfy the prediction gate',t=>{
  assert.throws(()=>s.reveal(),/No audible/);
 });
 
-test('picker previews first, next, pending prediction, completion, and saved state without revealing', t => {
- const { revealDescription } = require('./evolve-controls');
- const root = temp(t);
- fs.writeFileSync(path.join(root,'episode_transcript.txt'),'complete text');
- fs.writeFileSync(path.join(root,'feed.xml'),'<rss><item><title>Published first</title><itunes:episode>0</itunes:episode><link>https://example.com/episode_transcript.txt</link></item></rss>');
- const bot = {guildId:'g',evolveSessions:new Map(),isRecordingActive:()=>false};
- assert.equal(revealDescription(bot,root),'Reveal Episode 0: Published first');
- const s = session(t);
- bot.evolveSessions.set('g',s);
- assert.equal(revealDescription(bot,root),'Reveal Episode 1: First title');
- assert.equal(s.state.index,-1);
- s.revealNext();s.save();
- assert.equal(revealDescription(bot,root),'Reveal Episode 2: Future title');
- const recording=temp(t);fs.copyFileSync(s.file,path.join(recording,'evolve-state.json'));
- bot.evolveSessions.clear();bot.isRecordingActive=()=>true;
- bot.voiceManager={recordingPaths:new Map([['g',recording]])};
- assert.equal(revealDescription(bot,root),'Reveal Episode 2: Future title');
- bot.evolveSessions.set('g',s);s.state.phase='predicting';
- assert.equal(revealDescription(bot,root),'Reveal Episode 1: First title');
- s.state.phase='reflecting';s.revealNext();
- assert.match(revealDescription(bot,root),/^All available/);
- s.state.index=-1;s.state.manifest.episodes[0].title='x'.repeat(200);
- assert.equal(revealDescription(bot,root).length,100);
-});
-test('picker updates serialize, skip unchanged descriptions, and retry failures', async t => {
- const { refreshRevealDescription } = require('./evolve-controls');
- const s=session(t), calls=[];
- const bot={guildId:'g',evolveSessions:new Map([['g',s]])};
- let release;
- bot.revealCommandRegistration={description:'old',update:async description=>{
-  calls.push(description);
-  if(calls.length===1) await new Promise(resolve=>release=resolve);
- }};
- const first=refreshRevealDescription(bot);
- await new Promise(resolve=>setImmediate(resolve));
- s.revealNext();const second=refreshRevealDescription(bot);release();
- await Promise.all([first,second]);
- assert.deepEqual(calls,['Reveal Episode 1: First title','Reveal Episode 2: Future title']);
- await refreshRevealDescription(bot);assert.equal(calls.length,2);
- s.revealNext();let fail=true;
- bot.revealCommandRegistration.update=async description=>{if(fail)throw new Error('temporary');calls.push(description);};
- await refreshRevealDescription(bot);
- assert.equal(bot.revealCommandRegistration.description,'Reveal Episode 2: Future title');
- fail=false;await refreshRevealDescription(bot);
- assert.match(bot.revealCommandRegistration.description,/^All available/);
-});
