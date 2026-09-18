@@ -1,5 +1,6 @@
 const { LiveTranscriptClock } = require('./live-transcript-clock');
 const WebSocket = require('ws');
+const { LiveContextQueue } = require('./live-context-queue');
 const { LIVE_ALPHA_PROMPT, LIVE_ENVIRONMENT_POLICY } = require('./live-turn-controller');
 const { RealtimePcmMixer } = require('./realtime-pcm-mixer');
 const { LiveAudioDiagnostics } = require('./live-audio-diagnostics');
@@ -46,6 +47,20 @@ class GptLiveBackchannel {
         this.closing = false;
         this.blocked = false;
         this.sequence = 0;
+        this.recovering = false;
+        this.reconnectAttempts = 0;
+        this.reconnectDelayMs = options.reconnectDelayMs ?? 250;
+        this.latestConversation = null;
+        this.contextQueue = new LiveContextQueue({
+            maxAgeMs: options.contextMaxAgeMs ?? 2000,
+            send: event => {
+                const sent = this.send(event);
+                this.onLog('Context sent: ' + JSON.stringify({ eventId: event.event_id,
+                    type: event.type, delegationId: event.delegation_id, sent }));
+                return sent;
+            },
+            onLag: report => this.recover(report.reason, report)
+        });
         this.audioDiagnostics = new LiveAudioDiagnostics(report => this.onLog('Audio diagnostics: ' + JSON.stringify(report)));
         this.mixer = options.mixer || new RealtimePcmMixer({
             onDrop: event => this.onLog('Input audio dropped: ' + JSON.stringify(event)),
@@ -60,6 +75,7 @@ class GptLiveBackchannel {
     }
 
     start() {
+        if (this.closing) return Promise.reject(new Error('Quartz is stopping'));
         if (this.startPromise) return this.startPromise;
         if (!this.apiKey) return Promise.reject(new Error('PODCAST_LIVE_API_KEY is required for Quartz'));
         this.startPromise = new Promise((resolve, reject) => {
@@ -83,6 +99,7 @@ class GptLiveBackchannel {
                 });
                 this.socket = socket;
                 socket.on('open', () => {
+                    if (socket !== this.socket) return;
                     if (this.closing) return socket.close();
                     this.send({
                         type: 'session.start',
@@ -96,6 +113,7 @@ class GptLiveBackchannel {
                     });
                 });
                 socket.on('message', data => {
+                    if (socket !== this.socket) return;
                     let event;
                     try { event = JSON.parse(data.toString()); }
                     catch { return fail(new Error('GPT-Live returned invalid JSON')); }
@@ -107,13 +125,23 @@ class GptLiveBackchannel {
                         this.started = true;
                         this.sessionId = event.session?.id;
                         this.outputOffsetMs = 0;
+                        this.transcriptClock = new LiveTranscriptClock();
+                        this.outputTranscriptClock = new LiveTranscriptClock();
                         this.mixer.start();
                         this.diagnosticsTimer = setInterval(() => this.audioDiagnostics.flush(), 5000);
                         this.diagnosticsTimer.unref?.();
                         this.onLog('Session started: gpt-live-1 / ' + this.voice);
                         this.setAlphaPlaying(this.blocked, true);
+                        if (this.recovering) {
+                            // No transcript replay after lag. Only the newest context helps us rejoin.
+                            const latest = this.latestConversation;
+                            if (latest) this.appendConversation(latest.label, latest.text.slice(-240));
+                            this.onLog('Recovered with current environment and latest context only');
+                        }
+                        this.recovering = false;
                         resolve();
                     } else if (['session.instructions.appended', 'session.thinking.appended'].includes(event.type)) {
+                        this.contextQueue.accept(event.client_event_id);
                         this.onInstructionsAccepted(event.client_event_id);
                         this.onLog('Context accepted: ' + event.client_event_id);
                     } else if (event.type === 'session.input_transcript.delta') {
@@ -123,6 +151,7 @@ class GptLiveBackchannel {
                         // Never retain muted audio for later replay.
                         const pcm = Buffer.from(event.delta, 'base64');
                         this.audioDiagnostics.record('outputReceived', pcm, 16000, 1);
+                        this.reconnectAttempts = 0;
                         const startMs = Number.isFinite(event.start_ms) ? event.start_ms : this.outputOffsetMs;
                         const endMs = startMs + pcm.length / 32; // output PCM, never the input mixer clock
                         this.outputOffsetMs = endMs; // advance even when muted
@@ -156,7 +185,9 @@ class GptLiveBackchannel {
                     } else if (event.type === 'error') {
                         // Provider errors can echo credentials; log codes rather than raw messages.
                         fail(new Error('GPT-Live rejected an event: ' + (event.error?.code || event.error?.type || 'unknown')));
-                        socket.close();
+                        if (!this.turnControl && this.started && event.error?.code === 'too_many_pending_appends') {
+                            this.recover('provider-context-overload');
+                        } else socket.close();
                     } else if (event.type === 'session.closed') {
                         this.onLog('Session closed; usage=' + JSON.stringify(event.usage || null));
                         socket.close();
@@ -169,21 +200,51 @@ class GptLiveBackchannel {
                 });
                 socket.on('error', () => fail(new Error('GPT-Live WebSocket connection failed')));
                 socket.on('close', () => {
+                    if (socket !== this.socket) return;
+                    const recoverable = this.started || this.recovering;
                     clearTimeout(this.startTimer);
                     clearTimeout(this.closeTimer);
                     this.started = false;
                     clearInterval(this.diagnosticsTimer);
                     this.audioDiagnostics.flush();
                     this.mixer.stop();
+                    this.contextQueue.reset();
+                    this.startPromise = null;
                     if (!settled) fail(new Error('GPT-Live closed before session startup'));
                     this.finishClose?.();
                     this.onClose();
+                    if (recoverable && !this.closing && !this.turnControl) this.scheduleReconnect();
                 });
             } catch (error) {
                 fail(error);
+                if (this.recovering) this.scheduleReconnect();
             }
         });
         return this.startPromise;
+    }
+
+    recover(reason, details = {}) {
+        if (this.closing || this.recovering) return;
+        this.onLog('Context recovery: ' + JSON.stringify({ reason, ...details }));
+        this.recovering = true;
+        this.started = false;
+        this.contextQueue.reset();
+        // Close abandons provider-side pending work as well as our unsent backlog.
+        this.socket?.terminate();
+    }
+
+    scheduleReconnect() {
+        if (this.closing || this.turnControl || this.reconnectTimer) return;
+        this.recovering = true;
+        const delayMs = Math.min(5000, this.reconnectDelayMs * (2 ** Math.min(this.reconnectAttempts++, 5)));
+        this.onLog('Reconnect scheduled: ' + JSON.stringify({ delayMs }));
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            if (this.closing) return;
+            this.startPromise = null;
+            this.start().catch(() => this.onLog('Recovery connection failed; awaiting retry'));
+        }, delayMs);
+        this.reconnectTimer.unref?.();
     }
 
     send(event) {
@@ -200,9 +261,15 @@ class GptLiveBackchannel {
     append(type, content, delegationId = null) {
         if (!this.started || this.closing) return;
         const eventId = 'quartz_' + (++this.sequence);
-        const sent = this.send({ type, event_id: eventId, delegation_id: delegationId, content });
-        this.onLog('Context sent: ' + JSON.stringify({ eventId, type, delegationId, sent }));
-        return sent ? eventId : null;
+        const event = { type, event_id: eventId, delegation_id: delegationId, content };
+        if (this.turnControl) {
+            // Preserve experimental turn-control behavior.
+            const sent = this.send(event);
+            this.onLog('Context sent: ' + JSON.stringify({ eventId, type, delegationId, sent }));
+            return sent ? eventId : null;
+        }
+        this.contextQueue.enqueue(event);
+        return eventId;
     }
 
     setAlphaPlaying(playing, force = false) {
@@ -278,6 +345,8 @@ class GptLiveBackchannel {
 
     appendConversation(label, text) {
         if (!text) return;
+        this.latestConversation = { label, text: String(text) };
+        if (!this.started || this.closing) return;
         // UTF-8 bytes conservatively bound tokens even for non-Latin transcripts.
         // Keep every character, with no 600-character truncation of delivered speech.
         const chunks = [];
@@ -289,7 +358,7 @@ class GptLiveBackchannel {
         if (part) chunks.push(part);
         chunks.forEach((chunk, index) => this.append('session.thinking.append',
             'Conversation data (' + label + '), part ' + (index + 1) + '/' + chunks.length + ': ' + JSON.stringify(chunk)));
-        this.onLog('Conversation context sent: ' + JSON.stringify({ label, characters: String(text).length, chunks: chunks.length }));
+        this.onLog('Conversation context queued: ' + JSON.stringify({ label, characters: String(text).length, chunks: chunks.length }));
     }
 
     reportDelegation(id, text) {
@@ -303,6 +372,8 @@ class GptLiveBackchannel {
     stop() {
         if (this.closePromise) return this.closePromise;
         this.closing = true;
+        clearTimeout(this.reconnectTimer);
+        this.contextQueue.reset();
         clearInterval(this.diagnosticsTimer);
         this.audioDiagnostics.flush();
         this.mixer.stop();

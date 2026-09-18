@@ -7,7 +7,13 @@ const { VoiceManager } = require('./voice-manager');
 
 class Socket extends EventEmitter {
     constructor() { super(); this.readyState = 0; this.sent = []; }
-    send(json) { this.sent.push(JSON.parse(json)); }
+    send(json) {
+        const event = JSON.parse(json);
+        this.sent.push(event);
+        if (event.type === 'session.thinking.append') {
+            this.event({ type: 'session.thinking.appended', client_event_id: event.event_id });
+        }
+    }
     close() { this.readyState = 3; this.emit('close'); }
     terminate() { this.close(); }
     open() { this.readyState = 1; this.emit('open'); }
@@ -516,4 +522,33 @@ test('confirmed participant endpoints signal Quartz before ASR, respecting other
     bot.noteRawParticipantVadStop('g', 'two');
     assert.equal(t.client.environment, 'holding', 'endpoint signals holding synchronously, without waiting for ASR or generation');
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
+});
+
+test('disconnect clears stale Quartz audio and lets Alpha take the floor', async () => {
+    const t = playback();
+    t.p.client.started = true;
+    t.callbacks.onAudio(Buffer.alloc(640, 80));
+    const stream = t.p.stream;
+    t.p.client.started = false;
+    t.callbacks.onClose();
+    assert.equal(stream.destroyed, true);
+    const release = await t.p.acquireAlpha();
+    assert.equal(t.connection.subscribed, t.alpha);
+    release();
+    await t.p.stop();
+});
+
+test('disconnect during handoff releases Alpha instead of failing its response', async () => {
+    const t = playback();
+    t.p.client.started = true;
+    t.p.client.requestHandoff = () => 'pending';
+    const waiting = t.p.acquireAlpha();
+    await new Promise(resolve => setImmediate(resolve));
+    t.p.client.started = false;
+    t.callbacks.onClose();
+    const release = await waiting;
+    assert.equal(t.connection.subscribed, t.alpha);
+    assert.equal(t.p.handoff, null);
+    release();
+    await t.p.stop();
 });

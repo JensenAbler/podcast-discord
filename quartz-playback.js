@@ -51,8 +51,9 @@ class QuartzPlayback {
                 }
             },
             onClose: () => {
-                // A network failure is not permission to cut off buffered audio.
-                this.handoff?.fail(new Error('Quartz disconnected during handoff'));
+                // A failed companion must not retain the floor or block Alpha.
+                this.clearOutput();
+                this.handoff?.finish();
                 options.onClose?.();
             }
         };
@@ -99,7 +100,7 @@ class QuartzPlayback {
         };
         this.alphaLease = true;
         try {
-            if (!this.client.started && this.stream) throw new Error('Quartz audio still pending after disconnection');
+            if (!this.client.started) this.clearOutput();
             if (this.client.started && !this.blocked) await this.waitForHandoff(preview);
             // Only silence is discarded here, after played audio reached a quiet boundary.
             this.setBlocked(true);
@@ -118,17 +119,21 @@ class QuartzPlayback {
 
     waitForHandoff(preview) {
         return new Promise((resolve, reject) => {
+            let finished = false;
             const finish = error => {
+                if (finished) return;
+                finished = true;
                 clearInterval(pending.timer);
                 if (this.handoff === pending) this.handoff = null;
                 this.onLog('Handoff completed: ' + JSON.stringify({ eventId: pending.eventId, accepted: pending.accepted, elapsedMs: Date.now() - pending.startedAt, quietFrames: this.quietFrames, failed: Boolean(error) }));
                 error ? reject(error) : resolve();
             };
-            const pending = { accepted: false, startedAt: Date.now(), fail: finish };
+            const pending = { accepted: false, startedAt: Date.now(), fail: finish, finish: () => finish() };
             this.handoff = pending;
             this.quietFrames = 0;
             pending.eventId = this.client.requestHandoff(preview);
             if (!pending.eventId) return finish(new Error('Could not request Quartz handoff'));
+            if (finished) return;
             pending.timer = setInterval(() => {
                 // Count actual near-silent PCM that Discord consumed, not missing
                 // network packets or transcript gaps. Acceptance is not completion.

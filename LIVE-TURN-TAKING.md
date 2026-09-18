@@ -45,3 +45,31 @@ Tests use simulated transports and generators. Real delegation timing, state fol
 API references checked 2026-09-11:
 - https://developers.openai.com/api/docs/guides/live-delegation
 - https://developers.openai.com/api/docs/guides/live-conversations
+
+
+## Context delivery under load (normal mode)
+
+Quartz keeps the full conversation while the provider keeps up, including resume
+history. There is no fixed recent-context window. Up to four context appends are
+in flight; acknowledgments release the next entries without blocking live audio.
+
+Only measured context-delivery lag (an unacknowledged or unsent update at least
+2,000 ms old), a send failure, or provider overload abandons that backlog. The
+normal-mode session reconnects with the current floor state and a short tail of
+the latest conversation entry, never a replay of the old transcript. Subsequent
+healthy context delivery is complete again. Missing vocalizations alone are not
+a lag signal: Quartz may legitimately choose silence. These are recovery
+deadlines, not a guarantee of instantaneous provider/network response.
+
+Unexpected disconnects also reconnect in normal mode (250 ms initial retry,
+exponential backoff capped at five seconds). Shutdown cancels retry and context
+timers. A disconnected companion discards stale playback and releases any Alpha
+handoff so the main answer is not withheld. Experimental turn control retains
+its existing context transport and does not acquire automatic reconnection.
+
+Context-recovery logs record the reason, queue size and measured age. Context
+queued is distinct from Context sent and Context accepted in the diagnostic log.
+
+The initial two-second deadline is above observed normal acknowledgment latency
+(median 616 ms, 95th percentile 1,024 ms, 99th percentile 1,598 ms across 3,736
+historical acknowledgments). It measures delivery backlog, not time to vocalize.
