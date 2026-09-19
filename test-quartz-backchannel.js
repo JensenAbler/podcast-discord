@@ -304,7 +304,7 @@ test('a TTS stream error during handoff is handled and never reaches playback', 
 test('normal mode follows all five environments while Alpha alone controls turns', async () => {
     const t = transport(); await connected(t);
     assert.equal(t.client.environment, 'listening');
-    assert.match(BACKCHANNEL_PROMPT, /Alpha independently supplies/);
+    assert.match(BACKCHANNEL_PROMPT, /delivers every substantial answer/);
     for (const state of ['LISTENING', 'HOLDING', 'YIELDING', 'ASIDE', 'WAITING_FOR_GUEST']) assert.ok(BACKCHANNEL_PROMPT.includes(state));
     t.client.updateAlphaProgress('thinking');
     assert.equal(t.client.environment, 'holding');
