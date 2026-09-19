@@ -1493,7 +1493,7 @@ async function runTests() {
             systemPrompt.includes('fields in this exact order: speech, shouldRespond, chosenAngle, bigBrain, bigHeart, podcastLeave') &&
             systemPrompt.includes('This order also applies when only JSON mode is available') &&
             systemPrompt.includes('not a polished chat message') &&
-            systemPrompt.includes('Read the latest utterance first:') &&
+            !systemPrompt.includes('Read the latest utterance first:') &&
             systemPrompt.includes('Hold-space cues:') &&
             systemPrompt.includes('"actually", "wait", "hold on"') &&
             systemPrompt.includes('"even though", "because", "and", "but", "so", "like", "I mean"') &&
@@ -1521,16 +1521,16 @@ async function runTests() {
             systemPrompt.includes('model and TTS latency') &&
             systemPrompt.includes('offers two or more options') &&
             systemPrompt.includes('Vary your choice of words') &&
-            systemPrompt.includes('Do not let any stock phrase become a groove') &&
-            systemPrompt.includes('"What does that bring up..."') &&
+            systemPrompt.includes('You may start with these seed phrases') &&
+            systemPrompt.includes('“What does that bring up?”') &&
             systemPrompt.includes('Speech-context cues matter') &&
-            systemPrompt.includes('Do not autocomplete with generic questions') &&
+            systemPrompt.includes('Prefer innovation, invention, improvisation, as opposed to generic questions') &&
             systemPrompt.includes('what does that feel like') &&
-            systemPrompt.includes('Internal-thought transparency') &&
-            systemPrompt.includes('you should transparently disclose') &&
-            systemPrompt.includes('system writes internal-thought artifacts and short awareness notes') &&
-            systemPrompt.includes('awareness notes and internal thoughts which are injected as system messages') &&
-            systemPrompt.includes('Disclose them when asked') &&
+            !systemPrompt.includes('Internal-thought transparency') &&
+            !systemPrompt.includes('you should transparently disclose') &&
+            !systemPrompt.includes('system writes internal-thought artifacts and short awareness notes') &&
+            !systemPrompt.includes('awareness notes and internal thoughts which are injected as system messages') &&
+            !systemPrompt.includes('Disclose them when asked') &&
             systemPrompt.includes('Awareness Shelf:') &&
             systemPrompt.includes('scene-scoped context that formed while listening') &&
             systemPrompt.includes('background material shared in the live Discord text channel or uploaded attachments') &&
@@ -1539,18 +1539,18 @@ async function runTests() {
             systemPrompt.includes('Compare its origin timestamp to the current episode timestamp') &&
             systemPrompt.includes('Frame Discord-derived items as background material') &&
             systemPrompt.includes('decided not to speak on your previous turn') &&
-            systemPrompt.includes('Do not mention "the shelf" unless the guest is explicitly asking') &&
+            !systemPrompt.includes('Do not mention "the shelf" unless the guest is explicitly asking') &&
             !systemPrompt.includes('You do not have access to private chain-of-thought') &&
-            systemPrompt.includes('Sounding-board exception') &&
+            !systemPrompt.includes('Sounding-board exception') &&
             systemPrompt.includes('Guest floor holding') &&
             systemPrompt.includes('technical assistance') &&
             systemPrompt.includes('fictional universes, canon') &&
             systemPrompt.includes('After you ask a question and the guest answers:') &&
             systemPrompt.includes('Play ball') &&
             systemPrompt.includes('miscellaneous or philosophical lanes') &&
-            systemPrompt.includes('Imminent question cue') &&
+            !systemPrompt.includes('Imminent question cue') &&
             systemPrompt.includes('Permission framing is for sensitive, personal, or easy-to-decline invitations') &&
-            systemPrompt.includes('Do not ask a question every turn') &&
+            systemPrompt.includes('Prefer not to ask a question every turn') &&
             systemPrompt.includes('When in doubt, choose silence or the smaller move') &&
             systemPrompt.includes('Minimal backchannel is allowed but should be rare') &&
             systemPrompt.includes('Fish TTS performance controls:') &&
