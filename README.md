@@ -242,3 +242,10 @@ output-utterance-done event. Experimental turn-control behavior is unchanged.
 A Big Brain request attached to discarded host speech is not dispatched.
 The guest utterances remain requeued for a fresh evaluation of the completed
 question. Normal buffer and idle requests dispatch only after host playback.
+
+
+Quartz playback uses a calibrated 8x gain (+18.1 dB) to match Alpha's normalized
+voice, with a -1 dBFS peak limiter and 100 ms release. The same adjusted PCM is
+encoded for Discord and saved to the recording. Muting and speech detection
+continue to use the original PCM. Set PODCAST_QUARTZ_OUTPUT_GAIN (linear, 0 < gain
+<= 32) to recalibrate if a provider changes its output level; the default is 8.

@@ -114,7 +114,7 @@ function playback(options = {}) {
     const connection = { subscribed: alpha, subscribe(p) { this.subscribed = p; } };
     let callbacks, closes = 0, pushed = 0;
     const p = new QuartzPlayback({
-        ...options, connection, alphaPlayer: alpha, player: quartz,
+        outputGain: 1, ...options, connection, alphaPlayer: alpha, player: quartz,
         resourceFactory: stream => stream,
         encoderFactory: () => ({ encode(pcm) { return pcm; }, delete() {} }),
         onPcm: pcm => consumed.push(pcm),
@@ -804,4 +804,16 @@ test('suppressed provider speech never reaches Discord consumption after the gue
     p.stream.read();
     assert.equal(consumed.length, 1);
     const stop = p.stop(); socket.event({ type: 'session.closed' }); await stop;
+});
+
+test('Quartz default level reaches both encoded playback and consumed recording PCM', async () => {
+    const t = playback({ outputGain: undefined });
+    const input = Buffer.alloc(640);
+    for (let i = 0; i < input.length; i += 2) input.writeInt16LE(500, i);
+    t.callbacks.onAudio(input);
+    const packet = t.p.stream.read();
+    assert.equal(packet.readInt16LE(0), 4000);
+    assert.equal(t.consumed[0].readInt16LE(0), 4000);
+    assert.equal(input.readInt16LE(0), 500, 'raw receipt evidence must stay unchanged');
+    await t.p.stop();
 });

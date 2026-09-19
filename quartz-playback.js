@@ -3,6 +3,7 @@ const OpusScript = require('opusscript');
 const { createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
 const { GptLiveBackchannel } = require('./gpt-live-backchannel');
 const { PlayedBackchannelTranscript } = require('./played-backchannel-transcript');
+const { QuartzOutputLevel } = require('./quartz-output-level');
 
 // A separate player keeps acknowledgments out of Alpha's transmitter queue and
 // its onStart/onFinish callbacks. The existing player always wins.
@@ -17,6 +18,7 @@ class QuartzPlayback {
         this.resourceFactory = options.resourceFactory || (stream => createAudioResource(stream, { inputType: StreamType.Opus }));
         this.encoderFactory = options.encoderFactory || (() => new OpusScript(48000, 2, OpusScript.Application.AUDIO));
         this.stream = null;
+        this.outputLevel = new QuartzOutputLevel(options.outputGain ?? process.env.PODCAST_QUARTZ_OUTPUT_GAIN ?? 8);
         this.queue = Buffer.alloc(0);
         this.queueSpans = [];
         this.playedTranscript = new PlayedBackchannelTranscript(options.onPlayedTranscript || (() => {}));
@@ -233,9 +235,10 @@ class QuartzPlayback {
             bytes -= taken;
             if (!span.bytes) this.queueSpans.shift();
         }
+        const leveled = this.outputLevel.process(mono);
         const stereo = Buffer.alloc(3840); // 20 ms, 48 kHz stereo s16le
         for (let i = 0; i < 320; i++) {
-            const sample = mono.readInt16LE(i * 2);
+            const sample = leveled.readInt16LE(i * 2);
             for (let j = 0; j < 6; j++) stereo.writeInt16LE(sample, i * 12 + j * 2);
         }
         try {
