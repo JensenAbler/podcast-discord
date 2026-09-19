@@ -52,6 +52,23 @@ gpt-live-backchannel.js; there is no content classifier, acknowledgment cooldown
 or extra turn-taking decision. Alpha's existing generator and state machine still
 own substantial responses.
 
+Normal-mode Quartz uses a compact prompt. After Alpha finishes, WAITING_FOR_GUEST
+blocks and discards Quartz output until confirmed guest speech resumes. Input
+audio keeps running. A guest already speaking at playback completion can receive
+backchannels immediately. The experimental Live turn controller is unchanged.
+
+Only an actual response-generation or voice-preparation wait can request a verbal
+lag acknowledgment: one session.commentary.append after five seconds, provided
+the guest is quiet and Alpha has not started speaking or handing off. Guest pauses
+and background idle evaluations do not trigger it. Guest speech, Alpha playback,
+handoff, completion, cancellation, disconnect, and shutdown cancel the timer and
+remove any unsent cue. Sent context cannot be retracted; the current environment
+and playback gate still take precedence. Alpha's own Big Brain speech is unchanged.
+
+Run the deterministic Quartz checks with node --test test-quartz-backchannel.js
+test-live-turn-controller.js test-live-context-queue.js. Real-session listening is
+still needed to judge the wording and naturalness of a commentary cue.
+
 Set PODCAST_LIVE_API_KEY to an OpenAI project API key in the service environment,
 then restart the service. This is deliberately separate from OPENAI_API_KEY,
 which this deployment also uses for OpenAI-compatible providers such as Groq.
@@ -68,7 +85,7 @@ near-silent PCM consumed by Discord, with no queued voiced frames. Missing
 network packets and transcript gaps do not qualify as silence. A 20-second
 deadline rejects Alpha playback instead of interrupting Quartz; it never forces
 a handoff. Guest turn-taking checks still run at Alpha playback start.
-Once yielded, Quartz stays gated through Alpha playback and resumes afterward.
+Once yielded, Quartz stays gated through Alpha playback and waits for guest speech afterward.
 Late muted audio is discarded, never replayed. Quartz does not change the guest
 buffer or the generator's turn-taking authority.
 

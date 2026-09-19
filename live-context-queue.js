@@ -21,6 +21,11 @@ class LiveContextQueue {
         }
     }
 
+    cancelQueued(id) {
+        this.waiting = this.waiting.filter(item => item.event.event_id !== id);
+        this.clearTimerIfIdle();
+    }
+
     accept(id) {
         if (!this.pending.has(id)) return false;
         if (this.checkLag()) return true;

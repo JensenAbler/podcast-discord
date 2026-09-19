@@ -2270,7 +2270,7 @@ class AlphaClawdVoiceBot {
             const episodePlanStructure = this.getEpisodePlanStructureForGenerator(guildId, generatorTiming);
 
             console.log(`[Bot] Idle decision check after ${Math.round(idleSeconds)}s with the floor available`);
-            this.voiceManager?.updateQuartzProgress?.(guildId, 'thinking');
+            this.voiceManager?.updateQuartzProgress?.(guildId, 'evaluating');
             const response = await this.beginGeneratorTurn({
                 transcript: '',
                 idleCheck: true,

@@ -38,6 +38,7 @@ class QuartzPlayback {
             onInputTranscript: options.onInputTranscript,
             onOutputAudio: (pcm, span) => this.playedTranscript.receive(pcm, span),
             onAudio: (pcm, span) => this.enqueue(pcm, span),
+            onOutputBlocked: () => this.clearOutput(),
             onTranscript: event => {
                 options.onTranscript?.(event);
                 this.playedTranscript.transcript(event);
@@ -101,7 +102,7 @@ class QuartzPlayback {
         this.alphaLease = true;
         try {
             if (!this.client.started) this.clearOutput();
-            if (this.client.started && !this.blocked) await this.waitForHandoff(preview);
+            if (this.client.started && !this.blocked && !this.client.outputBlocked) await this.waitForHandoff(preview);
             // Only silence is discarded here, after played audio reached a quiet boundary.
             this.setBlocked(true);
             return release;
@@ -161,7 +162,7 @@ class QuartzPlayback {
     }
 
     enqueue(pcm, span) {
-        if (this.closed || this.blocked || !Buffer.isBuffer(pcm) || !pcm.length) {
+        if (this.closed || this.blocked || this.client.outputBlocked || !Buffer.isBuffer(pcm) || !pcm.length) {
             this.playedTranscript.discard(span); return;
         }
         // Transport backpressure only; no content gate or acknowledgment timer.
@@ -198,7 +199,7 @@ class QuartzPlayback {
             const entry = packet && packets.get(packet);
             const pcm = entry?.pcm;
             if (entry?.voiced) owner.pendingVoicedFrames--;
-            if (pcm && !owner.blocked && !owner.closed) {
+            if (pcm && !owner.blocked && !owner.client.outputBlocked && !owner.closed) {
                 packets.delete(packet);
                 stream.pendingPackets.delete(entry);
                 owner.lastConsumedAt = Date.now();
@@ -218,7 +219,7 @@ class QuartzPlayback {
 
     fill() {
         const stream = this.stream;
-        if (!stream || stream.destroyed || !stream.wantsPacket || this.blocked || this.closed || this.queue.length < 640) return;
+        if (!stream || stream.destroyed || !stream.wantsPacket || this.blocked || this.client.outputBlocked || this.closed || this.queue.length < 640) return;
         const mono = this.queue.subarray(0, 640); // 20 ms, 16 kHz mono s16le
         this.queue = this.queue.subarray(640);
         const spans = [];
