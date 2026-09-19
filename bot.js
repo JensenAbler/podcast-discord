@@ -1,3 +1,4 @@
+const { savePlanProgress, resumePlanOptions } = require('./episode-plan-progress');
 const { buildResumeCommand, handleResumeCommand, preflightResume, installResume } = require('./podcast-resume');
 const { ConversationAdmission, assess } = require('./conversation-admission');
 const { captureSynthesisInput, deliveryRecord } = require('./speech-delivery');
@@ -922,22 +923,32 @@ class AlphaClawdVoiceBot {
         }
     }
 
-    startEpisodePlanTracker(guildId, episodePlanSelection = null, recordingInfo = {}) {
+    startEpisodePlanTracker(guildId, episodePlanSelection = null, recordingInfo = {}, planProgress = null) {
         this.episodePlanTrackers.delete(guildId);
         if (!episodePlanSelection?.plan) {
             return null;
         }
         try {
             const tracker = new EpisodePlanTracker(episodePlanSelection.plan, {
-                startedAt: recordingInfo.startedAt || new Date().toISOString()
+                startedAt: recordingInfo.startedAt || new Date().toISOString(),
+                ...(planProgress ? resumePlanOptions(planProgress, episodePlanSelection.plan,
+                    recordingInfo.startedAt || new Date().toISOString()) : {})
             });
+            tracker.recordingPath = recordingInfo.recordingPath;
             this.episodePlanTrackers.set(guildId, tracker);
+            this.saveEpisodePlanProgress(guildId);
             console.log(`[Bot] Episode plan tracker started: ${episodePlanSelection.plan.basename}@${episodePlanSelection.plan.version}`);
             return tracker;
         } catch (error) {
             console.warn(`[Bot] Failed to start episode plan tracker: ${error.message}`);
+            if (planProgress) throw error;
             return null;
         }
+    }
+
+    saveEpisodePlanProgress(guildId) {
+        const tracker = this.episodePlanTrackers?.get?.(guildId);
+        return savePlanProgress(tracker, tracker?.recordingPath);
     }
 
     endEpisodePlanTracker(guildId) {
@@ -979,6 +990,7 @@ class AlphaClawdVoiceBot {
         }
         try {
             tracker.observeTranscriptEntry(entry);
+            this.saveEpisodePlanProgress(guildId);
             const snapshot = tracker.snapshot();
             return snapshot;
         } catch (error) {
@@ -4222,11 +4234,15 @@ class AlphaClawdVoiceBot {
         if (content === 'yes') {
             await this.grantConsent(guildId, waiter.topic, waiter.engine, waiter.episodePlanSelection, {
                 channelId: waiter.channelId,
+                ownerId: waiter.userId,
                 resume: waiter.resume
             });
             if (waiter.resume) {
                 await message.reply({
-                    content: 'New episode recording started with the previous conversation restored. You can continue speaking.',
+                    content: 'New episode recording started with the previous conversation restored. ' +
+                        (waiter.resume.planProgress ? 'Episode plan progress restored. ' :
+                            waiter.resume.plan ? 'This older recording has no saved plan progress; its plan remains background only. ' : '') +
+                        'You can continue speaking.',
                     allowedMentions: { parse: [], repliedUser: false }
                 });
             }
@@ -4834,6 +4850,9 @@ class AlphaClawdVoiceBot {
      * Grant consent and start recording
      */
     async grantConsent(guildId, topic, engine = 'current', episodePlanSelection = null, context = {}) {
+        if (context.resume?.planProgress) {
+            episodePlanSelection = { plan: context.resume.plan };
+        }
         const sessionHostMode = this.normalizeSessionHostMode(engine);
         if (sessionHostMode === 'live-alpha' && (!process.env.PODCAST_LIVE_API_KEY || this.useGatewayGenerator())) {
             throw new Error('Live timing requires the dedicated Live key and direct generator');
@@ -4870,10 +4889,13 @@ class AlphaClawdVoiceBot {
             } : null
         });
         this.startInternalThoughtSession(guildId, recordingInfo);
-        this.startEpisodePlanTracker(guildId, episodePlanSelection, recordingInfo);
 
         // Announce start (use cached audio to save API credits)
         try {
+            if (!context.resume && context.ownerId && recordingInfo.recordingPath) {
+                fs.writeFileSync(path.join(recordingInfo.recordingPath, 'resume-identity.json'),
+                    JSON.stringify({ ownerId: context.ownerId, guildId }), { flag: 'wx', mode: 0o600 });
+            }
             this.podcastGenerator.startSession({
                 topic: topic || 'general discussion',
                 recording: true,
@@ -4883,8 +4905,9 @@ class AlphaClawdVoiceBot {
             if (context.resume) {
                 const session = installResume(this.podcastGenerator, context.resume, recordingInfo.recordingPath);
                 this.evolveSessions ||= new Map();
-                this.evolveSessions.set(guildId, session);
+                if (session) this.evolveSessions.set(guildId, session);
             }
+            this.startEpisodePlanTracker(guildId, episodePlanSelection, recordingInfo, context.resume?.planProgress);
             // An optional announcement must not prevent host initialization.
             try {
                 if (!context.resume) await this.speakRecordingStart(guildId, sessionHostMode, episodePlanSelection);
@@ -5107,6 +5130,11 @@ class AlphaClawdVoiceBot {
         if (wasRecording) {
             let result = null;
             try {
+                try {
+                    this.saveEpisodePlanProgress(guildId);
+                } catch (error) {
+                    console.error('[Bot] Final episode plan checkpoint failed:', error.message);
+                }
                 result = await this.voiceManager.stopRecording(guildId);
                 recordingPath = result?.recordingPath;
             } finally {
@@ -7391,6 +7419,7 @@ class AlphaClawdVoiceBot {
                 ...timing,
                 now: timing.playbackEndedAt || new Date().toISOString()
             });
+            this.saveEpisodePlanProgress(guildId);
             return tracker.snapshot();
         } catch (error) {
             console.warn(`[Bot] Episode plan tracker response update failed: ${error.message}`);

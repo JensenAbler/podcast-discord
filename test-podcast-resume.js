@@ -197,3 +197,131 @@ test('source symlinks cannot escape recording root', t => {
     const link = 'episode-external'; fs.symlinkSync(outside, path.join(f.root, link));
     assert.throws(() => loadResumeSource(f.root, link, 'u', 'g'), /escapes/);
 });
+
+const { EpisodePlanTracker } = require('./episode-plan-tracker');
+const { savePlanProgress, resumePlanOptions } = require('./episode-plan-progress');
+
+function plannedFixture(t) {
+    const f = fixture(t);
+    const plan = { basename: 'retrospective', version: 'v001', guests: ['Jensen'],
+        phases: { expanding: { angles: ['First'] }, developing: { angles: ['Second', 'Third'] } } };
+    const tracker = new EpisodePlanTracker(plan, {
+        startedAt: '2026-09-17T18:00:00Z', currentPhase: 'developing',
+        phaseStartedAt: '2026-09-17T19:00:00Z', lastChosenAngle: 'second',
+        currentAngleStartedAt: '2026-09-17T19:50:00Z', currentAngleHostTurns: 3,
+        completedAngles: ['first'], activeAngles: ['second'], openingHostSpoken: true,
+        openingGuestSpeakers: ['jensen'], recentTurns: [{ role: 'guest', speaker: 'Jensen', durationMs: 1200 }]
+    });
+    f.write('episode-plan.json', tracker.plan);
+    const checkpoint = savePlanProgress(tracker, f.dir, '2026-09-17T20:00:00Z');
+    return { ...f, tracker, checkpoint };
+}
+
+test('plan checkpoint restores every field and excludes the overnight pause from timers', t => {
+    const f = plannedFixture(t), source = f.source();
+    const options = resumePlanOptions(source.planProgress, source.plan, '2026-09-18T20:00:00Z');
+    const resumed = new EpisodePlanTracker(source.plan, options);
+    assert.equal(resumed.currentPhase, 'developing');
+    assert.equal(resumed.currentAngleHostTurns, 3);
+    assert.deepEqual([...resumed.completedAngles], ['first']);
+    assert.deepEqual([...resumed.activeAngles], ['second']);
+    assert(resumed.isOpeningRoundComplete());
+    assert.equal(resumed.phaseStartedAt, '2026-09-18T19:00:00.000Z');
+    assert.equal(resumed.currentAngleStartedAt, '2026-09-18T19:50:00.000Z');
+    assert.equal(resumed.getStructureBlock('2026-09-18T20:00:00Z'),
+        f.tracker.getStructureBlock('2026-09-17T20:00:00Z'));
+    assert.deepEqual(source.planProgress, f.checkpoint);
+    resumed.completedAngles.add('third');
+    assert(!source.planProgress.state.completedAngles.includes('third'));
+});
+
+test('saved closing progress survives resume and corrupt or mismatched state fails', t => {
+    const f = plannedFixture(t);
+    f.tracker.closingThoughtsQueued = true;
+    f.tracker.closingThoughtsRequested = true;
+    f.tracker.closingThoughtSpeakers.add('jensen');
+    savePlanProgress(f.tracker, f.dir);
+    const source = f.source();
+    const resumed = new EpisodePlanTracker(source.plan, resumePlanOptions(source.planProgress, source.plan));
+    assert(resumed.closingThoughtsRequested);
+    assert(resumed.closingThoughtSpeakers.has('jensen'));
+    f.write('episode-plan-state.json', { ...source.planProgress,
+        state: { ...source.planProgress.state, version: 'v999' } });
+    assert.throws(() => f.source(), /mismatched/);
+    f.write('episode-plan-state.json', { ...source.planProgress,
+        state: { ...source.planProgress.state, completedAngles: 'bad' } });
+    assert.throws(() => f.source(), /Invalid/);
+});
+
+test('ordinary planned recordings resume with identity checks and preserve progress across generations', t => {
+    const f = plannedFixture(t);
+    fs.unlinkSync(path.join(f.dir, 'evolve-state.json'));
+    f.write('resume-identity.json', { ownerId: 'u', guildId: 'g' });
+    const source = f.source();
+    assert.equal(source.state, null);
+    assert.throws(() => loadResumeSource(f.root, f.name, 'other', 'g'), /operator/);
+    const g = generator();
+    preflightResume(g, source);
+    const dest = path.join(f.root, 'episode-2026-09-19T01-00-00-000Z'); fs.mkdirSync(dest);
+    g.startSession(); installResume(g, source, dest);
+    assert.equal(g.evolveSession, null);
+    const bot = Object.create(AlphaClawdVoiceBot.prototype);
+    bot.episodePlanTrackers = new Map();
+    bot.startEpisodePlanTracker('g', { plan: source.plan }, {
+        recordingPath: dest, startedAt: '2026-09-18T20:00:00Z'
+    }, source.planProgress);
+    assert.equal(bot.episodePlanTrackers.get('g').currentAngleHostTurns, 3);
+    bot.applyEpisodePlanResponse('g', { shouldRespond: true, speech: 'Continue', chosenAngle: 'second' },
+        { playbackEndedAt: '2026-09-18T20:01:00Z' });
+    fs.writeFileSync(path.join(dest, 'transcript.jsonl'), '');
+    fs.writeFileSync(path.join(dest, 'episode-complete.json'), JSON.stringify({ guildId: 'g', stoppedAt: new Date().toISOString() }));
+    const next = loadResumeSource(f.root, path.basename(dest), 'u', 'g');
+    assert.equal(next.planProgress.state.currentAngleHostTurns, 4);
+    assert.equal(next.entries.length, source.entries.length);
+    assert.deepEqual(next.plan, source.plan);
+    assert.equal(loadResumeSource(f.root, f.name, 'u', 'g').planProgress.state.currentAngleHostTurns, 3);
+});
+
+test('fresh tracker persists guest observations and successful host plan updates', t => {
+    const f = plannedFixture(t), bot = Object.create(AlphaClawdVoiceBot.prototype);
+    bot.episodePlanTrackers = new Map();
+    bot.recordingState = new Map([['g', 'recording']]);
+    bot.RecordingState = { RECORDING: 'recording' };
+    bot.startEpisodePlanTracker('g', { plan: f.tracker.plan }, { recordingPath: f.dir });
+    bot.observeShowRunnerTranscriptEntry('g', { speakerRole: 'host', speaker: 'Alpha', text: 'Hello' });
+    bot.observeShowRunnerTranscriptEntry('g', { speakerRole: 'guest', speaker: 'Jensen', text: 'Hi' });
+    bot.applyEpisodePlanResponse('g', { shouldRespond: true, speech: 'First topic', chosenAngle: 'first' });
+    const checkpoint = JSON.parse(fs.readFileSync(path.join(f.dir, 'episode-plan-state.json')));
+    assert(checkpoint.state.openingHostSpoken);
+    assert.deepEqual(checkpoint.state.openingGuestSpeakers, ['jensen']);
+    assert.equal(checkpoint.state.lastChosenAngle, 'first');
+});
+test('consent restores the active plan before starting the resumed host', async t => {
+    const f = plannedFixture(t), source = f.source(), g = generator();
+    const dest = path.join(f.root, 'episode-new'); fs.mkdirSync(dest);
+    const bot = Object.create(AlphaClawdVoiceBot.prototype);
+    let opener = false, idle = false;
+    Object.assign(bot, {
+        normalizeSessionHostMode: x => x, recordingState: new Map(), RecordingState: { RECORDING: 'RECORDING' },
+        sessionHostModes: new Map(), recordingTextChannels: new Map(), consentWaiters: new Map([['g', { resume: source }]]),
+        speakerMap: {}, resetConsecutiveGeneratorSilences() {},
+        gatewayBridge: { async disableAllCronJobs() { return []; } },
+        voiceManager: { startRecording(guild, prefix, metadata) {
+            assert.equal(metadata.episodePlan.plan.basename, source.plan.basename); assert.equal(prefix, 'episode'); assert.equal(metadata.consentGiven, true);
+            assert.equal(metadata.planTag, 'plan:retrospective');
+            fs.writeFileSync(path.join(dest, 'transcript.jsonl'), '');
+            return { recordingPath: dest };
+        } },
+        startInternalThoughtSession() {}, episodePlanTrackers: new Map(),
+        podcastGenerator: g, async speakRecordingStart() { opener = true; },
+        startIdleDecisionLoop() {
+            assert.equal(hash(g.evolveSession.context()), source.contextSha256);
+            assert.equal(g.spokenTranscript.length, 1); assert.equal(bot.episodePlanTrackers.get('g').currentAngleHostTurns, 3); idle = true;
+        },
+        wsClient: { isAuthenticated: false }
+    });
+    await bot.grantConsent('g', source.topic, 'current', null, { resume: source });
+    assert(idle); assert(!opener); assert(!bot.consentWaiters.has('g'));
+    assert.equal(bot.evolveSessions.get('g').file, path.join(dest, 'evolve-state.json'));
+    assert.equal(fs.readFileSync(path.join(dest, 'transcript.jsonl'), 'utf8'), '');
+});

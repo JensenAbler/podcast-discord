@@ -307,6 +307,7 @@ class EpisodePlanTracker {
         return {
             basename: this.plan.basename,
             version: this.plan.version,
+            startedAt: this.startedAt,
             currentPhase: this.currentPhase,
             phaseStartedAt: this.phaseStartedAt,
             lastChosenAngle: this.lastChosenAngle,
