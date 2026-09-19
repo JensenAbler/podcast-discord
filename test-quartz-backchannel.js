@@ -62,6 +62,9 @@ test('Live receives continuously, gates output only, and preserves transcripts a
     assert.equal(t.audio.length, 1, 'wait for fresh guest speech after Alpha');
     t.client.updateAlphaProgress('guest speaking');
     t.socket.event(event);
+    assert.equal(t.audio.length, 1, 'guest speech must not unmute a continuing phrase');
+    emitPcm(t, Buffer.alloc(32000));
+    t.socket.event(event);
     assert.equal(t.audio.length, 2);
     const stop = t.client.stop();
     assert.equal(t.socket.sent.at(-1).type, 'session.close');
@@ -442,7 +445,8 @@ test('muted output advances the provider output clock independently of the input
     t.client.setAlphaPlaying(false);
     t.client.updateAlphaProgress('guest speaking');
     t.socket.event(event);
-    assert.deepEqual(spans.map(s => [s.startMs, s.endMs]), [[0,100], [200,300]]);
+    assert.deepEqual(spans.map(s => [s.startMs, s.endMs]),
+        [0,20,40,60,80,200,220,240,260,280].map(start => [start, start + 20]));
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });
 
@@ -664,6 +668,9 @@ test('waiting state blocks late audio and ignores late progress until fresh gues
     t.client.updateAlphaProgress('guest speaking');
     assert.equal(t.client.environment, 'listening');
     t.socket.event(event);
+    assert.equal(t.audio.length, 0, 'muted speech remains suppressed after guest resumes');
+    emitPcm(t, Buffer.alloc(32000));
+    t.socket.event(event);
     assert.equal(t.audio.length, 1);
     await closeTransport(t);
 });
@@ -691,4 +698,110 @@ test('waiting-for-guest clears playback queues and does not delay another Alpha 
     assert.equal(t.connection.subscribed, t.alpha);
     release();
     await t.p.stop();
+});
+
+function emitPcm(t, pcm) {
+    t.socket.event({ type: 'session.output_audio.delta', delta: pcm.toString('base64') });
+}
+test('muted phrase tails stay suppressed across guest speech, short pauses, and late callbacks', async () => {
+    const spans = [];
+    const t = transport({ onOutputAudio: (_pcm, span) => spans.push(span) });
+    await connected(t);
+    const voice = Buffer.alloc(640, 30);
+    t.client.setAlphaPlaying(true);
+    emitPcm(t, voice);
+    t.client.setAlphaPlaying(false);
+    t.client.updateAlphaProgress('guest speaking');
+    for (const stage of ['finished', 'idle', 'response text available']) t.client.updateAlphaProgress(stage);
+    emitPcm(t, voice);
+    emitPcm(t, Buffer.alloc(32000 / 2)); // 500 ms pause inside the phrase
+    emitPcm(t, voice);
+    assert.equal(t.audio.length, 0);
+    assert.equal(t.client.outputBlocked, true);
+    assert.ok(spans.every(s => s.blocked));
+    // A single delta can contain both the quiet boundary and a fresh sound.
+    emitPcm(t, Buffer.concat([Buffer.alloc(32000), voice]));
+    assert.deepEqual(t.audio, [voice]);
+    assert.equal(t.client.outputBlocked, false);
+    assert.equal(spans.at(-1).blocked, false);
+    await closeTransport(t);
+});
+test('suppression uses received PCM, not elapsed network time or transcript completion', async () => {
+    const t = transport(); await connected(t);
+    const voice = Buffer.alloc(640, 30);
+    t.client.setAlphaPlaying(true); emitPcm(t, voice);
+    t.client.setAlphaPlaying(false); t.client.updateAlphaProgress('guest speaking');
+    const now = Date.now;
+    try {
+        Date.now = () => now() + 60000;
+        t.socket.event({ type: 'session.output_transcript.delta', delta: 'End.', start_ms: 0, end_ms: 20 });
+        emitPcm(t, voice);
+        assert.equal(t.audio.length, 0);
+    } finally { Date.now = now; }
+    emitPcm(t, Buffer.alloc(32000 - 640));
+    emitPcm(t, voice); // 980 ms is insufficient; voice resets the boundary
+    assert.equal(t.audio.length, 0);
+    emitPcm(t, Buffer.alloc(32000));
+    emitPcm(t, voice);
+    assert.equal(t.audio.length, 1);
+    await closeTransport(t);
+});
+test('muting an already audible phrase suppresses its continuation after Alpha ends', async () => {
+    const t = transport(); await connected(t);
+    const voice = Buffer.alloc(640, 30);
+    emitPcm(t, voice);
+    t.client.setAlphaPlaying(true);
+    t.client.updateAlphaProgress('guest speaking');
+    t.client.setAlphaPlaying(false);
+    emitPcm(t, voice);
+    assert.equal(t.audio.length, 1);
+    emitPcm(t, Buffer.alloc(32000));
+    emitPcm(t, voice);
+    assert.equal(t.audio.length, 2);
+    await closeTransport(t);
+});
+test('a completed muted phrase does not suppress a later fresh backchannel', async () => {
+    const t = transport(); await connected(t);
+    const voice = Buffer.alloc(640, 30);
+    t.client.setAlphaPlaying(true); emitPcm(t, voice);
+    emitPcm(t, Buffer.alloc(32000));
+    t.client.setAlphaPlaying(false);
+    t.client.updateAlphaProgress('guest speaking');
+    emitPcm(t, voice);
+    assert.deepEqual(t.audio, [voice]);
+    await closeTransport(t);
+});
+test('experimental mode retains its existing playback policy', async () => {
+    const t = transport({ turnControl: true }); await connected(t);
+    const voice = Buffer.alloc(640, 30);
+    t.client.setAlphaPlaying(true); emitPcm(t, voice);
+    t.client.setAlphaPlaying(false); emitPcm(t, voice);
+    assert.deepEqual(t.audio, [voice]);
+    await closeTransport(t);
+});
+test('suppressed provider speech never reaches Discord consumption after the guest reopens listening', async () => {
+    const alpha = new Player(), quartz = new Player(), consumed = [];
+    const socket = new Socket();
+    const p = new QuartzPlayback({
+        connection: { subscribe() {} }, alphaPlayer: alpha, player: quartz,
+        resourceFactory: stream => stream,
+        encoderFactory: () => ({ encode(pcm) { return pcm; }, delete() {} }),
+        onPcm: pcm => consumed.push(pcm),
+        clientFactory: options => new GptLiveBackchannel({
+            ...options, apiKey: 'test', socketFactory: () => socket,
+            mixer: { start() {}, stop() {}, push() {} }, closeTimeoutMs: 10
+        })
+    });
+    const start = p.start(); socket.open();
+    socket.event({ type: 'session.started', session: { id: 'playback-regression' } }); await start;
+    const voice = Buffer.alloc(640, 30), t = { socket };
+    alpha.transition('playing'); emitPcm(t, voice);
+    alpha.transition('idle'); p.updateAlphaProgress('guest speaking');
+    emitPcm(t, voice);
+    assert.equal(p.stream, null);
+    assert.equal(consumed.length, 0);
+    emitPcm(t, Buffer.alloc(32000)); emitPcm(t, voice);
+    p.stream.read();
+    assert.equal(consumed.length, 1);
+    const stop = p.stop(); socket.event({ type: 'session.closed' }); await stop;
 });

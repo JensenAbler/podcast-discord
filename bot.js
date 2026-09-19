@@ -5530,21 +5530,20 @@ class AlphaClawdVoiceBot {
             });
             turnResult = playbackResult;
             const finalResponse = playbackResult?.finalResponse || response;
-            if ((playbackResult?.played || playbackResult?.stale) && finalResponse.bigBrain?.requested) {
-                if (playbackResult?.stale) {
-                    console.log('[Bot] bigBrain request survived stale host response; dispatching without spoken stall');
-                }
+            // A discarded stall belongs to an unfinished/superseded guest turn.
+            // Requeued utterances must be evaluated together before any lookup.
+            if (playbackResult?.played && finalResponse.bigBrain?.requested) {
                 bigBrainDispatch = {
                     response: finalResponse,
                     options: {
-                        source: playbackResult?.stale ? 'buffer-stale' : 'buffer',
+                        source: 'buffer',
                         transcript,
                         utterances,
                         wordData,
                         awarenessInjections,
                         awarenessShelfItems,
                         participantActivityBaseline: this.getParticipantActivityVersion(guildId),
-                        stallSpoken: playbackResult?.played === true
+                        stallSpoken: true
                     }
                 };
             }

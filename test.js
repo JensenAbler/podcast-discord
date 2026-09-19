@@ -6546,7 +6546,7 @@ async function runTests() {
         failed++;
     }
 
-    console.log('\nTest 7c: Stale host stall still dispatches bigBrain');
+    console.log('\nTest 7c: Stale host stall cannot dispatch bigBrain before a spoken response');
     try {
         const bot = Object.create(AlphaClawdVoiceBot.prototype);
         const guildId = 'guild-stale-bigbrain';
@@ -6624,19 +6624,8 @@ async function runTests() {
             { speaker: 'Jensen', transcription: 'Check the current price of GameStop.' }
         ], 'Jensen: Check the current price of GameStop.');
 
-        if (sentChats.length !== 1) {
-            throw new Error(`Expected stale bigBrain request to dispatch once, got ${sentChats.length}`);
-        }
-        if (!sentChats[0].message.startsWith('/think high /verbose on\n\n[Podcast bigBrain request]')) {
-            throw new Error(`Stale bigBrain prompt did not request Gateway verbose tool events: ${sentChats[0].message}`);
-        }
-        if (!sentChats[0].message.includes('Need the current price of GameStop stock.') ||
-            !sentChats[0].message.includes('tried to speak a brief stall, but it was discarded')) {
-            throw new Error(`Stale bigBrain prompt missing context: ${sentChats[0].message}`);
-        }
-        const runId = sentChats[0].options.idempotencyKey;
-        if (!runId.startsWith('discord-bigbrain-') || !bot.pendingBigBrainResponses.has(runId)) {
-            throw new Error(`Stale bigBrain run was not tracked: ${runId}`);
+        if (sentChats.length !== 0 || bot.pendingBigBrainResponses.size !== 0) {
+            throw new Error('Discarded host speech must not dispatch or track a Big Brain lookup');
         }
         if (requeued.length !== 1 || requeued[0][0]?.transcription !== 'Check the current price of GameStop.') {
             throw new Error(`Stale host turn did not preserve participant utterance: ${JSON.stringify(requeued)}`);
@@ -6645,9 +6634,25 @@ async function runTests() {
             throw new Error(`Direct response hold was not released: ${JSON.stringify(holdEvents)}`);
         }
 
-        bot.cleanupPendingBigBrain(runId);
-
-        console.log('  Stale generated stalls can drop audio while preserving and dispatching the bigBrain request');
+        // A fresh evaluation after the completed guest turn may dispatch,
+        // but only after the host playback promise resolves.
+        let finishPlayback;
+        bot.speakDirectGeneratorResponse = async (_guildId, response) => {
+            await new Promise(resolve => { finishPlayback = resolve; });
+            return { played: true, finalResponse: await response.completed };
+        };
+        const nextTurn = bot.handleDirectGeneratorFlush(guildId, [
+            { speaker: 'Jensen', transcription: 'Check the current price of GameStop.' }
+        ], 'Jensen: Check the current price of GameStop.');
+        await new Promise(resolve => setImmediate(resolve));
+        if (sentChats.length !== 0) throw new Error('Lookup started before host playback finished');
+        finishPlayback();
+        await nextTurn;
+        if (sentChats.length !== 1 || !sentChats[0].message.includes('has already spoken a brief stall')) {
+            throw new Error('A completed spoken stall must dispatch its lookup once');
+        }
+        bot.cleanupPendingBigBrain(sentChats[0].options.idempotencyKey);
+        console.log('  Discarded stalls preserve guest context without dispatch; completed playback dispatches once');
         passed++;
     } catch (error) {
         console.log(`  Stale bigBrain dispatch failed: ${error.message}`);

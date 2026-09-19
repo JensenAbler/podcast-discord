@@ -229,3 +229,16 @@ Recordings carry individual `person:<name>` tags (for example `person:jensen` an
 Use `/podcast-production plan:<plan-name>` to combine all completed recordings for that plan in chronological order, with one intro and outro. Plan autocomplete shows recording counts and is scoped to the current server. An optional `episode` chooses the destination; otherwise the normal next episode is used. Each run creates a new version. Publishing remains a separate command. Don't combine `plan` with `recording` or `append`.
 
 Recording autocomplete supports participant/plan text searches; multiple words must all match (for example `jensen alpha`). Production manifests retain the union of all source tags. CLI: `python3 tools/podcast-tool.py produce-recording --episode 20 --plan <basename> --dry-run` previews selected sources; omit `--dry-run` to produce. `--guild-id` optionally restricts selection to a server.
+
+
+### Muted Quartz speech and Big Brain dispatch
+Normal-mode Quartz retains the complete conversation context. It must not repeat
+Alpha's planned or delivered speech. Speech received while muted remains
+suppressed when a guest resumes; the gate releases only after one second of
+received near-silent output PCM (amplitude at most 8), never from elapsed wall
+time or a transcript gap. This acoustic boundary is an approximation: Live has no
+output-utterance-done event. Experimental turn-control behavior is unchanged.
+
+A Big Brain request attached to discarded host speech is not dispatched.
+The guest utterances remain requeued for a fresh evaluation of the completed
+question. Normal buffer and idle requests dispatch only after host playback.
