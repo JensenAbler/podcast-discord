@@ -75,6 +75,7 @@ class AwarenessShelf {
         const item = {
             id: String(input.id || `shelf-${session.itemSeq}`).trim(),
             status: 'active',
+            scope: input.scope === 'episode' ? 'episode' : 'turns',
             text,
             reason: String(input.reason || '').trim(),
             topicAnchors: this.normalizeTopicAnchors(input.topicAnchors),
@@ -131,7 +132,9 @@ class AwarenessShelf {
         }
         if (patch.expiresAfterTurns !== undefined || patch.lifespanTurns !== undefined) {
             item.expiresAfterTurns = this.parsePositiveInt(patch.expiresAfterTurns ?? patch.lifespanTurns, this.expireAfterTurns);
-            item.remainingTurns = Math.max(0, item.expiresAfterTurns - item.presentedCount);
+            if (item.scope !== 'episode') {
+                item.remainingTurns = Math.max(0, item.expiresAfterTurns - item.presentedCount);
+            }
         }
 
         item.updatedAt = this.now();
@@ -201,7 +204,9 @@ class AwarenessShelf {
 
         for (const item of available) {
             item.presentedCount += 1;
-            item.remainingTurns = Math.max(0, item.expiresAfterTurns - item.presentedCount);
+            if (item.scope !== 'episode') {
+                item.remainingTurns = Math.max(0, item.expiresAfterTurns - item.presentedCount);
+            }
             item.lastPresentedAt = generatorCalledAt;
             item.lastPresentedTurnId = turnId;
             item.updatedAt = generatorCalledAt;
@@ -232,7 +237,7 @@ class AwarenessShelf {
 
     enforceMaxActiveItems(session, preserveId = '') {
         const active = session.items
-            .filter((item) => item.status === 'active')
+            .filter((item) => item.status === 'active' && item.scope !== 'episode')
             .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
         while (active.length > this.maxItems) {
             const candidateIndex = active.findIndex((item) => item.id !== preserveId);

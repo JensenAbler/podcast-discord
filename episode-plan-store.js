@@ -30,7 +30,9 @@ class EpisodePlanStore {
         const versionDir = this.getVersionDir(normalized.basename, normalized.version);
         fs.mkdirSync(versionDir, { recursive: true });
         const planPath = path.join(versionDir, 'episode-plan.json');
-        fs.writeFileSync(planPath, `${JSON.stringify(normalized, null, 2)}\n`);
+        const temporaryPath = planPath + '.' + require('crypto').randomUUID() + '.tmp';
+        fs.writeFileSync(temporaryPath, `${JSON.stringify(normalized, null, 2)}\n`);
+        fs.renameSync(temporaryPath, planPath);
         return {
             plan: normalized,
             path: planPath,
@@ -160,6 +162,8 @@ function normalizeEpisodePlan(plan = {}, options = {}) {
         targetDurationMinutes,
         guests,
         backgroundBrief,
+        ...(plan.backgroundMemory && typeof plan.backgroundMemory === 'object'
+            ? { backgroundMemory: structuredClone(plan.backgroundMemory) } : {}),
         excludedAngles,
         phases
     };

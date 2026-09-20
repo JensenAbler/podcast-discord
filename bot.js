@@ -1,3 +1,4 @@
+const { EpisodeMemoryBuilder, seedEpisodeMemory } = require('./episode-background-memory');
 const { savePlanProgress, resumePlanOptions } = require('./episode-plan-progress');
 const { buildResumeCommand, handleResumeCommand, preflightResume, installResume } = require('./podcast-resume');
 const { ConversationAdmission, assess } = require('./conversation-admission');
@@ -234,6 +235,10 @@ class AlphaClawdVoiceBot {
             : process.env.PODCAST_PLANNING_ENABLED !== 'false';
         this.showRunnerGenerator = options.showRunnerGenerator || new ShowRunnerGenerator(options.showRunnerOptions || {});
         this.episodePlanStore = options.episodePlanStore || new EpisodePlanStore(options.episodePlanStoreOptions || {});
+        this.episodeMemoryBuilder = options.episodeMemoryBuilder || new EpisodeMemoryBuilder({
+            generatorOptions: options.showRunnerOptions || {},
+            ...(options.episodeMemoryOptions || {})
+        });
         this.planningSessions = new Map(); // channelId -> planning session
         this.planningAudioTranscriptionEnabled = options.planningAudioTranscriptionEnabled !== undefined
             ? Boolean(options.planningAudioTranscriptionEnabled)
@@ -3254,6 +3259,9 @@ class AlphaClawdVoiceBot {
             if (!sentApprovalMessage) {
                 await channel?.send?.('Episode plan approved. Planning session closed.');
             }
+            if (session.latestPlan && this.episodeMemoryBuilder) {
+                await this.prepareEpisodeBackgroundMemory(session, channel);
+            }
             return;
         }
 
@@ -3269,9 +3277,51 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    async prepareEpisodeBackgroundMemory(session, channel) {
+        const plan = session.latestPlan;
+        const save = (backgroundMemory) => {
+            const saved = this.episodePlanStore.savePlan({ ...plan, backgroundMemory });
+            session.latestPlan = saved.plan;
+            return saved;
+        };
+        const ref = plan.basename + '@' + plan.version;
+        this.episodeMemoryJobs ||= new Set();
+        this.episodeMemoryJobs.add(ref);
+        save({ schemaVersion: 1, status: 'pending', planRef: ref });
+        try {
+            await channel?.send?.('Gathering relevant memories from past podcast conversations…');
+        } catch (error) {
+            console.warn('[Bot] Memory progress notification failed: ' + error.message);
+        }
+        let message;
+        try {
+            const memory = await this.episodeMemoryBuilder.build(plan, { guildId: session.guildId });
+            save(memory);
+            this.episodePlanStore.appendSessionRecord(plan.basename, {
+                type: 'background_memory_ready', version: plan.version,
+                memories: memory.memories.length, recordingsConsidered: memory.recordingsConsidered,
+                skipped: memory.skipped
+            });
+            message = memory.memories.length
+                ? 'Episode background memory is ready (' + memory.memories.length + ' memories).'
+                : 'Memory review finished; no relevant past conversations were found.';
+            if (memory.skipped.length) message += ' ' + memory.skipped.length + ' recordings could not be read.';
+        } catch (error) {
+            save({ schemaVersion: 1, status: 'failed', createdAt: new Date().toISOString(),
+                planRef: plan.basename + '@' + plan.version, error: error.message });
+            console.warn('[Bot] Episode background memory failed: ' + error.message);
+            message = 'The plan is saved, but background memory preparation failed. You can still start this plan without it.';
+        }
+        this.episodeMemoryJobs.delete(ref);
+        try { await channel?.send?.(message); }
+        catch (error) { console.warn('[Bot] Memory completion notification failed: ' + error.message); }
+    }
+
     savePlanningOutput(session, output) {
         const basename = session.basename || output.plan.basename;
-        const saved = this.episodePlanStore.saveNextVersion(output.plan, { basename });
+        // A revised plan must not inherit memory prepared for an older version.
+        const { backgroundMemory, ...freshPlan } = output.plan;
+        const saved = this.episodePlanStore.saveNextVersion(freshPlan, { basename });
         session.basename = saved.plan.basename;
         session.latestPlan = saved.plan;
         session.latestPlanPath = saved.path;
@@ -3497,6 +3547,16 @@ class AlphaClawdVoiceBot {
             return null;
         }
         const loaded = this.episodePlanStore.loadPlan(ref);
+        if (loaded.plan.backgroundMemory?.status === 'pending') {
+            const canonicalRef = loaded.plan.basename + '@' + loaded.plan.version;
+            if (this.episodeMemoryJobs?.has(canonicalRef)) {
+                throw new Error('Background memory is still being prepared for this plan. Please try again shortly.');
+            }
+            // A process restart must not strand a usable plan behind an abandoned job.
+            loaded.plan.backgroundMemory = { ...loaded.plan.backgroundMemory, status: 'failed',
+                error: 'Memory preparation was interrupted by a restart' };
+            this.episodePlanStore.savePlan(loaded.plan);
+        }
         return {
             ...loaded,
             ref
@@ -4889,6 +4949,7 @@ class AlphaClawdVoiceBot {
             } : null
         });
         this.startInternalThoughtSession(guildId, recordingInfo);
+        seedEpisodeMemory(this.internalThoughtManager, guildId, episodePlanSelection?.plan);
 
         // Announce start (use cached audio to save API credits)
         try {
