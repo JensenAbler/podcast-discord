@@ -90,7 +90,8 @@ test('episode memory survives expiry and capacity pressure while normal shelf be
         assert(items.some(item => item.id === 'episode-background-memory'));
     }
     const memory = shelf.getAvailableItems('g').find(i => i.id === 'episode-background-memory');
-    assert.match(memory.text, /Sources: episode-1/);
+    assert.match(memory.text, /Sources: Past podcast episode — timestamp unavailable/);
+    assert.doesNotMatch(memory.text, /episode-1#part-1/);
     assert.doesNotMatch(memory.text, /should|must|agenda/);
     shelf.removeItem('g', memory.id);
     assert(!shelf.getAvailableItems('g').some(i => i.id === memory.id));
@@ -167,4 +168,29 @@ test('generator compact context preserves full episode memory under transient sh
     assert.equal(compact.length, 8);
     assert.equal(compact[0], memory);
     assert(generator.formatAwarenessShelfItems(compact).includes(memory.text.trim()));
+});
+
+test('shelf replaces internal file and line IDs with episode and timestamp citations', t => {
+    const root = fixture(t), filename = path.join(root, 'episode-citation.md');
+    fs.writeFileSync(filename, ['# Giving Tree', 'Episode: 9', '## CONVERSATION — original recording',
+        '00:01:37 Jensen: I was wrapping up with the Giving Tree.',
+        '00:02:04 Jensen: I did the job.'].join('\n'));
+    const memory = collectPassages([{ path: filename, startLine: 4, endLine: 5 }],
+        { root, workspace: root, contextLines: 0 });
+    const shelf = new AwarenessShelf({ enabled: true }); shelf.startSession('g');
+    const item = seedEpisodeMemory({ addAwarenessShelfItem: (...args) => shelf.addItem(...args) }, 'g',
+        { backgroundMemory: { status: 'ready', ...memory } });
+    assert.match(item.text, /Sources: Episode 9 — 00:01:37–00:02:04 \(conversation recording\)/);
+    assert.doesNotMatch(item.text, /episode-citation|\.md|:L4-5/);
+    assert.equal(memory.sources[0].id, 'episode-citation.md:L4-5');
+    assert(item.text.includes(memory.memories[0].text));
+});
+test('untimed scripts and untimed outros do not acquire invented timestamps', () => {
+    const { describeSource, formatSourceCitation } = require('./episode-background-memory');
+    const lines = ['Episode: 0', '## Original production script', 'HOST: Hello'];
+    assert.equal(formatSourceCitation(describeSource(lines, 2, 3)), 'Episode 0 — timestamp unavailable');
+    const outro = ['Episode: 9', '## CONVERSATION — original recording', '00:01:00 Jensen: Hello',
+        '## OUTRO', 'Alpha: Goodbye'];
+    assert.equal(formatSourceCitation(describeSource(outro, 4, 5)), 'Episode 9 — timestamp unavailable');
+    assert.equal(formatSourceCitation(describeSource(outro, 3, 3)), 'Episode 9 — 00:01:00 (conversation recording)');
 });

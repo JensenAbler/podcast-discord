@@ -56,6 +56,45 @@ function buildQueries(plan) {
     return queries;
 }
 
+// Citation labels use episode metadata and timestamps, never implementation paths.
+function describeSource(lines, startLine, endLine) {
+    const episode = lines.map(line => /^Episode:\s*(\d+)\s*$/.exec(line)).find(Boolean);
+    const selected = lines.slice(startLine - 1, endLine);
+    const timestamps = selected.map(line => /^\s*\[?(\d{1,2}:\d{2}:\d{2})(?:\.\d+)?\]?\s/.exec(line))
+        .filter(Boolean).map(match => match[1]);
+    const conversation = lines.slice(0, endLine).some(line => /^## CONVERSATION — original recording/.test(line));
+    return {
+        episodeNumber: episode ? Number(episode[1]) : null,
+        startTimestamp: timestamps[0] || null,
+        endTimestamp: timestamps.at(-1) || null,
+        timestampBasis: timestamps.length ? (conversation ? 'conversation recording' : 'transcript') : null
+    };
+}
+
+function formatSourceCitation(source = {}) {
+    const episode = Number.isInteger(source.episodeNumber) ? 'Episode ' + source.episodeNumber : 'Past podcast episode';
+    if (!source.startTimestamp) return episode + ' — timestamp unavailable';
+    const range = source.startTimestamp === source.endTimestamp || !source.endTimestamp
+        ? source.startTimestamp : source.startTimestamp + '–' + source.endTimestamp;
+    return episode + ' — ' + range + (source.timestampBasis ? ' (' + source.timestampBasis + ')' : '');
+}
+
+// Older saved raw payloads can gain readable citations without rerunning retrieval.
+// Only read the known podcast corpus, and only map an unchanged source snapshot.
+function resolveSourceCitation(source) {
+    if (!source || Object.hasOwn(source, 'episodeNumber')) return formatSourceCitation(source);
+    try {
+        const filename = fs.realpathSync(source.path);
+        if (path.dirname(filename) !== '/var/lib/openclaw-podcast-memory' ||
+            !/^episode-[a-zA-Z0-9-]+\.md$/.test(path.basename(filename))) return formatSourceCitation();
+        const text = fs.readFileSync(filename, 'utf8');
+        if (crypto.createHash('sha256').update(text).digest('hex') !== source.sha256) return formatSourceCitation();
+        return formatSourceCitation(describeSource(text.split('\n'), source.startLine, source.endLine));
+    } catch {
+        return formatSourceCitation();
+    }
+}
+
 function collectPassages(hits, { root, workspace, contextLines = 12 }) {
     const canonicalRoot = fs.realpathSync(root);
     const grouped = new Map();
@@ -87,11 +126,12 @@ function collectPassages(hits, { root, workspace, contextLines = 12 }) {
             if (previous && range.startLine <= previous.endLine + 1) previous.endLine = Math.max(previous.endLine, range.endLine);
             else merged.push({ ...range });
         }
-        const title = file.lines.find(line => /^# /.test(line))?.slice(2) || path.basename(filename);
+        const title = file.lines.find(line => /^# /.test(line))?.slice(2) || 'Past podcast conversation';
         for (const range of merged) {
             const id = path.basename(filename) + ':L' + range.startLine + '-' + range.endLine;
             memories.push({ text: file.lines.slice(range.startLine - 1, range.endLine).join('\n'), sourceIds: [id] });
-            sources.push({ id, title, path: filename, ...range, sha256: file.sha256 });
+            sources.push({ id, title, path: filename, ...range, sha256: file.sha256,
+                ...describeSource(file.lines, range.startLine, range.endLine) });
         }
     }
     return { memories, sources };
@@ -110,7 +150,7 @@ class EpisodeMemoryBuilder {
         for (const query of queries) hits.push(...await this.search(query));
         const { memories, sources } = collectPassages(hits, this);
         return {
-            schemaVersion: 2, status: 'ready', createdAt: new Date().toISOString(),
+            schemaVersion: 3, status: 'ready', createdAt: new Date().toISOString(),
             planRef: plan.basename + '@' + plan.version,
             retrieval: 'openclaw-local', corpus: 'published-podcast', queries,
             hitsRetrieved: hits.length, recordingsConsidered: new Set(sources.map(s => s.path)).size,
@@ -128,11 +168,11 @@ function seedEpisodeMemory(manager, guildId, plan) {
         text: memory.memories.map(item => {
             const titles = [...new Set(item.sourceIds.map(id => sources.get(id)?.title).filter(Boolean))];
             return (titles.length ? titles.join(' / ') + '\n' : '') + item.text +
-                '\nSources: ' + item.sourceIds.join(', ');
+                '\nSources: ' + [...new Set(item.sourceIds.map(id => resolveSourceCitation(sources.get(id))))].join('; ');
         }).join('\n\n'),
         reason: 'Background from past podcast conversations',
         topicAnchors: []
     }) || null;
 }
 
-module.exports = { EpisodeMemoryBuilder, buildQueries, collectPassages, searchOpenClaw, seedEpisodeMemory };
+module.exports = { EpisodeMemoryBuilder, buildQueries, collectPassages, searchOpenClaw, seedEpisodeMemory, describeSource, formatSourceCitation };
