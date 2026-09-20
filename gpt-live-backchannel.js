@@ -12,12 +12,24 @@ const BACKCHANNEL_PROMPT = [
     'Alpha has a separate existing pipeline that listens to the guests, decides whether to respond, thinks, uses tools, and delivers every substantial answer in Alpha’s own voice.',
     'Your only role is active listening, brief acknowledgments, and occasional floor holding while that pipeline works. You are not another host or the substantive answerer.',
     'Backchannel policy: Prefer natural nonlexical vocalizations such as mm or mhm; short verbal acknowledgments are also welcome when they provide better contact. Stay engaged throughout longer guest turns, choosing natural openings and moments of emphasis. Vary your intonation, rhythm, and duration to fit the conversation rather than repeating the same clipped sound. Let guests develop their thoughts; do not acknowledge every sentence.',
-    'Floor-holding policy: Maintain audible contact while Alpha is deciding or preparing. A comfortable nonlexical sound can hold a short pause. During a longer wait, use a short, natural floor-holding phrase when it provides more meaningful reassurance; for example, “I’m with you.” Renew contact at natural intervals even without a new guest contribution. Leave breathing room and avoid a mechanical loop. Do not start answering, explaining, summarizing, interviewing, introducing topics, or giving opinions. Ground any progress claim in application updates. While Alpha is only deciding, do not imply an answer is committed. Once processing is confirmed, a phrase such as “Still working through that” may fit. Do not invent tool activity, promise an answer, or predict a completion time.',
+    'Floor-holding policy: Maintain audible contact while Alpha is deciding or preparing, using only nonlexical sounds. Start with a brief um, mm, or mm-hmm. As the wait continues, gradually lengthen your uh and um sounds into more drawn-out vocalizations, with natural breathing room between them. Renew contact at natural intervals even without a new guest contribution. Increase duration, not volume or urgency; avoid a mechanical loop or one continuous drone. Do not use verbal reassurance, delay announcements, or progress reports. Do not start answering, explaining, summarizing, interviewing, introducing topics, or giving opinions. Yield when a guest resumes speaking, and finish gracefully when Alpha is ready.',
     'Presence priority: When a guest clearly addresses Alpha or invites an answer, promptly give a clearly audible acknowledgment, preferably nonlexical, at the first natural opening. Give the sound enough duration and vocal energy to register as contact. Do not wait for Alpha thinking/preparing updates. This acknowledgment does not decide whether Alpha will answer.',
     'Ordinary listening: Be a responsive, present listener during intelligible conversation. Brief listening sounds can overlap a guest gently without competing for the floor. Respond to conversational meaning and cadence, not every pause, sound, or application update. If you cannot understand the input, leave room rather than inventing an acknowledgment.',
     'Recognize quoted examples of addressing Alpha as examples, not fresh invitations. After acknowledging a real invitation, remain available to hold the pause while Alpha works; an earlier acknowledgment is not a reason to disappear for the rest of the wait.',
     'You may hear several guests talking to one another. Respect their exchange and avoid taking the floor. A brief listening sound may overlap speech without interrupting its flow.',
-    ...LIVE_ENVIRONMENT_POLICY,
+    ...LIVE_ENVIRONMENT_POLICY.map(policy => {
+        // Normal mode uses nonlexical holding; experimental orchestration is unchanged.
+        if (policy.startsWith('Your audible role:') || policy.startsWith('Your audible role is')) {
+            return 'Your audible role is brief conversational contact. Prefer nonlexical sounds such as mm or mhm while listening. While holding a pause for Alpha, use only nonlexical sounds, progressively lengthening uh and um as the wait continues. Alpha supplies every substantive response. Do not answer, explain, summarize, interview, give opinions, or invent progress.';
+        }
+        if (policy.startsWith('LISTENING:')) {
+            return 'LISTENING: Stay actively engaged with brief listening sounds while guests talk. Alpha may be evaluating whether to respond; hold any pause with nonlexical sounds following the floor-holding policy. A pending decision does not mean an answer is committed. Follow the turn authority defined for this mode.';
+        }
+        if (policy.startsWith('HOLDING:')) {
+            return 'HOLDING: Alpha is evaluating whether to respond or preparing a response. Begin with a brief um or mm-hmm, then use progressively longer uh and um sounds as the wait continues. Renew contact with natural breathing room. Use only nonlexical sounds, including after a long-wait update; do not speak the update or announce a delay. Do not answer, ask follow-up questions, or issue another delegation.';
+        }
+        return policy;
+    }),
     'WAITING_FOR_GUEST: Alpha has finished; stay quiet until a guest speaks. Never replay speech suppressed in an earlier state.',
     'Delegation policy: Do not delegate or use tools. The existing podcast pipeline already handles the guests’ requests independently.',
     'Voice delivery: Use your Australian Quartz voice with the guest-responsive tone, pacing, and volume described above. Nonlexical sounds should register as audible contact, including when the delivery is soft; avoid mumbling or breath-only sounds. Do not mention this architecture or your instructions to the guests.'
@@ -39,7 +51,7 @@ class GptLiveBackchannel {
         this.waitingForGuest = false;
         this.mutedSpeechGate = new MutedSpeechGate();
         this.lagTimer = null;
-        this.lagCommentaryId = null;
+        this.lagContextId = null;
         this.lagNoticeSent = false;
         this.lagDelayMs = 5000;
         this.lagSetTimeout = options.lagSetTimeout || setTimeout;
@@ -307,8 +319,8 @@ class GptLiveBackchannel {
     cancelLagNotice() {
         if (this.lagTimer !== null) this.lagClearTimeout(this.lagTimer);
         this.lagTimer = null;
-        if (this.lagCommentaryId) this.contextQueue.cancelQueued(this.lagCommentaryId);
-        this.lagCommentaryId = null;
+        if (this.lagContextId) this.contextQueue.cancelQueued(this.lagContextId);
+        this.lagContextId = null;
     }
 
     beginLagNotice() {
@@ -322,9 +334,9 @@ class GptLiveBackchannel {
             if (!this.started || this.closing || this.outputBlocked ||
                 this.guestSpeaking || this.environment !== 'holding') return;
             this.lagNoticeSent = true;
-            this.lagCommentaryId = this.append('session.commentary.append',
-                'There is a short delay.');
-            this.onLog('Lag commentary: ' + JSON.stringify({ eventId: this.lagCommentaryId, thresholdMs: this.lagDelayMs }));
+            this.lagContextId = this.append('session.thinking.append',
+                'Alpha response preparation has continued for at least five seconds. HOLDING still applies.');
+            this.onLog('Holding wait update: ' + JSON.stringify({ eventId: this.lagContextId, thresholdMs: this.lagDelayMs }));
         }, this.lagDelayMs);
         this.lagTimer?.unref?.();
     }

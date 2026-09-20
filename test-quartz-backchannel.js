@@ -576,11 +576,11 @@ function lagClock() {
         }
     };
 }
-function commentary(t) { return t.socket.sent.filter(e => e.type === 'session.commentary.append'); }
+function commentary(t) { return t.socket.sent.filter(e => e.type === 'session.thinking.append' && e.content.startsWith('Alpha response preparation has continued')); }
 async function closeTransport(t) {
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 }
-test('lag commentary occurs once at five seconds, is acknowledged, and resets for a new guest turn', async () => {
+test('factual holding update occurs once at five seconds, is acknowledged, and resets for a new guest turn', async () => {
     const clock = lagClock(), t = transport(clock); await connected(t);
     t.client.updateAlphaProgress('guest speaking');
     t.client.updateAlphaProgress('guest finished');
@@ -593,6 +593,7 @@ test('lag commentary occurs once at five seconds, is acknowledged, and resets fo
     t.client.updateAlphaProgress('preparing voice');
     clock.tick(1);
     assert.equal(commentary(t).length, 1, 'progress updates do not reset the clock');
+    assert.ok(!t.socket.sent.some(e => e.type === 'session.commentary.append'), 'no spoken delay cue');
     assert.equal(t.client.contextQueue.pending.size, 0, 'commentary acknowledgment clears the queue');
     t.client.updateAlphaProgress('thinking');
     clock.tick(30000);
@@ -640,7 +641,7 @@ test('closing and recovery cancel timers; an unsent stale commentary is removed'
     assert.equal(commentary(t).length, 0);
     assert.equal(t.client.contextQueue.waiting.length, 1);
     t.client.updateAlphaProgress('guest speaking');
-    assert.equal(t.client.contextQueue.waiting.some(x => x.event.type === 'session.commentary.append'), false);
+    assert.equal(t.client.contextQueue.waiting.some(x => x.event.type === 'session.thinking.append' && x.event.content.startsWith('Alpha response preparation has continued')), false);
     t.client.contextQueue.maxPending = 4; t.client.contextQueue.pump();
     t.client.updateAlphaProgress('guest finished'); t.client.updateAlphaProgress('thinking');
     await closeTransport(t); clock.tick(5000);
