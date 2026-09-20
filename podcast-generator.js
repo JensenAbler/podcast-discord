@@ -1535,7 +1535,9 @@ class PodcastGenerator {
     }
 
     compactAwarenessShelfItems(items = []) {
-        return (Array.isArray(items) ? items : []).slice(-7);
+        const shelfItems = Array.isArray(items) ? items : [];
+        const recent = new Set(shelfItems.filter(item => item?.scope !== 'episode').slice(-7));
+        return shelfItems.filter(item => item?.scope === 'episode' || recent.has(item));
     }
 
     compactPendingBigBrain(items = []) {

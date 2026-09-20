@@ -157,3 +157,14 @@ test('interrupted pending memory does not block launch after restart', t => {
     bot.episodePlanStore.savePlan({ ...session.latestPlan, backgroundMemory: { status: 'pending' } });
     assert.equal(bot.loadEpisodePlanSelection('test-memory@v001').plan.backgroundMemory.status, 'failed');
 });
+
+test('generator compact context preserves full episode memory under transient shelf pressure', () => {
+    const { PodcastGenerator } = require('./podcast-generator');
+    const generator = Object.create(PodcastGenerator.prototype);
+    const memory = { id: 'episode-background-memory', scope: 'episode', text: 'source '.repeat(10000) };
+    const transient = Array.from({ length: 9 }, (_, i) => ({ id: 't' + i, text: 'Transient ' + i }));
+    const compact = generator.compactAwarenessShelfItems([memory, ...transient]);
+    assert.equal(compact.length, 8);
+    assert.equal(compact[0], memory);
+    assert(generator.formatAwarenessShelfItems(compact).includes(memory.text.trim()));
+});
