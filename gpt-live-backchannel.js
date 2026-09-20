@@ -87,6 +87,7 @@ class GptLiveBackchannel {
         this.blocked = false;
         this.sequence = 0;
         this.recovering = false;
+        this.rotationSocket = null;
         this.reconnectAttempts = 0;
         this.reconnectDelayMs = options.reconnectDelayMs ?? 250;
         this.latestConversation = null;
@@ -152,7 +153,7 @@ class GptLiveBackchannel {
                     });
                 });
                 socket.on('message', data => {
-                    if (socket !== this.socket) return;
+                    if (socket !== this.socket || socket === this.rotationSocket) return;
                     let event;
                     try { event = JSON.parse(data.toString()); }
                     catch { return fail(new Error('GPT-Live returned invalid JSON')); }
@@ -245,13 +246,19 @@ class GptLiveBackchannel {
                     }
                 });
                 socket.on('unexpected-response', (_request, response) => {
+                    if (socket !== this.socket) return response.resume();
                     fail(new Error('GPT-Live connection rejected: HTTP ' + response.statusCode));
                     response.resume();
                     socket.terminate();
                 });
-                socket.on('error', () => fail(new Error('GPT-Live WebSocket connection failed')));
+                socket.on('error', () => {
+                    if (socket === this.socket && socket !== this.rotationSocket) fail(new Error('GPT-Live WebSocket connection failed'));
+                });
                 socket.on('close', () => {
                     if (socket !== this.socket) return;
+                    const rotating = socket === this.rotationSocket;
+                    this.rotationSocket = null;
+                    this.socket = null; // Ignore all late events from the retired session.
                     const recoverable = this.started || this.recovering;
                     clearTimeout(this.startTimer);
                     clearTimeout(this.closeTimer);
@@ -264,7 +271,8 @@ class GptLiveBackchannel {
                     this.startPromise = null;
                     if (!settled) fail(new Error('GPT-Live closed before session startup'));
                     this.finishClose?.();
-                    this.onClose();
+                    // A planned reset happens after handoff; it is not a playback failure.
+                    if (!rotating) this.onClose();
                     if (recoverable && !this.closing && !this.turnControl) this.scheduleReconnect();
                 });
             } catch (error) {
@@ -273,6 +281,17 @@ class GptLiveBackchannel {
             }
         });
         return this.startPromise;
+    }
+
+    resetForAlphaPlayback() {
+        if (this.turnControl || this.closing || !this.blocked) return;
+        // Begin the next exchange without the previous guest turn or Quartz output.
+        // Guest context arriving after this boundary can still aid startup recovery.
+        this.latestConversation = null;
+        if (!this.started || this.recovering) return; // A fresh connection is already pending.
+        this.rotationSocket = this.socket;
+        this.onLog('Session reset: Alpha playback started');
+        this.recover('alpha-playback-reset');
     }
 
     recover(reason, details = {}) {

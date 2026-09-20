@@ -807,7 +807,7 @@ test('suppressed provider speech never reaches Discord consumption after the gue
     const start = p.start(); socket.open();
     socket.event({ type: 'session.started', session: { id: 'playback-regression' } }); await start;
     const voice = Buffer.alloc(640, 30), t = { socket };
-    alpha.transition('playing'); emitPcm(t, voice);
+    alpha.transition('buffering'); emitPcm(t, voice); // Exercise the gate before session rotation.
     alpha.transition('idle'); p.updateAlphaProgress('guest speaking');
     emitPcm(t, voice);
     assert.equal(p.stream, null);
@@ -840,4 +840,179 @@ test('startup and reconnect catch up without restarting guest silence', async ()
     t.client.setAlphaPlaying(false, true);
     assert.equal(t.client.environment, 'holding_rising');
     await closeTransport(t);
+});
+
+test('session rotation occurs once at actual Alpha playback, never on handoff or rebuffering', async () => {
+    const t = playback();
+    let resets = 0;
+    t.p.client.resetForAlphaPlayback = () => { assert.equal(t.p.blocked, true); resets++; };
+    const release = await t.p.acquireAlpha();
+    assert.equal(resets, 0);
+    t.alpha.transition('buffering');
+    assert.equal(resets, 0);
+    t.alpha.transition('playing');
+    t.alpha.transition('buffering');
+    t.alpha.transition('playing');
+    t.alpha.transition('paused');
+    t.alpha.transition('playing');
+    assert.equal(resets, 1);
+    t.alpha.transition('idle'); release();
+    t.alpha.transition('playing');
+    assert.equal(resets, 2);
+    await t.p.stop();
+    t.alpha.transition('playing');
+    assert.equal(resets, 2);
+});
+
+async function rotatingTransport(options = {}) {
+    const sockets = [];
+    let closes = 0;
+    const t = transport({
+        reconnectDelayMs: 1,
+        ...options,
+        onClose: () => { closes++; },
+        socketFactory: () => { const socket = new Socket(); sockets.push(socket); return socket; }
+    });
+    const start = t.client.start();
+    sockets[0].open();
+    sockets[0].event({ type: 'session.started', session: { id: 'old' } });
+    await start;
+    return { ...t, socket: sockets[0], sockets, closes: () => closes };
+}
+async function awaitReplacement(t) {
+    for (let i = 0; t.sockets.length < 2 && i < 100; i++) await new Promise(r => setTimeout(r, 2));
+    assert.equal(t.sockets.length, 2);
+    const socket = t.sockets[1];
+    socket.open();
+    socket.event({ type: 'session.started', session: { id: 'fresh' } });
+    await t.client.startPromise;
+    return socket;
+}
+
+test('fresh session during Alpha is muted, forgets old context, then waits and backchannels', async () => {
+    const t = await rotatingTransport();
+    t.client.appendConversation('Guest transcript', 'OLD_CONTEXT_SENTINEL');
+    t.client.setAlphaPlaying(true);
+    t.client.resetForAlphaPlayback();
+    assert.equal(t.closes(), 0, 'planned close must not release a handoff');
+    assert.equal(t.running(), false);
+    const fresh = await awaitReplacement(t);
+    assert.equal(t.client.sessionId, 'fresh');
+    assert.equal(t.client.environment, 'aside');
+    assert.ok(!JSON.stringify(fresh.sent).includes('OLD_CONTEXT_SENTINEL'));
+    assert.equal(fresh.sent[0].session.store, false);
+    assert.equal(t.client.stateChannel, 'thinking');
+    const voice = Buffer.alloc(640, 30);
+    emitPcm({ socket: fresh }, voice);
+    t.client.setAlphaPlaying(false);
+    assert.equal(t.client.environment, 'waiting_for_guest');
+    emitPcm({ socket: fresh }, voice);
+    assert.equal(t.audio.length, 0);
+    t.client.updateAlphaProgress('guest speaking');
+    emitPcm({ socket: fresh }, voice);
+    assert.equal(t.audio.length, 0, 'muted utterance remains suppressed through its end');
+    emitPcm({ socket: fresh }, Buffer.alloc(32000));
+    emitPcm({ socket: fresh }, voice);
+    assert.equal(t.audio.length, 1, 'fresh backchannel plays over guest speech');
+    t.socket.event({ type: 'session.output_transcript.delta', delta: 'STALE', start_ms: 0, end_ms: 20 });
+    emitPcm(t, voice);
+    t.socket.emit('error', new Error('retired socket'));
+    assert.equal(t.transcripts.length, 0);
+    assert.equal(t.errors.length, 0);
+    assert.equal(t.audio.length, 1, 'retired session audio cannot play');
+    const stop = t.client.stop(); fresh.event({ type: 'session.closed' }); await stop;
+});
+
+test('slow reset startup respects Alpha end and the subsequent guest silence clock', async () => {
+    const clock = lagClock(), t = await rotatingTransport(clock);
+    t.client.setAlphaPlaying(true); t.client.resetForAlphaPlayback();
+    t.client.setAlphaPlaying(false);
+    assert.equal(t.client.environment, 'waiting_for_guest');
+    t.client.updateAlphaProgress('guest speaking');
+    t.client.appendConversation('Guest transcript', 'NEW_GUEST_CONTEXT');
+    t.client.updateAlphaProgress('guest finished');
+    clock.tick(6000);
+    const fresh = await awaitReplacement(t);
+    assert.equal(t.client.environment, 'holding_longer');
+    assert.ok(JSON.stringify(fresh.sent).includes('NEW_GUEST_CONTEXT'));
+    clock.tick(4000);
+    assert.equal(t.client.environment, 'holding_rising');
+    const stop = t.client.stop(); fresh.event({ type: 'session.closed' }); await stop;
+});
+
+test('rotation finishing after Alpha stops stays waiting until the guest speaks', async () => {
+    const t = await rotatingTransport();
+    t.client.setAlphaPlaying(true); t.client.resetForAlphaPlayback();
+    t.client.setAlphaPlaying(false);
+    const fresh = await awaitReplacement(t);
+    assert.equal(t.client.environment, 'waiting_for_guest');
+    assert.equal(t.client.outputBlocked, true);
+    const stop = t.client.stop(); fresh.event({ type: 'session.closed' }); await stop;
+});
+
+test('stopping during rotation cancels reconnect; experimental mode never rotates', async () => {
+    const t = await rotatingTransport();
+    t.client.setAlphaPlaying(true); t.client.resetForAlphaPlayback();
+    await t.client.stop();
+    await new Promise(r => setTimeout(r, 10));
+    assert.equal(t.sockets.length, 1);
+    const experimental = await rotatingTransport({ turnControl: true });
+    experimental.client.setAlphaPlaying(true);
+    experimental.client.resetForAlphaPlayback();
+    assert.equal(experimental.client.started, true);
+    assert.equal(experimental.socket.readyState, 1);
+    const stop = experimental.client.stop();
+    experimental.socket.event({ type: 'session.closed' }); await stop;
+});
+
+test('real playback wrapper resets Live without cutting Alpha and consumes only fresh unmuted audio', async () => {
+    const alpha = new Player(), quartz = new Player(), sockets = [], consumed = [];
+    const connection = { subscribed: alpha, subscribe(player) { this.subscribed = player; } };
+    const p = new QuartzPlayback({
+        connection, alphaPlayer: alpha, player: quartz,
+        resourceFactory: stream => stream,
+        encoderFactory: () => ({ encode(pcm) { return pcm; }, delete() {} }),
+        onPcm: pcm => consumed.push(pcm),
+        clientFactory: options => new GptLiveBackchannel({
+            ...options, apiKey: 'test', reconnectDelayMs: 1, closeTimeoutMs: 10,
+            socketFactory: () => { const socket = new Socket(); sockets.push(socket); return socket; },
+            mixer: { start() {}, stop() {}, push() {} }
+        })
+    });
+    const start = p.start(); sockets[0].open();
+    sockets[0].event({ type: 'session.started', session: { id: 'first' } }); await start;
+    const voice = Buffer.alloc(640, 30);
+    emitPcm({ socket: sockets[0] }, voice); // queued, but never consumed
+    alpha.transition('playing');
+    const fresh = await awaitReplacement({ sockets, client: p.client });
+    assert.equal(alpha.state.status, 'playing');
+    assert.equal(connection.subscribed, alpha);
+    emitPcm({ socket: fresh }, voice);
+    assert.equal(p.stream, null);
+    alpha.transition('idle');
+    p.updateAlphaProgress('guest speaking');
+    emitPcm({ socket: fresh }, voice);
+    assert.equal(p.stream, null, 'muted tail cannot reach the player');
+    emitPcm({ socket: fresh }, Buffer.alloc(32000));
+    emitPcm({ socket: fresh }, voice);
+    p.stream.read();
+    assert.equal(consumed.length, 1);
+    assert.equal(connection.subscribed, quartz);
+    const stop = p.stop(); fresh.event({ type: 'session.closed' }); await stop;
+});
+
+test('a failed replacement reports failure and retries without unmuting or reviving the old socket', async () => {
+    const t = await rotatingTransport();
+    t.client.setAlphaPlaying(true); t.client.resetForAlphaPlayback();
+    for (let i = 0; t.sockets.length < 2 && i < 100; i++) await new Promise(r => setTimeout(r, 2));
+    assert.equal(t.sockets.length, 2);
+    t.sockets[1].emit('unexpected-response', {}, { statusCode: 503, resume() {} });
+    for (let i = 0; t.sockets.length < 3 && i < 100; i++) await new Promise(r => setTimeout(r, 2));
+    assert.equal(t.sockets.length, 3);
+    assert.equal(t.closes(), 1, 'actual connection failure retains normal failure handling');
+    const fresh = t.sockets[2]; fresh.open();
+    fresh.event({ type: 'session.started', session: { id: 'retry' } }); await t.client.startPromise;
+    assert.equal(t.client.environment, 'aside');
+    assert.equal(t.client.outputBlocked, true);
+    const stop = t.client.stop(); fresh.event({ type: 'session.closed' }); await stop;
 });
