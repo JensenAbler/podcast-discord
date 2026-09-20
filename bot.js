@@ -20,7 +20,7 @@ const { spawn } = require('child_process');
 const { StreamType } = require('@discordjs/voice');
 
 // Setup robust file logging
-const LOG_FILE = '/tmp/alpha-clawd-bot.log';
+const LOG_FILE = process.env.PODCAST_LOG_FILE || '/tmp/alpha-clawd-bot.log';
 
 // Store original console methods BEFORE overriding
 const originalLog = console.log;

@@ -6,13 +6,16 @@ const { RealtimePcmMixer } = require('./realtime-pcm-mixer');
 const { LiveAudioDiagnostics } = require('./live-audio-diagnostics');
 const { MutedSpeechGate } = require('./muted-speech-gate');
 
+const HOLDING_STATES = ['holding', 'holding_longer', 'holding_rising'];
+const HOLDING_LABELS = ['Um, uh, hmm, ah', 'LONGER um, uh, hmm, ah', 'EVEN LONGER RISING INTONATION  um, uh, hmm, ah'];
+
 // Normal mode only; the experimental Live turn controller keeps its own prompt.
 const BACKCHANNEL_PROMPT = [
     'You are Quartz, the warm, clearly audible conversational-contact voice accompanying Alpha in a live podcast with guests.',
     'Alpha has a separate existing pipeline that listens to the guests, decides whether to respond, thinks, uses tools, and delivers every substantial answer in Alpha’s own voice.',
     'Your only role is active listening, brief acknowledgments, and occasional floor holding while that pipeline works. You are not another host or the substantive answerer.',
     'Backchannel policy: Prefer natural nonlexical vocalizations such as mm or mhm; short verbal acknowledgments are also welcome when they provide better contact. Stay engaged throughout longer guest turns, choosing natural openings and moments of emphasis. Vary your intonation, rhythm, and duration to fit the conversation rather than repeating the same clipped sound. Let guests develop their thoughts; do not acknowledge every sentence.',
-    'Floor-holding policy: Maintain audible contact while Alpha is deciding or preparing, using only nonlexical sounds. Start with a brief um, mm, or mm-hmm. As the wait continues, gradually lengthen your uh and um sounds into more drawn-out vocalizations, with natural breathing room between them. Renew contact at natural intervals even without a new guest contribution. Increase duration, not volume or urgency; avoid a mechanical loop or one continuous drone. Do not use verbal reassurance, delay announcements, or progress reports. Do not start answering, explaining, summarizing, interviewing, introducing topics, or giving opinions. Yield when a guest resumes speaking, and finish gracefully when Alpha is ready.',
+    'Floor-holding policy: Maintain audible contact while Alpha is deciding or preparing, using only nonlexical sounds. Start with a brief um, mm, or mm-hmm. As the wait continues, gradually lengthen your uh and um sounds into more drawn-out vocalizations, with natural breathing room between them. Renew contact at natural intervals even without a new guest contribution. Increase duration, not volume or urgency; avoid a mechanical loop or one continuous drone. Do not use verbal reassurance, delay announcements, or progress reports. Do not start answering, explaining, summarizing, interviewing, introducing topics, or giving opinions. Yield floor-holding sounds when a guest resumes speaking, and finish gracefully when Alpha is ready. Brief listening backchannels may finish naturally while the guest speaks.',
     'Presence priority: When a guest clearly addresses Alpha or invites an answer, promptly give a clearly audible acknowledgment, preferably nonlexical, at the first natural opening. Give the sound enough duration and vocal energy to register as contact. Do not wait for Alpha thinking/preparing updates. This acknowledgment does not decide whether Alpha will answer.',
     'Ordinary listening: Be a responsive, present listener during intelligible conversation. Brief listening sounds can overlap a guest gently without competing for the floor. Respond to conversational meaning and cadence, not every pause, sound, or application update. If you cannot understand the input, leave room rather than inventing an acknowledgment.',
     'Recognize quoted examples of addressing Alpha as examples, not fresh invitations. After acknowledging a real invitation, remain available to hold the pause while Alpha works; an earlier acknowledgment is not a reason to disappear for the rest of the wait.',
@@ -32,7 +35,11 @@ const BACKCHANNEL_PROMPT = [
             return 'When LISTENING resumes, use the guest conversation context. Earlier yielding and aside restrictions have ended. Resume natural listening acknowledgments, preferably nonlexical; do not remain silent merely because Alpha spoke earlier. Never replay muted speech.';
         }
         if (policy.startsWith('HOLDING:')) {
-            return 'HOLDING: Alpha is evaluating whether to respond or preparing a response. Begin with a brief um or mm-hmm, then use progressively longer uh and um sounds as the wait continues. Renew contact with natural breathing room. Use only nonlexical sounds, including after a long-wait update; do not speak the update or announce a delay. Do not answer, ask follow-up questions, or issue another delegation.';
+            return HOLDING_LABELS.map((label, i) => label + ': ' + [
+                'Hold the pause with brief nonlexical um, uh, hmm, or ah sounds.',
+                'Hold the pause with longer, drawn-out nonlexical um, uh, hmm, or ah sounds.',
+                'Hold the pause with even longer nonlexical um, uh, hmm, or ah sounds and rising intonation.'
+            ][i] + ' Renew contact with natural breathing room until the state changes. These are behavior labels, not words to announce. No substantive speech or verbal delay announcements.').join('\n');
         }
         return policy;
     }),
@@ -58,8 +65,10 @@ class GptLiveBackchannel {
         this.mutedSpeechGate = new MutedSpeechGate();
         this.lagTimer = null;
         this.lagContextId = null;
-        this.lagNoticeSent = false;
-        this.lagDelayMs = 5000;
+        this.holdingSince = null;
+        this.holdingNow = options.holdingNow || Date.now;
+        this.stateChannel = options.stateChannel || process.env.PODCAST_QUARTZ_STATE_CHANNEL || 'thinking';
+        if (!['thinking', 'instructions', 'commentary'].includes(this.stateChannel)) throw new Error('Invalid Quartz state channel');
         this.lagSetTimeout = options.lagSetTimeout || setTimeout;
         this.lagClearTimeout = options.lagClearTimeout || clearTimeout;
         this.outputOffsetMs = 0;
@@ -247,7 +256,7 @@ class GptLiveBackchannel {
                     clearTimeout(this.startTimer);
                     clearTimeout(this.closeTimer);
                     this.started = false;
-                    this.cancelLagNotice();
+                    this.cancelLagNotice(true);
                     clearInterval(this.diagnosticsTimer);
                     this.audioDiagnostics.flush();
                     this.mixer.stop();
@@ -270,7 +279,7 @@ class GptLiveBackchannel {
         if (this.closing || this.recovering) return;
         this.onLog('Context recovery: ' + JSON.stringify({ reason, ...details }));
         this.recovering = true;
-        this.cancelLagNotice();
+        this.cancelLagNotice(true);
         this.started = false;
         this.contextQueue.reset();
         // Close abandons provider-side pending work as well as our unsent backlog.
@@ -322,7 +331,8 @@ class GptLiveBackchannel {
         return this.floorBlocked || (!this.turnControl && this.mutedSpeechGate.suppressed);
     }
 
-    cancelLagNotice() {
+    cancelLagNotice(preserveClock = false) {
+        if (!preserveClock) this.holdingSince = null;
         if (this.lagTimer !== null) this.lagClearTimeout(this.lagTimer);
         this.lagTimer = null;
         if (this.lagContextId) this.contextQueue.cancelQueued(this.lagContextId);
@@ -330,20 +340,19 @@ class GptLiveBackchannel {
     }
 
     beginLagNotice() {
-        // Only actual response-generation/voice-preparation work starts this timer.
-        // Guest pauses and periodic idle evaluations never start verbal filler.
-        if (this.turnControl || !this.started || this.closing || this.outputBlocked ||
-            this.guestSpeaking || this.environment !== 'holding' ||
-            this.lagTimer !== null || this.lagNoticeSent) return;
+        if (this.turnControl || !this.started || this.closing || this.floorBlocked ||
+            this.guestSpeaking || !HOLDING_STATES.includes(this.environment) ||
+            this.lagTimer !== null) return;
+        if (this.holdingSince === null) this.holdingSince = this.holdingNow();
+        const elapsed = this.holdingNow() - this.holdingSince;
+        const nextIndex = elapsed < 5000 ? 1 : elapsed < 10000 ? 2 : null;
+        if (nextIndex === null) return;
         this.lagTimer = this.lagSetTimeout(() => {
             this.lagTimer = null;
-            if (!this.started || this.closing || this.outputBlocked ||
-                this.guestSpeaking || this.environment !== 'holding') return;
-            this.lagNoticeSent = true;
-            this.lagContextId = this.append('session.thinking.append',
-                'Alpha response preparation has continued for at least five seconds. HOLDING still applies.');
-            this.onLog('Holding wait update: ' + JSON.stringify({ eventId: this.lagContextId, thresholdMs: this.lagDelayMs }));
-        }, this.lagDelayMs);
+            if (!this.started || this.closing || this.floorBlocked ||
+                this.guestSpeaking || !HOLDING_STATES.includes(this.environment)) return;
+            this.setEnvironment(HOLDING_STATES[this.holdingNow() - this.holdingSince >= 10000 ? 2 : nextIndex]);
+        }, nextIndex * 5000 - elapsed);
         this.lagTimer?.unref?.();
     }
 
@@ -362,7 +371,7 @@ class GptLiveBackchannel {
         if (this.outputBlocked) this.onOutputBlocked();
         return this.setEnvironment(next ? 'aside' :
             this.waitingForGuest && !this.turnControl ? 'waiting_for_guest' :
-            (force && this.environment === 'holding' ? 'holding' : 'listening'));
+            (force && HOLDING_STATES.includes(this.environment) ? this.environment : 'listening'));
     }
 
     updateAlphaProgress(stage, preview = '') {
@@ -372,8 +381,7 @@ class GptLiveBackchannel {
             this.guestSpeaking = true;
             this.waitingForGuest = false;
             this.cancelLagNotice();
-            this.lagNoticeSent = false;
-            if (!this.blocked && ['holding', 'waiting_for_guest'].includes(this.environment)) {
+            if (!this.blocked && [...HOLDING_STATES, 'waiting_for_guest'].includes(this.environment)) {
                 return this.setEnvironment('listening', 'A guest is speaking.');
             }
             return;
@@ -382,38 +390,15 @@ class GptLiveBackchannel {
             if (this.turnControl) return;
             this.guestSpeaking = false;
         }
-        if (stage === 'thinking' || stage === 'evaluating' || stage === 'guest finished') {
-            // Hold the wait at the participant endpoint, before ASR/generation/TTS.
-            // Evaluation may still choose silence; holding is not a promise to answer.
-            if (this.turnControl || this.outputBlocked || this.environment === 'yielding' || this.guestSpeaking) return;
-            let eventId;
-            if (this.environment !== 'holding') eventId = this.setEnvironment('holding',
-                'Alpha is evaluating whether to respond; no answer is committed.');
-            if (stage === 'thinking') this.beginLagNotice();
-            return eventId;
-        }
-        if (stage === 'finished') {
-            this.cancelLagNotice();
-            if (!this.turnControl && !this.blocked && this.environment === 'holding') {
-                return this.setEnvironment('listening');
-            }
-            return;
-        }
-        if (stage === 'idle') {
-            this.cancelLagNotice();
-            // The experimental controller owns its own completion transition.
-            // A late silence decision must not override an active handoff/playback.
-            if (this.turnControl || this.outputBlocked || this.environment === 'yielding') return;
-            if (this.environment === 'listening') {
-                return this.append('session.thinking.append',
-                    'Alpha decided not to respond.');
-            }
-            return this.setEnvironment('listening',
-                'Alpha has decided not to take this turn.');
-        }
-        if (stage === 'preparing voice' && !this.turnControl && !this.guestSpeaking && !this.outputBlocked) {
-            if (this.environment === 'listening') this.setEnvironment('holding');
+        if (this.turnControl && ['thinking', 'evaluating', 'finished', 'idle'].includes(stage)) return;
+        if (!this.turnControl && ['thinking', 'evaluating', 'guest finished', 'finished', 'idle', 'preparing voice'].includes(stage)) {
+            // Only participant endpoints start the silence clock. Generation retries,
+            // cancellations and voice preparation do not change it.
+            if (stage !== 'guest finished' || this.floorBlocked ||
+                this.environment === 'yielding' || this.guestSpeaking) return;
+            if (!HOLDING_STATES.includes(this.environment)) return this.setEnvironment('holding', 'A guest has finished speaking; no answer is committed.');
             this.beginLagNotice();
+            return;
         }
         // Late text-completion updates never downgrade YIELDING or ASIDE.
         if (preview) this.appendConversation('Alpha proposed response (not yet delivered)', preview);
@@ -427,16 +412,25 @@ class GptLiveBackchannel {
     }
 
     setEnvironment(state, detail = '') {
-        if (!['listening', 'holding', 'yielding', 'aside', 'waiting_for_guest'].includes(state)) throw new Error('Invalid Live environment');
+        if (!['listening', ...HOLDING_STATES, 'yielding', 'aside', 'waiting_for_guest'].includes(state)) throw new Error('Invalid Live environment');
+        if (!this.turnControl && HOLDING_STATES.includes(state)) {
+            if (this.holdingSince === null) this.holdingSince = this.holdingNow();
+            state = HOLDING_STATES[Math.min(2, Math.floor(Math.max(0, this.holdingNow() - this.holdingSince) / 5000))];
+        }
         this.environment = state;
-        if (state !== 'holding') this.cancelLagNotice();
+        if (!HOLDING_STATES.includes(state)) this.cancelLagNotice();
+        else if (!this.turnControl) this.beginLagNotice();
+        if (this.lagContextId) this.contextQueue.cancelQueued(this.lagContextId);
         const revision = ++this.environmentRevision;
         this.onLog('Environment: ' + JSON.stringify({ state, revision }));
-        // Quiet state updates avoid instruction-triggered interruption mid-phrase.
-        return this.append('session.thinking.append',
-            'ENVIRONMENT revision ' + revision + ': ' + state.toUpperCase() +
+        const label = !this.turnControl && HOLDING_STATES.includes(state)
+            ? HOLDING_LABELS[HOLDING_STATES.indexOf(state)] : state.toUpperCase();
+        const eventId = this.append('session.' + (this.turnControl ? 'thinking' : this.stateChannel) + '.append',
+            'ENVIRONMENT revision ' + revision + ': ' + label +
             '. This replaces the previous environment. Apply its policy from the startup instructions.' +
             (detail ? ' ' + detail : ''));
+        this.lagContextId = eventId;
+        return eventId;
     }
 
     appendConversation(label, text) {
@@ -491,4 +485,4 @@ class GptLiveBackchannel {
     }
 }
 
-module.exports = { GptLiveBackchannel, BACKCHANNEL_PROMPT };
+module.exports = { GptLiveBackchannel, BACKCHANNEL_PROMPT, HOLDING_STATES, HOLDING_LABELS };

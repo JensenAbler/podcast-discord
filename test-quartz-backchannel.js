@@ -10,7 +10,7 @@ class Socket extends EventEmitter {
     send(json) {
         const event = JSON.parse(json);
         this.sent.push(event);
-        if (['session.thinking.append', 'session.commentary.append'].includes(event.type)) {
+        if (['session.thinking.append', 'session.commentary.append', 'session.instructions.append'].includes(event.type)) {
             this.event({ type: event.type.replace(/append$/, 'appended'), client_event_id: event.event_id });
         }
     }
@@ -305,17 +305,18 @@ test('normal mode follows all five environments while Alpha alone controls turns
     const t = transport(); await connected(t);
     assert.equal(t.client.environment, 'listening');
     assert.match(BACKCHANNEL_PROMPT, /delivers every substantial answer/);
-    for (const state of ['LISTENING', 'HOLDING', 'YIELDING', 'ASIDE', 'WAITING_FOR_GUEST']) assert.ok(BACKCHANNEL_PROMPT.includes(state));
-    t.client.updateAlphaProgress('thinking');
+    for (const state of ['LISTENING', 'Um, uh, hmm, ah', 'LONGER um, uh, hmm, ah', 'EVEN LONGER RISING INTONATION  um, uh, hmm, ah', 'YIELDING', 'ASIDE', 'WAITING_FOR_GUEST']) assert.ok(BACKCHANNEL_PROMPT.includes(state));
+    t.client.updateAlphaProgress('guest speaking');
+    t.client.updateAlphaProgress('guest finished');
     assert.equal(t.client.environment, 'holding');
     t.client.updateAlphaProgress('preparing voice');
     assert.equal(t.client.environment, 'holding');
     t.client.updateAlphaProgress('idle');
-    assert.equal(t.client.environment, 'listening');
-    assert.match(t.socket.sent.at(-1).content, /Alpha has decided not to take this turn/);
+    assert.equal(t.client.environment, 'holding');
+    assert.match(t.socket.sent.at(-1).content, /Um, uh, hmm, ah/);
     assert.equal(t.socket.sent.at(-1).type, 'session.thinking.append');
     t.socket.event({ type: 'session.output_audio.delta', delta: Buffer.from([1, 2]).toString('base64') });
-    assert.equal(t.audio.length, 1, 'declining must allow the vocalization to end');
+    assert.equal(t.audio.length, 1, 'generation silence must not cut off a vocalization');
     t.client.updateAlphaProgress('thinking');
     const id = t.client.requestHandoff('Upcoming answer');
     assert.equal(t.socket.sent.at(-1).event_id, id);
@@ -358,15 +359,16 @@ test('normal mode preserves full guest context and excludes every Alpha response
 
 test('normal startup preserves holding during a pending evaluation', async () => {
     const t = transport();
-    t.client.updateAlphaProgress('thinking');
+    t.client.updateAlphaProgress('guest speaking');
+    t.client.updateAlphaProgress('guest finished');
     await connected(t);
     assert.equal(t.client.environment, 'holding');
     t.client.updateAlphaProgress('idle');
-    assert.equal(t.client.environment, 'listening');
+    assert.equal(t.client.environment, 'holding');
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });
 
-test('decision checks hold promptly and release after silence without gating contact', async () => {
+test('generation decision checks neither start holding nor gate listening contact', async () => {
     const t = transport(); await connected(t);
     const revision = t.client.environmentRevision;
     for (let i = 0; i < 3; i++) {
@@ -374,9 +376,9 @@ test('decision checks hold promptly and release after silence without gating con
         t.client.updateAlphaProgress('idle');
         t.client.updateAlphaProgress('finished');
     }
-    assert.equal(t.client.environmentRevision, revision + 6);
+    assert.equal(t.client.environmentRevision, revision);
     assert.equal(t.client.blocked, false);
-    assert.ok(t.socket.sent.some(e => e.content?.includes('evaluating whether')));
+    assert.equal(t.client.environment, 'listening');
     t.socket.event({ type: 'session.output_audio.delta', delta: Buffer.alloc(640, 20).toString('base64') });
     assert.equal(t.audio.length, 1);
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
@@ -574,6 +576,7 @@ function lagClock() {
     let now = 0, seq = 0;
     const timers = new Map();
     return {
+        holdingNow: () => now,
         lagSetTimeout(fn, delay) { const id = ++seq; timers.set(id, { fn, at: now + delay }); return id; },
         lagClearTimeout(id) { timers.delete(id); },
         tick(ms) {
@@ -584,81 +587,81 @@ function lagClock() {
         }
     };
 }
-function commentary(t) { return t.socket.sent.filter(e => e.type === 'session.thinking.append' && e.content.startsWith('Alpha response preparation has continued')); }
 async function closeTransport(t) {
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 }
-test('factual holding update occurs once at five seconds, is acknowledged, and resets for a new guest turn', async () => {
+test('guest silence advances three states at five and ten seconds independently of Alpha', async () => {
     const clock = lagClock(), t = transport(clock); await connected(t);
+    t.client.updateAlphaProgress('thinking'); clock.tick(10000);
+    assert.equal(t.client.environment, 'listening', 'generation alone never starts a hold');
     t.client.updateAlphaProgress('guest speaking');
     t.client.updateAlphaProgress('guest finished');
-    clock.tick(10000);
-    assert.equal(commentary(t).length, 0, 'a guest pause alone is not lag');
-    t.client.updateAlphaProgress('thinking');
+    assert.equal(t.client.environment, 'holding');
+    assert.match(t.socket.sent.at(-1).content, /Um, uh, hmm, ah/);
     clock.tick(4999);
-    assert.equal(commentary(t).length, 0);
-    t.client.updateAlphaProgress('thinking');
-    t.client.updateAlphaProgress('preparing voice');
+    for (const stage of ['finished', 'idle', 'thinking', 'evaluating', 'preparing voice']) t.client.updateAlphaProgress(stage);
+    assert.equal(t.client.environment, 'holding');
     clock.tick(1);
-    assert.equal(commentary(t).length, 1, 'progress updates do not reset the clock');
-    assert.ok(!t.socket.sent.some(e => e.type === 'session.commentary.append'), 'no spoken delay cue');
-    assert.equal(t.client.contextQueue.pending.size, 0, 'commentary acknowledgment clears the queue');
-    t.client.updateAlphaProgress('thinking');
-    clock.tick(30000);
-    assert.equal(commentary(t).length, 1, 'no repetitive reassurance timer');
-    t.client.setAlphaPlaying(true); t.client.setAlphaPlaying(false);
-    t.client.updateAlphaProgress('thinking');
-    clock.tick(10000);
-    assert.equal(commentary(t).length, 1, 'no post-Alpha filler');
-    t.client.updateAlphaProgress('guest speaking');
-    t.client.updateAlphaProgress('guest finished');
-    t.client.updateAlphaProgress('thinking');
+    assert.equal(t.client.environment, 'holding_longer');
+    assert.match(t.socket.sent.at(-1).content, /LONGER um, uh, hmm, ah/);
     clock.tick(5000);
-    assert.equal(commentary(t).length, 2);
+    assert.equal(t.client.environment, 'holding_rising');
+    assert.match(t.socket.sent.at(-1).content, /EVEN LONGER RISING INTONATION  um, uh, hmm, ah/);
+    const revision = t.client.environmentRevision;
+    clock.tick(30000); assert.equal(t.client.environmentRevision, revision);
+    t.client.updateAlphaProgress('guest speaking');
+    assert.equal(t.client.environment, 'listening');
+    t.client.updateAlphaProgress('guest finished');
+    clock.tick(5000); assert.equal(t.client.environment, 'holding_longer');
     await closeTransport(t);
 });
-test('guest speech, Alpha speech, handoff, cancellation, and silence decisions cancel lag cues', async () => {
+test('guest speech, Alpha speech, handoff, stop and recovery cancel holding transitions', async () => {
     for (const action of [
         t => t.client.updateAlphaProgress('guest speaking'),
         t => t.client.setAlphaPlaying(true),
-        t => t.client.requestHandoff('Alpha has an update'),
-        t => t.client.updateAlphaProgress('finished'),
-        t => t.client.updateAlphaProgress('idle')
+        t => t.client.requestHandoff(),
+        t => t.client.recover('test'),
+        t => t.client.stop()
     ]) {
         const clock = lagClock(), t = transport(clock); await connected(t);
-        t.client.updateAlphaProgress('thinking');
-        clock.tick(4999); action(t); clock.tick(1);
-        assert.equal(commentary(t).length, 0);
-        await closeTransport(t);
-    }
-});
-test('idle evaluations and experimental orchestration never request lag commentary', async () => {
-    for (const turnControl of [false, true]) {
-        const clock = lagClock(), t = transport({ ...clock, turnControl }); await connected(t);
-        t.client.updateAlphaProgress(turnControl ? 'thinking' : 'evaluating');
+        t.client.updateAlphaProgress('guest speaking');
+        t.client.updateAlphaProgress('guest finished');
+        clock.tick(4999); action(t);
+        const revision = t.client.environmentRevision;
         clock.tick(10000);
-        assert.equal(commentary(t).length, 0);
+        assert.equal(t.client.environmentRevision, revision);
         await closeTransport(t);
     }
 });
-test('closing and recovery cancel timers; an unsent stale commentary is removed', async () => {
+test('state transport preserves labels and cancels queued stale state across all channels', async () => {
+    for (const stateChannel of ['thinking', 'instructions', 'commentary']) {
+        const clock = lagClock(), t = transport({...clock,stateChannel}); await connected(t);
+        t.client.updateAlphaProgress('guest speaking'); t.client.updateAlphaProgress('guest finished');
+        assert.equal(t.socket.sent.at(-1).type, 'session.' + stateChannel + '.append');
+        assert.equal(t.client.contextQueue.pending.size, 0);
+        t.client.contextQueue.maxPending = 0;
+        clock.tick(5000);
+        assert.equal(t.client.contextQueue.waiting.length, 1);
+        t.client.updateAlphaProgress('guest speaking');
+        assert.equal(t.client.contextQueue.waiting.length, 1);
+        assert.match(t.client.contextQueue.waiting[0].event.content, /LISTENING/);
+        t.client.contextQueue.maxPending = 4; t.client.contextQueue.pump();
+        await closeTransport(t);
+    }
+});
+test('delayed timer callbacks catch up to the actual guest silence duration', async () => {
     const clock = lagClock(), t = transport(clock); await connected(t);
-    t.client.updateAlphaProgress('thinking');
-    t.client.contextQueue.maxPending = 0; // simulate context waiting for transport capacity
-    clock.tick(5000);
-    assert.equal(commentary(t).length, 0);
-    assert.equal(t.client.contextQueue.waiting.length, 1);
-    t.client.updateAlphaProgress('guest speaking');
-    assert.equal(t.client.contextQueue.waiting.some(x => x.event.type === 'session.thinking.append' && x.event.content.startsWith('Alpha response preparation has continued')), false);
-    t.client.contextQueue.maxPending = 4; t.client.contextQueue.pump();
-    t.client.updateAlphaProgress('guest finished'); t.client.updateAlphaProgress('thinking');
-    await closeTransport(t); clock.tick(5000);
-    assert.equal(commentary(t).length, 0);
-    const u = transport(clock); await connected(u);
-    u.client.updateAlphaProgress('thinking'); u.client.recover('test-recovery');
-    clock.tick(5000);
-    assert.equal(commentary(u).length, 0);
-    await u.client.stop();
+    t.client.updateAlphaProgress('guest speaking'); t.client.updateAlphaProgress('guest finished');
+    clock.tick(12000);
+    assert.equal(t.client.environment, 'holding_rising');
+    await closeTransport(t);
+});
+test('experimental orchestration never uses progressive holding or another channel', async () => {
+    const clock = lagClock(), t = transport({...clock,turnControl:true,stateChannel:'commentary'}); await connected(t);
+    t.client.setEnvironment('holding'); clock.tick(20000);
+    assert.equal(t.client.environment, 'holding');
+    assert.equal(t.socket.sent.at(-1).type, 'session.thinking.append');
+    await closeTransport(t);
 });
 test('waiting state blocks late audio and ignores late progress until fresh guest speech', async () => {
     let clears = 0;
@@ -825,4 +828,16 @@ test('Quartz default level reaches both encoded playback and consumed recording 
     assert.equal(t.consumed[0].readInt16LE(0), 4000);
     assert.equal(input.readInt16LE(0), 500, 'raw receipt evidence must stay unchanged');
     await t.p.stop();
+});
+
+test('startup and reconnect catch up without restarting guest silence', async () => {
+    const clock = lagClock(), t = transport(clock);
+    t.client.updateAlphaProgress('guest speaking'); t.client.updateAlphaProgress('guest finished');
+    clock.tick(6000); await connected(t);
+    assert.equal(t.client.environment, 'holding_longer');
+    t.client.cancelLagNotice(true); t.client.started = false;
+    clock.tick(5000); t.client.started = true;
+    t.client.setAlphaPlaying(false, true);
+    assert.equal(t.client.environment, 'holding_rising');
+    await closeTransport(t);
 });
