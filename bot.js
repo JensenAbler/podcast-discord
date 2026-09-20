@@ -236,7 +236,6 @@ class AlphaClawdVoiceBot {
         this.showRunnerGenerator = options.showRunnerGenerator || new ShowRunnerGenerator(options.showRunnerOptions || {});
         this.episodePlanStore = options.episodePlanStore || new EpisodePlanStore(options.episodePlanStoreOptions || {});
         this.episodeMemoryBuilder = options.episodeMemoryBuilder || new EpisodeMemoryBuilder({
-            generatorOptions: options.showRunnerOptions || {},
             ...(options.episodeMemoryOptions || {})
         });
         this.planningSessions = new Map(); // channelId -> planning session
@@ -3303,7 +3302,7 @@ class AlphaClawdVoiceBot {
                 skipped: memory.skipped
             });
             message = memory.memories.length
-                ? 'Episode background memory is ready (' + memory.memories.length + ' memories).'
+                ? 'Episode background memory is ready (' + memory.memories.length + ' passages).'
                 : 'Memory review finished; no relevant past conversations were found.';
             if (memory.skipped.length) message += ' ' + memory.skipped.length + ' recordings could not be read.';
         } catch (error) {

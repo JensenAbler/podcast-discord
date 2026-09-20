@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs'), os = require('os'), path = require('path');
-const { EpisodeMemoryBuilder, EpisodeMemoryGenerator, readArchive, seedEpisodeMemory } = require('./episode-background-memory');
+const { EpisodeMemoryBuilder, buildQueries, collectPassages, searchOpenClaw, seedEpisodeMemory } = require('./episode-background-memory');
 const { EpisodePlanStore } = require('./episode-plan-store');
 const { AwarenessShelf } = require('./awareness-shelf');
 const { AlphaClawdVoiceBot } = require('./bot');
@@ -11,64 +11,73 @@ function fixture(t) {
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     return root;
 }
-function recording(root, name, entries, guildId = 'g', complete = true) {
-    const dir = path.join(root, name); fs.mkdirSync(dir, { recursive: true });
-    if (complete) fs.writeFileSync(path.join(dir, 'episode-complete.json'), JSON.stringify({
-        guildId, startedAt: '2026-01-01T00:00:00Z', stoppedAt: '2026-01-01T01:00:00Z'
-    }));
-    fs.writeFileSync(path.join(dir, 'transcript.jsonl'), entries.map(e => JSON.stringify(e)).join('\n'));
-}
 const plan = { basename: 'test-memory', version: 'v001', guests: [{ name: 'Jensen' }], backgroundBrief: 'Improvisation and creative relationships' };
-test('archive scopes completed history, preserves attribution, and excludes unplayed/candidate speech', t => {
-    const root = fixture(t);
-    recording(root, 'episode-1', [
-        { speaker: 'Jensen', text: 'Dance feels like listening.', timestamp: '2026-01-01T00:01:00Z' },
-        { speaker: 'Alpha', text: 'NEVER HEARD', playbackStatus: 'not_started' },
-        { text: 'PHANTOM', admission: { status: 'candidate' } }
-    ]);
-    recording(root, 'episode-2', [{ text: 'OTHER SERVER' }], 'other');
-    recording(root, 'episode-3', [{ text: 'IN PROGRESS' }], 'g', false);
-    const { chunks } = readArchive(root, 'g');
-    assert.equal(chunks.length, 1);
-    assert.match(chunks[0].text, /Jensen: Dance feels like listening/);
-    assert.doesNotMatch(chunks[0].text, /NEVER HEARD|PHANTOM|OTHER SERVER|IN PROGRESS/);
-    assert.equal(readArchive(root).chunks.length, 0);
+test('plan queries cover guests and every angle, without including old memory', () => {
+    const queries = buildQueries({ ...plan, backgroundMemory: { text: 'OLD MEMORY' },
+        phases: { opening: { angles: [{ title: 'Giving Tree', description: 'Embodied judgment' },
+            { title: 'giving tree', description: 'Mutual blessing' }] } } });
+    assert(queries.includes('Jensen'));
+    assert(queries.includes('Giving Tree'));
+    assert(queries.includes('Embodied judgment'));
+    assert(queries.includes('Mutual blessing'));
+    assert.equal(queries.filter(q => /giving tree/i.test(q)).length, 1);
+    assert(!queries.some(q => q.includes('OLD MEMORY')));
 });
-test('all archive batches reach semantic selection, then sourced memories are collated', async t => {
+test('retrieval merges overlaps and retains exact full source text beyond former budgets', async t => {
     const root = fixture(t);
-    for (let i = 0; i < 9; i++) recording(root, 'episode-' + i, [{ speaker: 'Guest' + i, text: 'dance '.repeat(3000) }]);
-    const seen = new Set(), stages = [];
-    const builder = new EpisodeMemoryBuilder({ root, generator: { model: 'fake',
-        async select(p, sources, stage) {
-            assert.equal(p.backgroundMemory, undefined); stages.push(stage);
-            if (stage === 'extract') {
-                sources.forEach(s => seen.add(s.recording));
-                return [{ text: 'Guest described embodied improvisation.', sourceIds: [sources[0].id] }];
-            }
-            return sources.slice(0, 6);
-        }
-    } });
-    const result = await builder.build({ ...plan, backgroundMemory: { status: 'old' } }, { guildId: 'g' });
-    assert.equal(seen.size, 9); assert.equal(result.recordingsConsidered, 9);
-    assert(stages.filter(s => s === 'extract').length > 1);
-    assert.equal(stages.at(-1), 'collate'); assert.equal(result.status, 'ready');
-    assert(result.sources.every(s => s.sha256.length === 64));
+    const lines = ['# Test episode', ...Array.from({ length: 100 }, (_, i) => 'Jensen: ' + i + ' ' + 'speech '.repeat(100))];
+    const filename = path.join(root, 'episode-one.md');
+    fs.writeFileSync(filename, lines.join('\n'));
+    const builder = new EpisodeMemoryBuilder({ root, workspace: root, search: async () => [
+        { path: filename, startLine: 20, endLine: 50 },
+        { path: filename, startLine: 40, endLine: 80 },
+        { path: '/private/memory.md', startLine: 1, endLine: 10 }
+    ] });
+    const result = await builder.build(plan);
+    assert.equal(result.memories.length, 1);
+    assert.equal(result.memories[0].text, lines.slice(7, 92).join('\n'));
+    assert(result.memories[0].text.length > 45000);
+    assert.equal(result.sources[0].startLine, 8);
+    assert.equal(result.sources[0].endLine, 92);
+    assert.equal(result.sources[0].title, 'Test episode');
+    assert.equal(result.sources[0].sha256.length, 64);
+    const shelf = new AwarenessShelf({ enabled: true }); shelf.startSession('g');
+    seedEpisodeMemory({ addAwarenessShelfItem: (...args) => shelf.addItem(...args) }, 'g', { ...plan, backgroundMemory: result });
+    assert(shelf.presentItemsForGenerator('g')[0].text.includes(result.memories[0].text));
 });
-test('empty history avoids provider calls; corrupt archives are surfaced', async t => {
+test('disjoint passages stay separate and sources outside podcast root are excluded', t => {
     const root = fixture(t);
-    const builder = new EpisodeMemoryBuilder({ root, generator: { select() { throw Error('unexpected'); } } });
-    assert.deepEqual((await builder.build(plan, { guildId: 'g' })).memories, []);
-    recording(root, 'episode-broken', []);
-    fs.writeFileSync(path.join(root, 'episode-broken', 'transcript.jsonl'), '{bad');
-    await assert.rejects(builder.build(plan, { guildId: 'g' }), /No readable/);
+    fs.writeFileSync(path.join(root, 'episode-one.md'), Array.from({ length: 100 }, (_, i) => 'Alpha: ' + i).join('\n'));
+    fs.symlinkSync('/etc/passwd', path.join(root, 'episode-link.md'));
+    const output = collectPassages([
+        { path: 'episode-one.md', startLine: 2, endLine: 3 },
+        { path: 'episode-one.md', startLine: 70, endLine: 72 },
+        { path: 'episode-link.md', startLine: 1, endLine: 2 },
+        { path: 'MEMORY.md', startLine: 1, endLine: 2 }
+    ], { root, workspace: root, contextLines: 0 });
+    assert.equal(output.memories.length, 2);
+    assert.equal(output.memories[0].text, 'Alpha: 1\nAlpha: 2');
+    assert.equal(output.memories[1].text, 'Alpha: 69\nAlpha: 70\nAlpha: 71');
 });
-test('provider output must cite actual supplied sources', async () => {
-    const generator = new EpisodeMemoryGenerator({ apiKey: 'fake' });
-    generator.fetchCompletion = async messages => {
-        assert.match(messages[0].content, /aesthetic resonances/);
-        return { choices: [{ message: { content: JSON.stringify({ memories: [{ text: 'Invented', sourceIds: ['missing'] }] }) } }] };
-    };
-    await assert.rejects(generator.select(plan, [{ id: 'real', text: 'Archive' }], 'extract'), /source references/);
+test('empty retrieval succeeds; search failures and stale source ranges are surfaced', async t => {
+    const root = fixture(t);
+    const builder = new EpisodeMemoryBuilder({ root, workspace: root, search: async () => [] });
+    assert.deepEqual((await builder.build(plan)).memories, []);
+    builder.search = async () => { throw Error('search unavailable'); };
+    await assert.rejects(builder.build(plan), /search unavailable/);
+    fs.writeFileSync(path.join(root, 'episode-one.md'), 'Short source');
+    assert.throws(() => collectPassages([{ path: 'episode-one.md', startLine: 2, endLine: 5 }],
+        { root, workspace: root }), /stale/);
+});
+test('OpenClaw adapter passes query as one argument and reads JSON without a model call', async t => {
+    const root = fixture(t), command = path.join(root, 'openclaw');
+    fs.writeFileSync(command, '#!/usr/bin/env node\n' +
+        'const a = process.argv.slice(2);\n' +
+        'if (a[0] !== "memory" || a[1] !== "search" || a[3] !== "literal ; query") process.exit(2);\n' +
+        'console.log(JSON.stringify({results: [{path: "episode-one.md", startLine: 1, endLine: 2}]}));\n',
+        { mode: 0o755 });
+    assert.equal((await searchOpenClaw('literal ; query', { command, workspace: root }))[0].startLine, 1);
+    await assert.rejects(searchOpenClaw('wrong', { command, workspace: root }), /failed/);
 });
 test('episode memory survives expiry and capacity pressure while normal shelf behavior remains', () => {
     const shelf = new AwarenessShelf({ enabled: true, maxItems: 2, expireAfterTurns: 2 });
