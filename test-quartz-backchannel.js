@@ -335,16 +335,24 @@ test('normal mode follows all five environments while Alpha alone controls turns
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });
 
-test('normal mode forwards complete delivered context without enabling delegation', async () => {
+test('normal mode preserves full guest context and excludes every Alpha response path', async () => {
     const t = transport(); await connected(t);
-    const full = 'An extended Alpha answer. '.repeat(100) + 'FINAL DETAIL';
+    const full = 'An extended guest question. '.repeat(100) + 'FINAL DETAIL';
     t.client.setAlphaPlaying(true);
     const before = t.socket.sent.length;
-    t.client.appendConversation('Alpha delivered transcript', full);
+    t.client.appendConversation('Guest transcript', full);
     const chunks = t.socket.sent.slice(before);
     assert.equal(chunks.map(e => JSON.parse(e.content.slice(e.content.indexOf(': ') + 2))).join(''), full);
     assert.equal(t.client.environment, 'aside');
     assert.equal(t.client.turnControl, false);
+    for (const label of ['Alpha delivered transcript', 'Alpha proposed response (not yet delivered)', 'Alpha planned opening (not yet delivered)', 'Previous episode transcript']) {
+        t.client.appendConversation(label, 'ALPHA_RESPONSE_SENTINEL');
+    }
+    t.client.updateAlphaProgress('response text available', 'ALPHA_RESPONSE_SENTINEL');
+    t.client.requestHandoff('ALPHA_RESPONSE_SENTINEL');
+    assert.ok(!JSON.stringify(t.socket.sent).includes('ALPHA_RESPONSE_SENTINEL'));
+    assert.deepEqual(t.client.latestConversation, { label: 'Guest transcript', text: full });
+    assert.equal(t.client.environment, 'yielding');
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
 });
 

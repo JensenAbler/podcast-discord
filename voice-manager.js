@@ -628,7 +628,11 @@ class VoiceManager {
                 const historyPath = path.join(recordingPath, 'resume-history.json');
                 if (fs.existsSync(historyPath)) {
                     for (const entry of JSON.parse(fs.readFileSync(historyPath, 'utf8'))) {
-                        host.appendConversation('Previous episode transcript', (entry.speaker || 'Speaker') + ': ' + (entry.text || entry.transcription));
+                        if (options.turnControl) {
+                            host.appendConversation('Previous episode transcript', (entry.speaker || 'Speaker') + ': ' + (entry.text || entry.transcription));
+                        } else {
+                            this.observeQuartzTranscript(guildId, entry);
+                        }
                     }
                 }
                 // Includes the opening announcement and any guests heard during startup.
@@ -666,7 +670,9 @@ class VoiceManager {
             ['not_started', 'failed'].includes(entry.playbackStatus)) return;
         const text = entry.transcription || entry.text;
         if (!text) return;
-        const alpha = entry.speakerRole === 'host';
+        const alpha = entry.speakerRole === 'host' || entry.role === 'assistant' ||
+            /^(alpha(?:[- ]clawd)?|quartz)$/i.test(entry.speaker || '');
+        if (alpha && !host.turnController) return;
         host.turnController?.observe({ kind: alpha ? 'alpha' : 'guest', speaker: entry.speaker, text });
         host.appendConversation(alpha ? 'Alpha delivered transcript' : 'Guest transcript',
             (entry.speaker || '') + ': ' + text);

@@ -76,13 +76,13 @@ test('slow context resets session, uses freshest text, resumes live audio, and r
     try {
         await start(t);
         const first = t.sockets[0];
-        for (let i = 0; i < 391; i++) t.client.appendConversation('Previous episode', 'old speech ' + i);
+        for (let i = 0; i < 391; i++) t.client.appendConversation('Guest transcript', 'old speech ' + i);
         assert.equal(first.sent.filter(e => e.type === 'session.thinking.append').length, 4);
         // Advance the scheduler's measured age without waiting on wall-clock time.
         t.client.contextQueue.now = () => Date.now() + 1001;
         t.client.contextQueue.checkLag();
         assert.equal(first.readyState, 3);
-        t.client.appendConversation('Latest guest', 'CURRENT QUESTION');
+        t.client.appendConversation('Guest transcript', 'CURRENT QUESTION');
         await waitFor(() => t.sockets.length === 2);
         const second = t.sockets[1];
         second.open();
@@ -103,7 +103,7 @@ test('slow context resets session, uses freshest text, resumes live audio, and r
         }
         const full = 'A detailed new answer. '.repeat(100) + 'FINAL DETAIL';
         const before = second.sent.length;
-        t.client.appendConversation('Alpha delivered transcript', full);
+        t.client.appendConversation('Guest transcript', full);
         while (t.client.contextQueue.pending.size) {
             second.event({ type: 'session.thinking.appended',
                 client_event_id: t.client.contextQueue.pending.keys().next().value });

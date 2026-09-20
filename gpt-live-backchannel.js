@@ -25,6 +25,12 @@ const BACKCHANNEL_PROMPT = [
         if (policy.startsWith('LISTENING:')) {
             return 'LISTENING: Stay actively engaged with brief listening sounds while guests talk. Alpha may be evaluating whether to respond; hold any pause with nonlexical sounds following the floor-holding policy. A pending decision does not mean an answer is committed. Follow the turn authority defined for this mode.';
         }
+        if (policy.startsWith('ASIDE:')) {
+            return 'ASIDE: Alpha is playing. Your output is blocked; keep listening to guests. Do not speak or delegate. The application supplies Alpha playback state, not Alpha response text.';
+        }
+        if (policy.startsWith('When LISTENING resumes')) {
+            return 'When LISTENING resumes, use the guest conversation context. Earlier yielding and aside restrictions have ended. Resume natural listening acknowledgments, preferably nonlexical; do not remain silent merely because Alpha spoke earlier. Never replay muted speech.';
+        }
         if (policy.startsWith('HOLDING:')) {
             return 'HOLDING: Alpha is evaluating whether to respond or preparing a response. Begin with a brief um or mm-hmm, then use progressively longer uh and um sounds as the wait continues. Renew contact with natural breathing room. Use only nonlexical sounds, including after a long-wait update; do not speak the update or announce a delay. Do not answer, ask follow-up questions, or issue another delegation.';
         }
@@ -435,6 +441,9 @@ class GptLiveBackchannel {
 
     appendConversation(label, text) {
         if (!text) return;
+        // Alpha owns substantive speech; normal Quartz receives only guest conversation.
+        // Filter before retaining recovery context so blocked text cannot return on reconnect.
+        if (!this.turnControl && label !== 'Guest transcript') return;
         this.latestConversation = { label, text: String(text) };
         if (!this.started || this.closing) return;
         // UTF-8 bytes conservatively bound tokens even for non-Latin transcripts.
