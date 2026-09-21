@@ -1,3 +1,4 @@
+const { PlanningSessionStore } = require('./planning-session-store');
 const { EpisodeMemoryBuilder, seedEpisodeMemory } = require('./episode-background-memory');
 const { savePlanProgress, resumePlanOptions } = require('./episode-plan-progress');
 const { buildResumeCommand, handleResumeCommand, preflightResume, installResume } = require('./podcast-resume');
@@ -238,7 +239,12 @@ class AlphaClawdVoiceBot {
         this.episodeMemoryBuilder = options.episodeMemoryBuilder || new EpisodeMemoryBuilder({
             ...(options.episodeMemoryOptions || {})
         });
-        this.planningSessions = new Map(); // channelId -> planning session
+        this.planningSessionStore = options.planningSessionStore || new PlanningSessionStore(this.episodePlanStore.rootDir);
+        this.planningSessions = this.planningSessionStore.load();
+        for (const session of this.planningSessions.values()) {
+            console.log('[Bot] Restored planning session: channel=' + session.channelId +
+                ', messages=' + session.messages.length + ', plan=' + (session.basename || 'none'));
+        }
         this.planningAudioTranscriptionEnabled = options.planningAudioTranscriptionEnabled !== undefined
             ? Boolean(options.planningAudioTranscriptionEnabled)
             : process.env.PODCAST_PLANNING_AUDIO_TRANSCRIPTION_ENABLED !== 'false';
@@ -2907,6 +2913,7 @@ class AlphaClawdVoiceBot {
                 processing: Promise.resolve()
             };
             this.planningSessions.set(channelId, session);
+            this.planningSessionStore?.save(this.planningSessions);
             console.log(`[Bot] Podcast planning opened: ${this.describePlanningSession(session)}`);
             await interaction.reply(
                 "Episode planning is open in this channel. Drop the guest background, desired arc, constraints, and anything Alpha-Clawd should know. I'll shape it into a versioned episode plan when there's enough signal."
@@ -3148,6 +3155,7 @@ class AlphaClawdVoiceBot {
             });
         }
         this.planningSessions.delete(session.channelId);
+        this.planningSessionStore?.save(this.planningSessions);
         const latest = session.latestPlan
             ? ` Latest saved plan remains **${session.latestPlan.basename} ${session.latestPlan.version}**.`
             : ' No episode plan was approved.';
@@ -3162,6 +3170,7 @@ class AlphaClawdVoiceBot {
         if (!this.planningControllerEnabled) {
             console.log(`[Bot] Podcast planning controller disabled during active session: ${this.describePlanningSession(session)}`);
             this.planningSessions.delete(session.channelId);
+            this.planningSessionStore?.save(this.planningSessions);
             await channel?.send?.('Episode planning is currently disabled by configuration.');
             return;
         }
@@ -3228,6 +3237,7 @@ class AlphaClawdVoiceBot {
                 });
             }
             this.planningSessions.delete(session.channelId);
+            this.planningSessionStore?.save(this.planningSessions);
             const closeMessage = output.messageToChannel || 'Okay, I will close this planning session without approving an episode plan.';
             console.log(`[Bot] Podcast planning closed by showrunner: channel=${session.channelId}, message="${this.truncateForLog(closeMessage, 160)}"`);
             await channel?.send?.(closeMessage);
@@ -3254,6 +3264,7 @@ class AlphaClawdVoiceBot {
                 });
             }
             this.planningSessions.delete(session.channelId);
+            this.planningSessionStore?.save(this.planningSessions);
             console.log(`[Bot] Podcast planning approved and closed: channel=${session.channelId}, basename=${session.basename || 'none'}, latest=${session.latestVersion || 'none'}`);
             if (!sentApprovalMessage) {
                 await channel?.send?.('Episode plan approved. Planning session closed.');
@@ -3337,6 +3348,7 @@ class AlphaClawdVoiceBot {
 
     persistPlanningSessionMessages(session) {
         if (!session?.basename) {
+            this.planningSessionStore?.save(this.planningSessions);
             return;
         }
         while (session.loggedMessageCount < session.messages.length) {
@@ -3347,6 +3359,7 @@ class AlphaClawdVoiceBot {
             });
             session.loggedMessageCount += 1;
         }
+        this.planningSessionStore?.save(this.planningSessions);
     }
 
     formatEpisodePlanForDiscord(plan, output = {}) {
