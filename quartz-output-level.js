@@ -1,9 +1,9 @@
 // Calibrated against Alpha's normalized speech; process before Opus encoding
 // so Discord playback and the recorded PCM receive exactly the same level.
 class QuartzOutputLevel {
-    constructor(gain = 8) {
+    constructor(gain = 4) {
         gain = Number(gain);
-        this.gain = Number.isFinite(gain) && gain > 0 && gain <= 32 ? gain : 8;
+        this.gain = Number.isFinite(gain) && gain > 0 && gain <= 32 ? gain : 4;
         this.limiter = 1;
     }
 

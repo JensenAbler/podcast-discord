@@ -244,8 +244,12 @@ The guest utterances remain requeued for a fresh evaluation of the completed
 question. Normal buffer and idle requests dispatch only after host playback.
 
 
-Quartz playback uses a calibrated 8x gain (+18.1 dB) to match Alpha's normalized
-voice, with a -1 dBFS peak limiter and 100 ms release. The same adjusted PCM is
+Quartz playback uses a 4x gain (+12.0 dB), halved from the previous 8x boost,
+with a -1 dBFS peak limiter and 100 ms release. The same adjusted PCM is
 encoded for Discord and saved to the recording. Muting and speech detection
 continue to use the original PCM. Set PODCAST_QUARTZ_OUTPUT_GAIN (linear, 0 < gain
-<= 32) to recalibrate if a provider changes its output level; the default is 8.
+<= 32) to recalibrate if a provider changes its output level; the default is 4.
+
+Confirmed participant speech activates Quartz’s “RARELY hmm, mmhmm, ah” state.
+Participant endpoints return to the existing progressive floor-holding states;
+Alpha handoff and playback retain priority. Raw unconfirmed VAD does not activate it.

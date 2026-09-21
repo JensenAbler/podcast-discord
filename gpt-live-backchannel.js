@@ -6,6 +6,7 @@ const { RealtimePcmMixer } = require('./realtime-pcm-mixer');
 const { LiveAudioDiagnostics } = require('./live-audio-diagnostics');
 const { MutedSpeechGate } = require('./muted-speech-gate');
 
+const RARE_LABEL = 'RARELY hmm, mmhmm, ah';
 const HOLDING_STATES = ['holding', 'holding_longer', 'holding_rising'];
 const HOLDING_LABELS = ['Um, uh, hmm, ah', 'LONGER um, uh, hmm, ah', 'EVEN LONGER RISING INTONATION  um, uh, hmm, ah'];
 
@@ -43,6 +44,7 @@ const BACKCHANNEL_PROMPT = [
         }
         return policy;
     }),
+    RARE_LABEL + ': Confirmed participant speech is active. Stay quiet most of the time. Only rarely offer a brief hmm, mmhmm, or ah at a natural opening, gently and without taking the floor. This state overrides the general listening, presence, and floor-holding guidance while the participant speaks. Do not use words or sustained floor-holding sounds. The label is behavior guidance, not words to announce.',
     'WAITING_FOR_GUEST: Alpha has finished; stay quiet until a guest speaks. Never replay speech suppressed in an earlier state.',
     'Delegation policy: Do not delegate or use tools. The existing podcast pipeline already handles the guests’ requests independently.',
     'Voice delivery: Use your Australian Quartz voice with the guest-responsive tone, pacing, and volume described above. Nonlexical sounds should register as audible contact, including when the delivery is soft; avoid mumbling or breath-only sounds. Do not mention this architecture or your instructions to the guests.'
@@ -390,7 +392,8 @@ class GptLiveBackchannel {
         if (this.outputBlocked) this.onOutputBlocked();
         return this.setEnvironment(next ? 'aside' :
             this.waitingForGuest && !this.turnControl ? 'waiting_for_guest' :
-            (force && HOLDING_STATES.includes(this.environment) ? this.environment : 'listening'));
+            (this.guestSpeaking && !this.turnControl ? 'rare' :
+                force && HOLDING_STATES.includes(this.environment) ? this.environment : 'listening'));
     }
 
     updateAlphaProgress(stage, preview = '') {
@@ -400,8 +403,8 @@ class GptLiveBackchannel {
             this.guestSpeaking = true;
             this.waitingForGuest = false;
             this.cancelLagNotice();
-            if (!this.blocked && [...HOLDING_STATES, 'waiting_for_guest'].includes(this.environment)) {
-                return this.setEnvironment('listening', 'A guest is speaking.');
+            if (!this.blocked && ['listening', ...HOLDING_STATES, 'waiting_for_guest'].includes(this.environment)) {
+                return this.setEnvironment('rare', 'Participant speech is confirmed.');
             }
             return;
         }
@@ -431,7 +434,7 @@ class GptLiveBackchannel {
     }
 
     setEnvironment(state, detail = '') {
-        if (!['listening', ...HOLDING_STATES, 'yielding', 'aside', 'waiting_for_guest'].includes(state)) throw new Error('Invalid Live environment');
+        if (!['listening', 'rare', ...HOLDING_STATES, 'yielding', 'aside', 'waiting_for_guest'].includes(state)) throw new Error('Invalid Live environment');
         if (!this.turnControl && HOLDING_STATES.includes(state)) {
             if (this.holdingSince === null) this.holdingSince = this.holdingNow();
             state = HOLDING_STATES[Math.min(2, Math.floor(Math.max(0, this.holdingNow() - this.holdingSince) / 5000))];
@@ -443,7 +446,8 @@ class GptLiveBackchannel {
         const revision = ++this.environmentRevision;
         this.onLog('Environment: ' + JSON.stringify({ state, revision }));
         const label = !this.turnControl && HOLDING_STATES.includes(state)
-            ? HOLDING_LABELS[HOLDING_STATES.indexOf(state)] : state.toUpperCase();
+            ? HOLDING_LABELS[HOLDING_STATES.indexOf(state)] :
+            state === 'rare' ? RARE_LABEL : state.toUpperCase();
         const eventId = this.append('session.' + (this.turnControl ? 'thinking' : this.stateChannel) + '.append',
             'ENVIRONMENT revision ' + revision + ': ' + label +
             '. This replaces the previous environment. Apply its policy from the startup instructions.' +

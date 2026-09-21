@@ -305,8 +305,13 @@ test('normal mode follows all five environments while Alpha alone controls turns
     const t = transport(); await connected(t);
     assert.equal(t.client.environment, 'listening');
     assert.match(BACKCHANNEL_PROMPT, /delivers every substantial answer/);
-    for (const state of ['LISTENING', 'Um, uh, hmm, ah', 'LONGER um, uh, hmm, ah', 'EVEN LONGER RISING INTONATION  um, uh, hmm, ah', 'YIELDING', 'ASIDE', 'WAITING_FOR_GUEST']) assert.ok(BACKCHANNEL_PROMPT.includes(state));
+    for (const state of ['LISTENING', 'RARELY hmm, mmhmm, ah', 'Um, uh, hmm, ah', 'LONGER um, uh, hmm, ah', 'EVEN LONGER RISING INTONATION  um, uh, hmm, ah', 'YIELDING', 'ASIDE', 'WAITING_FOR_GUEST']) assert.ok(BACKCHANNEL_PROMPT.includes(state));
     t.client.updateAlphaProgress('guest speaking');
+    assert.equal(t.client.environment, 'rare');
+    assert.match(t.socket.sent.at(-1).content, /RARELY hmm, mmhmm, ah/);
+    const rareRevision = t.client.environmentRevision;
+    t.client.updateAlphaProgress('guest speaking');
+    assert.equal(t.client.environmentRevision, rareRevision);
     t.client.updateAlphaProgress('guest finished');
     assert.equal(t.client.environment, 'holding');
     t.client.updateAlphaProgress('preparing voice');
@@ -483,7 +488,7 @@ test('participant endpoint holds before generation, resumes after interruption, 
     const t = transport(); await connected(t);
     t.client.updateAlphaProgress('guest speaking');
     t.client.updateAlphaProgress('thinking');
-    assert.equal(t.client.environment, 'listening');
+    assert.equal(t.client.environment, 'rare');
     t.client.updateAlphaProgress('guest finished');
     assert.equal(t.client.environment, 'holding');
     assert.match(t.socket.sent.at(-1).content, /no answer is committed/);
@@ -491,9 +496,9 @@ test('participant endpoint holds before generation, resumes after interruption, 
     t.client.updateAlphaProgress('thinking');
     assert.equal(t.client.environmentRevision, revision, 'no duplicate holding updates');
     t.client.updateAlphaProgress('guest speaking');
-    assert.equal(t.client.environment, 'listening');
+    assert.equal(t.client.environment, 'rare');
     t.client.updateAlphaProgress('preparing voice');
-    assert.equal(t.client.environment, 'listening');
+    assert.equal(t.client.environment, 'rare');
     t.client.updateAlphaProgress('guest finished');
     assert.equal(t.client.environment, 'holding');
     t.client.requestHandoff();
@@ -534,10 +539,11 @@ test('confirmed participant endpoints signal Quartz before ASR, respecting other
     bot.noteRawParticipantVadStop('g', 'noise');
     assert.equal(t.client.environment, 'listening', 'noise must not request holding');
     bot.participantSignalStates.set('g', states);
+    t.client.updateAlphaProgress('guest speaking');
     states.set('one', { floorConfirmed: true, floorHasFreshSpeechEvidence: true });
     states.set('two', { floorConfirmed: true, floorHasFreshSpeechEvidence: true });
     bot.noteRawParticipantVadStop('g', 'one');
-    assert.equal(t.client.environment, 'listening', 'another guest still owns the floor');
+    assert.equal(t.client.environment, 'rare', 'another guest still owns the floor');
     bot.noteRawParticipantVadStop('g', 'two');
     assert.equal(t.client.environment, 'holding', 'endpoint signals holding synchronously, without waiting for ASR or generation');
     const stop = t.client.stop(); t.socket.event({ type: 'session.closed' }); await stop;
@@ -610,7 +616,7 @@ test('guest silence advances three states at five and ten seconds independently 
     const revision = t.client.environmentRevision;
     clock.tick(30000); assert.equal(t.client.environmentRevision, revision);
     t.client.updateAlphaProgress('guest speaking');
-    assert.equal(t.client.environment, 'listening');
+    assert.equal(t.client.environment, 'rare');
     t.client.updateAlphaProgress('guest finished');
     clock.tick(5000); assert.equal(t.client.environment, 'holding_longer');
     await closeTransport(t);
@@ -644,7 +650,7 @@ test('state transport preserves labels and cancels queued stale state across all
         assert.equal(t.client.contextQueue.waiting.length, 1);
         t.client.updateAlphaProgress('guest speaking');
         assert.equal(t.client.contextQueue.waiting.length, 1);
-        assert.match(t.client.contextQueue.waiting[0].event.content, /LISTENING/);
+        assert.match(t.client.contextQueue.waiting[0].event.content, /RARELY hmm, mmhmm, ah/);
         t.client.contextQueue.maxPending = 4; t.client.contextQueue.pump();
         await closeTransport(t);
     }
@@ -678,7 +684,7 @@ test('waiting state blocks late audio and ignores late progress until fresh gues
     assert.equal(t.audio.length, 0);
     assert.ok(clears >= 2);
     t.client.updateAlphaProgress('guest speaking');
-    assert.equal(t.client.environment, 'listening');
+    assert.equal(t.client.environment, 'rare');
     t.socket.event(event);
     assert.equal(t.audio.length, 0, 'muted speech remains suppressed after guest resumes');
     emitPcm(t, Buffer.alloc(32000));
@@ -691,7 +697,7 @@ test('guest already speaking when Alpha ends can receive backchannels immediatel
     t.client.setAlphaPlaying(true);
     t.client.updateAlphaProgress('guest speaking');
     t.client.setAlphaPlaying(false);
-    assert.equal(t.client.environment, 'listening');
+    assert.equal(t.client.environment, 'rare');
     assert.equal(t.client.outputBlocked, false);
     await closeTransport(t);
 });
@@ -824,8 +830,8 @@ test('Quartz default level reaches both encoded playback and consumed recording 
     for (let i = 0; i < input.length; i += 2) input.writeInt16LE(500, i);
     t.callbacks.onAudio(input);
     const packet = t.p.stream.read();
-    assert.equal(packet.readInt16LE(0), 4000);
-    assert.equal(t.consumed[0].readInt16LE(0), 4000);
+    assert.equal(packet.readInt16LE(0), 2000);
+    assert.equal(t.consumed[0].readInt16LE(0), 2000);
     assert.equal(input.readInt16LE(0), 500, 'raw receipt evidence must stay unchanged');
     await t.p.stop();
 });

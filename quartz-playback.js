@@ -18,7 +18,7 @@ class QuartzPlayback {
         this.resourceFactory = options.resourceFactory || (stream => createAudioResource(stream, { inputType: StreamType.Opus }));
         this.encoderFactory = options.encoderFactory || (() => new OpusScript(48000, 2, OpusScript.Application.AUDIO));
         this.stream = null;
-        this.outputLevel = new QuartzOutputLevel(options.outputGain ?? process.env.PODCAST_QUARTZ_OUTPUT_GAIN ?? 8);
+        this.outputLevel = new QuartzOutputLevel(options.outputGain ?? process.env.PODCAST_QUARTZ_OUTPUT_GAIN ?? 4);
         this.queue = Buffer.alloc(0);
         this.queueSpans = [];
         this.playedTranscript = new PlayedBackchannelTranscript(options.onPlayedTranscript || (() => {}));
