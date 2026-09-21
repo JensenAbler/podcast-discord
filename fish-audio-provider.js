@@ -7,6 +7,7 @@
  */
 
 const { Readable } = require('stream');
+const { JevSpeechJudge, batchSpeech } = require('./jev-speech-batcher');
 const WebSocket = require('ws');
 const msgpack = require('msgpack-lite');
 const { TTSRequest } = require('fish-audio-sdk');
@@ -130,6 +131,10 @@ class FishAudioProvider {
         this.asrDownmixMode = normalizeAsrDownmixMode(
             options.asrDownmix ?? process.env.FISH_ASR_DOWNMIX
         );
+        this.jevJudge = options.jevJudge || new JevSpeechJudge();
+        this.semanticBatching = envFlagEnabled(options.semanticBatching ?? process.env.JEV_TTS_ENABLED, true)
+            && Boolean(this.jevJudge.apiKey);
+        console.log('[Jev TTS] ' + (this.semanticBatching ? 'Configured' : 'Disabled (flag or missing key)'));
         this.webSocketFactory = options.webSocketFactory ||
             ((url, webSocketOptions) => new WebSocket(url, webSocketOptions));
 
@@ -206,9 +211,20 @@ class FishAudioProvider {
 
     async *createStreamingAudio(textChunks, options = {}) {
         const startedAt = Date.now();
-        const iterator = this.getTextIterator(textChunks);
+        const semantic = options.semanticBatching !== false && this.semanticBatching && this.jevJudge.available;
+        const batchAbort = new AbortController();
+        const originalIterator = this.getTextIterator(textChunks);
+        const iterator = semantic ? batchSpeech(originalIterator, {
+            signal: batchAbort.signal,
+            judge: (state, signal) => this.jevJudge.evaluate(state, signal),
+            onEvent: event => console.log('[Jev TTS] ' + JSON.stringify(event))
+        }) : originalIterator;
         const model = options.model || this.model;
         const connection = this.createWebSocketAudioConnection();
+        connection.batchAbort = batchAbort;
+        const abortOnFailure = () => batchAbort.abort();
+        connection.ws.once('error', abortOnFailure);
+        connection.ws.once('close', abortOnFailure);
         let firstChunk;
 
         try {
@@ -231,7 +247,7 @@ class FishAudioProvider {
             request = new TTSRequest('', {
                 format,
                 latency: options.latency || this.latency || 'balanced',
-                chunkLength: Number(options.chunkLength || this.chunkLength),
+                chunkLength: semantic ? 300 : Number(options.chunkLength || this.chunkLength),
                 referenceId: voiceId,
                 modelId: model,
                 normalize: options.normalize ?? this.normalize ?? !this.hasFishInlineControls(firstChunk, model),
@@ -255,7 +271,7 @@ class FishAudioProvider {
         try {
             const processedTextStream = this.createProcessedTextStream(firstChunk, iterator, { model });
 
-            for await (const audioChunk of this.streamWebSocketAudio(request, processedTextStream, connection)) {
+            for await (const audioChunk of this.streamWebSocketAudio(request, processedTextStream, connection, { flushEachText: semantic })) {
                 const buffer = Buffer.from(audioChunk);
                 totalBytes += buffer.length;
                 chunkCount++;
@@ -333,14 +349,14 @@ class FishAudioProvider {
         return { ws, queue, openPromise };
     }
 
-    async *streamWebSocketAudio(request, textStream, connection = this.createWebSocketAudioConnection()) {
+    async *streamWebSocketAudio(request, textStream, connection = this.createWebSocketAudioConnection(), options = {}) {
         const { ws, queue, openPromise } = connection;
 
         try {
             await openPromise;
 
             let sendError = null;
-            const sendTask = this.sendStreamingText(ws, request, textStream).catch((error) => {
+            const sendTask = this.sendStreamingText(ws, request, textStream, options).catch((error) => {
                 sendError = error;
                 queue.fail(error);
             });
@@ -359,6 +375,7 @@ class FishAudioProvider {
     }
 
     closeWebSocketAudioConnection(connection) {
+        connection.batchAbort?.abort();
         try {
             connection.ws.close();
         } catch {
@@ -366,7 +383,7 @@ class FishAudioProvider {
         }
     }
 
-    async sendStreamingText(ws, request, textStream) {
+    async sendStreamingText(ws, request, textStream, options = {}) {
         this.sendWebSocketEvent(ws, {
             event: 'start',
             request: this.compactObject(request)
@@ -377,9 +394,10 @@ class FishAudioProvider {
                 event: 'text',
                 text
             });
+            if (options.flushEachText) this.sendWebSocketEvent(ws, { event: 'flush' });
         }
 
-        this.sendWebSocketEvent(ws, { event: 'flush' });
+        if (!options.flushEachText) this.sendWebSocketEvent(ws, { event: 'flush' });
         this.sendWebSocketEvent(ws, { event: 'stop' });
     }
 
