@@ -1,32 +1,31 @@
-# Jev speech batching
+# Opportunistic Jev speech splitting
 
-Fish streaming speech uses Jev to judge uncertain phrase boundaries while incoming text continues to accumulate. Complete sentences are released immediately. Jev receives a bounded preceding context, candidate chunk and available lookahead, with two independent questions in one request: natural-pause probability (Noul) and disruption severity (Score). A candidate is released at natural >= 0.6 and disruption <= 1.1. Score confidence is diagnostic, not a probability of correctness.
+The original Fish fast path is the default. The first text chunk goes straight through, the configured Fish chunk length is preserved, and normal streaming has no Jev buffering timer.
 
-## Configuration
+Jev is used only when both conditions hold:
+- At least 240 characters of text are already available, within a bounded 1600-character review window.
+- At least 2000 ms of conservatively estimated audio is ahead of playback.
 
-Set TYPESAFE_API_KEY in the service environment, or put a single unquoted TYPESAFE_API_KEY=value line in .env.typesafe alongside the provider. Keep that file mode 0600; .env.* is excluded from git. No key is included in source. With a key, semantic batching defaults on. Set JEV_TTS_ENABLED=false and restart to disable.
+The sender drains immediately available text for at most one event-loop turn per read (maximum 64 chunks). It does not wait for future words to create a backlog. Oversized windows bypass optimization. Tiny or slow streams therefore behave as before.
 
-Defaults:
-- JEV_MODEL=jev-latest
-- JEV_TTS_FIRST_WAIT_MS=400
-- JEV_TTS_MAX_WAIT_MS=600
-- JEV_TTS_TIMEOUT_MS=500
-- JEV_TTS_TARGET_CHARS=100 (candidate selection preference; judgments can start at 48 characters)
+## Audio and decision budget
 
-The first/later wait budget follows the arrival time of the oldest remaining text. New tokens do not restart it. The usual chunk cap is 240 characters. Deadline or size limits override a negative judgment. Emergency flushes of stalled unbroken words/tags can exceed the cap or split a tag. These are latency bounds for text buffering, not a bound on end-to-end audio latency.
+The provider counts complete MP3 frames or Ogg Opus granule positions, including Opus pre-skip and chained streams. It subtracts all monotonic elapsed time since the first audio delivery. This assumes playback could have begun immediately and run continuously, so it underestimates the audio cushion when playback starts later or pauses. It is not a measurement of the Discord player queue. Unknown formats or invalid headers disable optimization.
 
-Fish receives each approved chunk with an explicit flush; its internal chunk_length is 300 to reduce premature re-splitting. Without semantic batching, the existing Fish event sequence and chunk length remain in use. API failure switches the current response to deterministic cuts, and the client cools down for 30 seconds. Cancellation discards stale judgments and aborts outstanding requests. Logs contain lengths, timing, reasons and numeric judgments, not the text sent to Jev.
+Jev gets at most 500 ms, leaving a target reserve of 1500 ms for downstream synthesis/delivery. This reserve is a heuristic, not a guarantee against Fish or network stalls. Already-sent text cannot be revised.
 
-## Validation
+A single TypeSafe request judges up to 24 candidate boundaries with independent Noul questions. Candidates are sampled from whitespace outside Fish tags, favoring nearby punctuation; punctuation is never automatically accepted as a sentence end. Jev sees the available text on both sides. Probability >= 0.7 approves a candidate; code copies exact source spans and emits explicit Fish flushes only at accepted boundaries. Minimum resulting prefix size is 60 characters. The remaining tail keeps the ordinary final-flush behavior.
+
+No accepted cuts, unavailable Jev, low audio cushion, failure, or timeout preserves the original chunk sequence. A failed opportunity is not retried within that response. HTTP/API failures also trigger the client cooldown for 30 seconds. The unchanged Fish internal chunking can still split long spans without an accepted boundary; this is a best-effort improvement, not a prosody guarantee.
+
+## Configuration and validation
+
+TYPESAFE_API_KEY comes from the environment or the ignored, mode-0600 .env.typesafe file beside the provider. JEV_TTS_ENABLED=false disables the optimization. JEV_MODEL defaults to jev-latest. The former FIRST_WAIT/MAX_WAIT/TARGET_CHARS controls are no longer used.
 
 Run:
-```sh
-node --test test-jev-speech-batcher.js
-npm test
-```
+    node --test test-jev-speech-batcher.js
+    npm test
 
-On 2026-09-21 all 16 new tests and the existing suite passed. Coverage includes bounded waits, continued input during judgment, exact text preservation, abbreviations/tags, fallback, cancellation and Fish event integration.
+Tests cover unchanged startup and low-surplus behavior, ready backlog splitting, no wait for future text, timeouts, failure, cancellation, invalid boundaries, exact text preservation, MP3/Opus duration accounting, and Fish event integration.
 
-Live synthetic tests exercised the real TypeSafe API and Fish WebSocket API. In the final paired sample semantic batching preserved “Martin Luther King” as a chunk boundary and completed audio streaming. First audio was 1306 ms with semantic batching versus 959 ms without; total generation was 5017 versus 5186 ms. This small sample is not a latency benchmark or a listening-quality evaluation. Hard deadlines can still produce awkward cuts. Playback-buffer-aware decisions are not implemented.
-
-The official TypeSafe skill is installed under .agents/skills/typesafe-ai with its license and skills-lock.json.
+Implementation follows the installed official TypeSafe skill and the API/structure-recovery cookbook: bounded boundary judgments in one request, with exact text slicing owned by code.

@@ -7,7 +7,7 @@
  */
 
 const { Readable } = require('stream');
-const { JevSpeechJudge, batchSpeech } = require('./jev-speech-batcher');
+const { JevSpeechJudge, AudioCushion, opportunisticSpeech } = require('./jev-speech-batcher');
 const WebSocket = require('ws');
 const msgpack = require('msgpack-lite');
 const { TTSRequest } = require('fish-audio-sdk');
@@ -213,12 +213,8 @@ class FishAudioProvider {
         const startedAt = Date.now();
         const semantic = options.semanticBatching !== false && this.semanticBatching && this.jevJudge.available;
         const batchAbort = new AbortController();
-        const originalIterator = this.getTextIterator(textChunks);
-        const iterator = semantic ? batchSpeech(originalIterator, {
-            signal: batchAbort.signal,
-            judge: (state, signal) => this.jevJudge.evaluate(state, signal),
-            onEvent: event => console.log('[Jev TTS] ' + JSON.stringify(event))
-        }) : originalIterator;
+        const iterator = this.getTextIterator(textChunks);
+        const cushion = new AudioCushion(options.format || this.format);
         const model = options.model || this.model;
         const connection = this.createWebSocketAudioConnection();
         connection.batchAbort = batchAbort;
@@ -228,7 +224,7 @@ class FishAudioProvider {
         let firstChunk;
 
         try {
-            firstChunk = await this.readFirstProcessedTextChunk(iterator, { model });
+            firstChunk = await this.readFirstProcessedTextChunk(iterator, { model, signal: batchAbort.signal });
         } catch (error) {
             this.closeWebSocketAudioConnection(connection);
             throw error;
@@ -247,7 +243,7 @@ class FishAudioProvider {
             request = new TTSRequest('', {
                 format,
                 latency: options.latency || this.latency || 'balanced',
-                chunkLength: semantic ? 300 : Number(options.chunkLength || this.chunkLength),
+                chunkLength: Number(options.chunkLength || this.chunkLength),
                 referenceId: voiceId,
                 modelId: model,
                 normalize: options.normalize ?? this.normalize ?? !this.hasFishInlineControls(firstChunk, model),
@@ -271,8 +267,13 @@ class FishAudioProvider {
         try {
             const processedTextStream = this.createProcessedTextStream(firstChunk, iterator, { model });
 
-            for await (const audioChunk of this.streamWebSocketAudio(request, processedTextStream, connection, { flushEachText: semantic })) {
+            for await (const audioChunk of this.streamWebSocketAudio(request, processedTextStream, connection, {
+                surplus: semantic ? { judge: this.jevJudge, signal: batchAbort.signal,
+                    audioAheadMs: () => cushion.aheadMs(),
+                    onEvent: event => console.log('[Jev TTS] ' + JSON.stringify(event)) } : null
+            })) {
                 const buffer = Buffer.from(audioChunk);
+                cushion.push(buffer);
                 totalBytes += buffer.length;
                 chunkCount++;
 
@@ -389,15 +390,14 @@ class FishAudioProvider {
             request: this.compactObject(request)
         });
 
-        for await (const text of textStream) {
-            this.sendWebSocketEvent(ws, {
-                event: 'text',
-                text
-            });
-            if (options.flushEachText) this.sendWebSocketEvent(ws, { event: 'flush' });
+        const stream = options.surplus ? opportunisticSpeech(textStream, options.surplus) : textStream;
+        for await (const part of stream) {
+            const text = options.surplus ? part.text : part;
+            this.sendWebSocketEvent(ws, { event: 'text', text });
+            if (options.surplus && part.flush) this.sendWebSocketEvent(ws, { event: 'flush' });
         }
 
-        if (!options.flushEachText) this.sendWebSocketEvent(ws, { event: 'flush' });
+        this.sendWebSocketEvent(ws, { event: 'flush' });
         this.sendWebSocketEvent(ws, { event: 'stop' });
     }
 
@@ -521,17 +521,24 @@ class FishAudioProvider {
     }
 
     async readFirstProcessedTextChunk(iterator, options = {}) {
-        while (true) {
-            const next = await iterator.next();
-            if (next.done) return '';
-
-            const processed = this.preprocessText(next.value, {
-                ...options,
-                preserveBoundaryWhitespace: true
-            });
-            if (processed.trim()) {
-                return processed.replace(/^\s+/, '');
+        const { signal } = options;
+        let abort;
+        const cancelled = new Promise((_, reject) => {
+            abort = () => reject(new Error('Fish Audio stream cancelled'));
+            signal?.addEventListener('abort', abort, { once: true });
+            if (signal?.aborted) abort();
+        });
+        try {
+            while (true) {
+                const next = await Promise.race([iterator.next(), cancelled]);
+                if (next.done) return '';
+                const processed = this.preprocessText(next.value, {
+                    ...options, preserveBoundaryWhitespace: true
+                });
+                if (processed.trim()) return processed.replace(/^\s+/, '');
             }
+        } finally {
+            signal?.removeEventListener('abort', abort);
         }
     }
 
