@@ -1,3 +1,4 @@
+const { isAnthropicBaseUrl } = require('./anthropic-messages');
 const { PodcastGenerator } = require('./podcast-generator');
 const { resolveFrontierConfig } = require('./introspection-frontier');
 const { normalizeEpisodePlan, sanitizeBasename, PHASES } = require('./episode-plan-store');
@@ -11,7 +12,6 @@ class ShowRunnerGenerator extends PodcastGenerator {
             baseUrl: options.baseUrl || process.env.PODCAST_SHOW_RUNNER_BASE_URL || (frontier.enabled ? frontier.baseUrl : undefined),
             model: options.model || process.env.PODCAST_SHOW_RUNNER_MODEL || (frontier.enabled ? frontier.model : undefined) || process.env.PODCAST_GENERATOR_MODEL || 'gpt-4.1-mini',
             timeout: options.timeout || process.env.PODCAST_SHOW_RUNNER_TIMEOUT_MS || 60000,
-            maxCompletionTokens: options.maxCompletionTokens || process.env.PODCAST_SHOW_RUNNER_MAX_TOKENS || 2400,
             responseFormat: options.responseFormat || process.env.PODCAST_SHOW_RUNNER_RESPONSE_FORMAT || process.env.PODCAST_GENERATOR_RESPONSE_FORMAT || 'json_schema',
             reasoningFormat: options.reasoningFormat || process.env.PODCAST_SHOW_RUNNER_REASONING_FORMAT || process.env.PODCAST_GENERATOR_REASONING_FORMAT
         });
@@ -26,28 +26,72 @@ class ShowRunnerGenerator extends PodcastGenerator {
         if (!this.apiKey) {
             throw new Error(this.apiKeyError || 'Show runner generator API key not provided.');
         }
-
+        await this.resolveModelOutputLimit();
         const startTime = Date.now();
-        const result = await this.fetchCompletion(this.buildMessages(input), input);
-        const content = result.choices?.[0]?.message?.content;
-        const refusal = result.choices?.[0]?.message?.refusal;
-
-        if (refusal) {
-            console.warn(`[ShowRunnerGenerator] Model refusal: ${refusal}`);
-            return this.normalizeOutput({}, input);
+        const messages = this.buildMessages(input);
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const result = await this.fetchCompletion(messages, input);
+            const choice = result.choices?.[0];
+            if (choice?.message?.refusal) {
+                console.warn('[ShowRunnerGenerator] Model refused planning request');
+                return this.normalizeOutput({}, input);
+            }
+            let parsed;
+            try {
+                if (['length', 'max_tokens'].includes(choice?.finish_reason)) {
+                    throw new Error('Show runner response reached the provider model output maximum');
+                }
+                if (!choice?.message?.content) throw new Error('Show runner generator returned an empty response');
+                parsed = this.parseJsonContent(choice.message.content);
+            } catch (error) {
+                if (attempt === 1) throw error;
+                console.warn('[ShowRunnerGenerator] Retrying incomplete or invalid JSON; finishReason=' +
+                    (choice?.finish_reason || 'unknown') + ', outputTokens=' + (result.usage?.completion_tokens ?? 'unknown'));
+                // Regenerate from the original context, never salvage or execute a partial plan.
+                continue;
+            }
+            const output = this.normalizeOutput(parsed, input);
+            console.log(`[ShowRunnerGenerator] Completed in ${Date.now() - startTime}ms: action=${output.action}, plan=${output.plan?.basename || 'none'}`);
+            return output;
         }
-        if (!content) {
-            throw new Error('Show runner generator returned an empty response');
-        }
+    }
 
-        const output = this.normalizeOutput(this.parseJsonContent(content), input);
-        const duration = Date.now() - startTime;
-        console.log(`[ShowRunnerGenerator] Completed in ${duration}ms: action=${output.action}, plan=${output.plan?.basename || 'none'}`);
-        return output;
+    async resolveModelOutputLimit() {
+        if (!isAnthropicBaseUrl(this.baseUrl)) return;
+        if (!this.modelOutputLimitPromise) {
+            this.modelOutputLimitPromise = this.fetchModelOutputLimit().then(limit => {
+                this.modelOutputLimit = limit;
+                return limit;
+            }).catch(error => {
+                this.modelOutputLimitPromise = null;
+                throw error;
+            });
+        }
+        await this.modelOutputLimitPromise;
+    }
+
+    async fetchModelOutputLimit() {
+        const response = await fetch(this.baseUrl.replace(/\/$/, '') + '/models/' + encodeURIComponent(this.model), {
+            headers: { 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01' },
+            signal: AbortSignal.timeout(this.timeout)
+        });
+        if (!response.ok) throw new Error('Could not read planner model output maximum: HTTP ' + response.status);
+        const metadata = await response.json();
+        if (!Number.isSafeInteger(metadata.max_tokens) || metadata.max_tokens <= 0) {
+            throw new Error('Planner model metadata did not provide an output maximum');
+        }
+        return metadata.max_tokens;
     }
 
     buildRequestBody(messages, options = {}) {
         const body = super.buildRequestBody(messages, options);
+        // No application output budget. Anthropic requires its model-native maximum;
+        // other providers receive no max_completion_tokens override.
+        delete body.max_completion_tokens;
+        if (isAnthropicBaseUrl(this.baseUrl)) {
+            if (!this.modelOutputLimit) throw new Error('Planner model output maximum has not been resolved');
+            body.max_completion_tokens = this.modelOutputLimit;
+        }
         if (body.response_format?.json_schema) {
             body.response_format.json_schema.name = this.schemaName;
             body.response_format.json_schema.schema = this.getResponseSchema();
