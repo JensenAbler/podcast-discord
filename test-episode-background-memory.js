@@ -182,7 +182,11 @@ test('memory model uses provider-native output maximum and retries truncated out
     const requests = [];
     generator.fetchCompletion = async messages => {
         requests.push(JSON.stringify(messages));
-        assert.equal(generator.buildRequestBody(messages).max_completion_tokens, 128000);
+        const body = generator.buildRequestBody(messages);
+        assert.equal(body.max_completion_tokens, 128000);
+        const expansion = body.response_format.json_schema.schema.properties.expansions.items.properties;
+        assert.deepEqual(expansion.beforeLines, { type: 'integer' });
+        assert.deepEqual(expansion.afterLines, { type: 'integer' });
         return { choices: [{ finish_reason: requests.length === 1 ? 'max_tokens' : 'end_turn',
             message: { content: JSON.stringify(decision('search', { queries: ['focused query'] })) } }] };
     };

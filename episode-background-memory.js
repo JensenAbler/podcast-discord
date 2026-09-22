@@ -136,8 +136,10 @@ const RESPONSE_SCHEMA = {
         expansions: { type: 'array', items: {
             type: 'object', additionalProperties: false,
             required: ['sourceId', 'beforeLines', 'afterLines'],
-            properties: { sourceId: { type: 'string' }, beforeLines: { type: 'integer', minimum: 0 },
-                afterLines: { type: 'integer', minimum: 0 } }
+            // Provider structured-output schemas do not support integer minimum.
+            // Nonnegative values are enforced by validateDecision before any source read.
+            properties: { sourceId: { type: 'string' }, beforeLines: { type: 'integer' },
+                afterLines: { type: 'integer' } }
         } },
         memories: { type: 'array', items: {
             type: 'object', additionalProperties: false, required: ['text', 'sourceIds'],
