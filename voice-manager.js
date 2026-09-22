@@ -304,8 +304,8 @@ class VoiceManager {
             const humans = channel?.members && [...channel.members.values()]
                 .filter(member => member.id !== userId && member.id !== this.client.user?.id && !member.user?.bot);
             if (humans && humans.length === 0 && this.onChannelEmpty) {
-                receiver.cleanupUser(userId, 'user left voice channel');
-                try { await this.onChannelEmpty(guildId); }
+                // The finalizer owns draining ASR before receiver cleanup.
+                try { await this.onChannelEmpty(guildId, { userId }); }
                 catch (error) { console.error('[VoiceManager] Empty-channel finalization failed:', error); }
                 return;
             }

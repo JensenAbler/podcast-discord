@@ -1107,6 +1107,13 @@ class PodcastGenerator {
             lines.push('', 'STT confidence hints:', wordData);
         }
 
+        if (options.participantPresence?.finalTurn && options.participantPresence.humansPresent === 0) {
+            lines.push('', 'Current participant presence:',
+                `The last human participant hung up at ${options.participantPresence.departedAt}. No human participants remain in the voice channel.`,
+                'Their final available words are included above. You are still being recorded, but nobody is currently listening live.',
+                'You may respond to their final words, offer a closing thought, or choose silence (shouldRespond=false). The choice is yours. This is your final turn before the recording closes.');
+        }
+
         // Present the current situation after the conversation and supporting context.
         if (currentState.length > 0) {
             lines.push('', ...currentState);

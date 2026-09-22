@@ -28,7 +28,7 @@ const newState = { ...oldState, channelId: null };
 test('last human hangup finalizes, while another human or a mute event does not', async () => {
     const f = voice([{id:'bot',user:{bot:true}}, {id:'otherbot',user:{bot:true}}]);
     await f.vm.handleVoiceStateUpdate(oldState,newState);
-    assert.deepEqual(f.calls,['cleanup','empty']);
+    assert.deepEqual(f.calls,['empty']);
     const g = voice([{id:'v',user:{bot:false}}]);
     await g.vm.handleVoiceStateUpdate(oldState,newState);
     assert.deepEqual(g.calls,['flush','cleanup']);
@@ -59,7 +59,7 @@ test('hangup stops generation and saves plan before slow recording finalization'
         saveEpisodePlanProgress:()=>events.push('checkpoint'),endEpisodePlanTracker(){},endInternalThoughtSession:async()=>{}
     });
     const pending=bot.leavePodcastSession('g',{reason:'last_participant_left'});
-    for(let i=0;i<8;i++) await Promise.resolve();
+    for(let i=0;i<20;i++) await Promise.resolve();
     assert.equal(bot.recordingState.get('g'),'STOPPING');
     assert(events.indexOf('checkpoint') < events.indexOf('finalize'));
     assert(events.indexOf('idle-stop') < events.indexOf('finalize'));

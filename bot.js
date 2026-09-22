@@ -369,7 +369,7 @@ class AlphaClawdVoiceBot {
         this.setupEventHandlers();
         
         // Set up voice manager utterance handler
-        this.voiceManager.onChannelEmpty = (guildId) => this.leavePodcastSession(guildId, { reason: 'last_participant_left' });
+        this.voiceManager.onChannelEmpty = (guildId, departure = {}) => this.leavePodcastSession(guildId, { reason: 'last_participant_left', ...departure });
         this.voiceManager.onQuartzInputTranscript = (guildId, event) => this.observeAdmissionLive(guildId, event);
         this.voiceManager.onSavedTranscript = (guildId, entry) => {
             if (this.isRecordingActive(guildId)) this.podcastGenerator.observeSpokenTranscript?.(entry);
@@ -1823,7 +1823,7 @@ class AlphaClawdVoiceBot {
         if (!this.usesConversationAdmission(guildId) || options.liveDelegation) return;
         options.admissionPolicy ||= this.getConversationAdmission(guildId);
         let logged = false;
-        while (!options.admissionPolicy.closed && this.isRecordingActive(guildId) && !options.liveController?.closed &&
+        while (!this.participantDepartures?.has(guildId) && !options.admissionPolicy.closed && this.isRecordingActive(guildId) && !options.liveController?.closed &&
             !this.didParticipantResumeSince(guildId, options.participantActivityBaseline)) {
             const pending = this.participantAcousticActivity?.get(guildId);
             const hasNewAcoustic = Array.from(pending?.values() || []).some(versions =>
@@ -5130,8 +5130,14 @@ class AlphaClawdVoiceBot {
     async handleLeaveCommand(interaction) {
         const guildId = interaction.guildId;
         
-        // IMPORTANT: Defer IMMEDIATELY to avoid 3-second timeout
-        await interaction.deferReply();
+        // A failed acknowledgement must not prevent the requested cleanup.
+        let canReply = true;
+        try { await interaction.deferReply(); }
+        catch (error) {
+            if (Number(error.code) !== 10062) throw error;
+            canReply = false;
+            console.warn('[Bot] Leave interaction expired; continuing session cleanup');
+        }
         
         console.log(`[Bot] Leave command received for guild ${guildId}`);
 
@@ -5139,11 +5145,11 @@ class AlphaClawdVoiceBot {
             const result = await this.leavePodcastSession(guildId, {
                 reason: 'slash_command'
             });
-            await interaction.editReply(result.message);
+            if (canReply) await interaction.editReply(result.message);
             return;
         } catch (error) {
             console.error('[Bot] Leave error:', error);
-            await interaction.editReply(`Error: ${error.message}`);
+            if (canReply) await interaction.editReply(`Error: ${error.message}`);
         }
     }
 
@@ -5164,10 +5170,40 @@ class AlphaClawdVoiceBot {
     leavePodcastSession(guildId, options = {}) {
         this.sessionFinalizations ||= new Map();
         if (this.sessionFinalizations.has(guildId)) return this.sessionFinalizations.get(guildId);
+        if (options.reason === 'last_participant_left') {
+            this.participantDepartures ||= new Map();
+            this.participantDepartures.set(guildId, { at: new Date().toISOString(), userId: options.userId });
+            this.conversationBuffer?.setFlushHold?.('session-ending', true);
+        }
         const pending = Promise.resolve().then(() => this.finalizePodcastSession(guildId, options));
         this.sessionFinalizations.set(guildId, pending);
-        pending.finally(() => this.sessionFinalizations.delete(guildId)).catch(() => {});
+        pending.finally(() => {
+            this.sessionFinalizations.delete(guildId);
+            this.participantDepartures?.delete(guildId);
+        }).catch(() => {});
         return pending;
+    }
+
+    async runDepartureFinalTurn(guildId) {
+        if (!this.podcastGenerator?.generate || this.useGatewayGenerator() || this.isGeminiLiveSession(guildId)) return;
+        const utterances = this.conversationBuffer?.getOrderedUtterances?.() || [];
+        // Old acoustic candidates can no longer represent a speaker in the room.
+        this.participantAcousticActivity?.delete(guildId);
+        this.participantSignalStates?.delete(guildId);
+        this.conversationBuffer?.clear?.();
+        this.conversationBuffer?.setFlushHold?.('session-ending', true);
+        const departure = this.participantDepartures?.get(guildId);
+        const participantPresence = {
+            humansPresent: 0,
+            departedAt: departure?.at || new Date().toISOString(),
+            finalTurn: true
+        };
+        const transcript = utterances.map(u => `${u.speaker}: ${u.transcription}`).join('\n');
+        console.log('[Bot] Final host turn: no participants remain; final ASR drained');
+        return this.trackHostTurn(guildId, () => this.handleDirectGeneratorFlushRunning(
+            guildId, utterances, transcript, null,
+            { departureFinalTurn: true, participantPresence, playFiller: false }
+        ));
     }
 
     async finalizePodcastSession(guildId, options = {}) {
@@ -5190,17 +5226,22 @@ class AlphaClawdVoiceBot {
 
         if (wasRecording) {
             if (options.reason === 'last_participant_left') {
-                // Block new turns via sessionFinalizations, but let the current
-                // turn finish generation, playback, transcript, and plan updates.
                 this.stopIdleDecisionLoop(guildId, { preserveInFlight: true });
                 this.conversationBuffer?.setFlushHold?.('session-ending', true);
                 try { this.saveEpisodePlanProgress(guildId); }
                 catch (error) { console.error('[Bot] Hangup checkpoint failed:', error.message); }
+                const receiver = this.voiceManager.receivers?.get(guildId);
+                // Flush the departing speaker's last PCM and all queued ASR before
+                // deciding the final turn. Never discard their buffer on hangup.
+                try { await receiver?.flushAll('last participant left'); }
+                finally { if (options.userId) receiver?.cleanupUser(options.userId, 'last participant left'); }
                 const turns = [...(this.activeHostTurns?.get(guildId) || [])];
                 if (turns.length) {
-                    console.log('[Bot] Last participant left; finishing the current host response');
+                    console.log('[Bot] Last participant left; settling prior host work before final turn');
                     await Promise.allSettled(turns);
                 }
+                await this.runDepartureFinalTurn(guildId);
+
             }
             this.voiceManager.stopTranscriptSaving?.(guildId, options.reason || 'podcast-leave');
             this.recordingState.set(guildId, this.RecordingState.STOPPING);
@@ -5538,7 +5579,7 @@ class AlphaClawdVoiceBot {
             this.conversationBuffer?.requeueUtterances?.(utterances, 'prepared clip active');
             return { played: false };
         }
-        if (this.isLiveAlphaSession(guildId) && !turnOptions.liveDelegation) return { played: false };
+        if (this.isLiveAlphaSession(guildId) && !turnOptions.liveDelegation && !turnOptions.departureFinalTurn) return { played: false };
         if (turnOptions.liveController?.closed) return { played: false, stale: true };
         if (!this.isRecordingActive(guildId)) {
             const state = this.recordingState?.get?.(guildId) || this.getRecordingStateValue('IDLE');
@@ -5583,6 +5624,7 @@ class AlphaClawdVoiceBot {
                 transcript,
                 wordData,
                 liveDelegation: turnOptions.liveDelegation,
+                participantPresence: turnOptions.participantPresence,
                 stagedBigBrain: this.getStagedBigBrainForGenerator(guildId),
                 pendingBigBrain: this.getPendingBigBrainForGenerator(guildId),
                 stagedBigHeart: this.getStagedBigHeartForGenerator(guildId),
@@ -5633,6 +5675,7 @@ class AlphaClawdVoiceBot {
             if (!response.shouldRespond) {
                 await this.waitForParticipantFloorToSettle(guildId);
                 if (this.discardStaleDirectResponse(guildId, {
+                    ...turnOptions,
                     source: 'buffer',
                     participantActivityBaseline,
                     flushedUtterances: utterances
@@ -5653,7 +5696,7 @@ class AlphaClawdVoiceBot {
             const playbackResult = await this.speakDirectGeneratorResponse(guildId, response, {
                 ...turnOptions,
                 source: turnOptions.liveDelegation ? 'live-delegation' : 'buffer',
-                playFiller: !turnOptions.liveDelegation,
+                playFiller: !turnOptions.liveDelegation && !turnOptions.departureFinalTurn,
                 participantActivityBaseline,
                 awarenessInjections,
                 awarenessShelfItems,
@@ -5749,8 +5792,8 @@ class AlphaClawdVoiceBot {
     }
 
     async preserveDirectResponseWhileUncertain(guildId, options = {}, stage = 'before playback') {
-        // Experimental delegation keeps its existing floor policy.
-        if (options.liveDelegation) return;
+        // Departure resolves the acoustic wait, but final ASR is drained separately.
+        if (this.participantDepartures?.has(guildId) || options.liveDelegation) return;
         await this.waitForAdmittedParticipantFloor(guildId, options);
         if (options.activityResolutionExpired) return;
         const startedAt = Date.now();
@@ -5764,7 +5807,7 @@ class AlphaClawdVoiceBot {
             })));
 
         let waiting = false;
-        while (this.isRecordingActive(guildId) && !options.liveController?.closed) {
+        while (!this.participantDepartures?.has(guildId) && this.isRecordingActive(guildId) && !options.liveController?.closed) {
             const baseline = options.participantActivityBaseline;
             const pendingVersions = new Set(
                 Array.from(this.participantAcousticActivity?.get(guildId)?.values() || []).flat()
@@ -5809,6 +5852,12 @@ class AlphaClawdVoiceBot {
             return true;
         }
 
+        if (this.participantDepartures?.has(guildId) && !options.departureFinalTurn) {
+            // Regenerate unspoken work with final ASR and explicit departure context.
+            this.conversationBuffer?.requeueUtterances?.(options.flushedUtterances || [], 'participant departed');
+            return true;
+        }
+
         // Live's acoustic request can precede Fish's transcript of the same words.
         // Keep the current-speaker guard without treating that late ASR as a new turn.
         const participantResumed = !options.liveDelegation && this.didParticipantResumeSince(guildId, options.participantActivityBaseline);
@@ -5838,6 +5887,8 @@ class AlphaClawdVoiceBot {
         if (!this.isRecordingActive(guildId)) {
             return this.discardStaleDirectResponse(guildId, options, stage);
         }
+
+        if (this.participantDepartures?.has(guildId) && options.departureFinalTurn) return false;
 
         // Expired weak evidence is not permission to discard an answer.
         // Strong evidence and transcripts are checked separately above.

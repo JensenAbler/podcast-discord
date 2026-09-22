@@ -230,3 +230,115 @@ for (const pauseAt of ['synthesis', 'playback']) {
         assert.equal(b.activeHostTurns.size, 0);
     });
 }
+
+const { ConversationBuffer } = require('./conversation-buffer');
+const { PodcastGenerator } = require('./podcast-generator');
+
+for (const chooseSilence of [false, true]) {
+    test('real hangup path releases parked answer, drains final ASR, and records final choice: ' + chooseSilence,
+        { timeout: 5000 }, async () => {
+        const { b, entries } = harness();
+        const events = [], inputs = [];
+        const cb = new ConversationBuffer();
+        const finalWords = { userId: 'u', speaker: 'Jensen', transcription: 'My final words.',
+            speechStartedAt: new Date().toISOString() };
+        const oldWords = { userId: 'u', speaker: 'Jensen', transcription: 'Earlier words.' };
+        const promptGenerator = new PodcastGenerator();
+        Object.assign(b, {
+            recordingState: new Map([['g', 'RECORDING']]),
+            RecordingState: { RECORDING: 'RECORDING', STOPPING: 'STOPPING' },
+            recordingTextChannels: new Map(), consentWaiters: new Map(), sessionHostModes: new Map(),
+            discordContextProcessing: new Map(), disabledCronJobs: [],
+            conversationBuffer: cb,
+            conversationAdmissions: new Map(),
+            participantAcousticActivity: new Map([['g', new Map([['["u",1]', [1]]])]]),
+            participantActivityVersion: new Map([['g', 1]]),
+            participantSignalStates: new Map(),
+            useGatewayGenerator: () => false, isGeminiLiveSession: () => false, isLiveAlphaSession: () => false,
+            isRecordingActive: () => b.recordingState.get('g') === 'RECORDING',
+            waitForParticipantFloorToSettle: AlphaClawdVoiceBot.prototype.waitForParticipantFloorToSettle,
+            preserveDirectResponseWhileUncertain: AlphaClawdVoiceBot.prototype.preserveDirectResponseWhileUncertain,
+            discardStaleDirectResponse: AlphaClawdVoiceBot.prototype.discardStaleDirectResponse,
+            getParticipantActivityConfirmDelayMs: () => 0,
+            getPendingUnconfirmedParticipantSignals: () => [],
+            getParticipantSignalProfile: () => ({ getPrePlaybackEvidenceWaitMs: () => 150 }),
+            buildGeneratorTurnIdIntent: () => null,
+            getAwarenessInjectionsForGeneratorTurn: async () => [],
+            getGeneratorCallTiming: () => ({}),
+            getAwarenessShelfItemsForGenerator: () => [],
+            getEpisodePlanStructureForGenerator: () => '',
+            getStagedBigBrainForGenerator: () => [], getPendingBigBrainForGenerator: () => [],
+            getStagedBigHeartForGenerator: () => [], getPendingBigHeartForGenerator: () => [],
+            getRecentInternalThoughtsForGenerator: () => [],
+            getConsecutiveGeneratorSilences: () => 0,
+            hasPendingBigBrain: () => false, hasPendingBigHeart: () => false,
+            shouldSuppressDuplicateBigBrainStall: () => false, shouldSuppressDuplicateBigHeartStall: () => false,
+            consumeStagedBigBrainFromResponse() {}, consumeStagedBigHeartFromResponse() {},
+            recordGeneratorSilence() { events.push('silence'); },
+            stopIdleDecisionLoop() {}, stopGeminiLiveSession: async () => {},
+            saveEpisodePlanProgress() {}, endEpisodePlanTracker() {}, endInternalThoughtSession: async () => {},
+            podcastGenerator: {
+                supportsStreaming: () => false,
+                async generate(input) {
+                    inputs.push(input);
+                    assert.equal(events.includes('asr-drained'), true);
+                    const prompt = promptGenerator.buildUserPrompt(input.transcript, null, input);
+                    assert.match(prompt, /No human participants remain/);
+                    assert.match(prompt, /My final words/);
+                    assert.match(prompt, /Earlier words/);
+                    assert.match(prompt, /choose silence/);
+                    return { shouldRespond: !chooseSilence, speech: chooseSilence ? '' : 'A final thought for the recording.' };
+                },
+                rememberTurn() {}, endSession() { events.push('session-ended'); }
+            }
+        });
+        Object.assign(b.voiceManager, {
+            isConnected: () => true,
+            receivers: new Map([['g', {
+                async flushAll() { await new Promise(r => setTimeout(r, 10)); cb.addUtterance(finalWords); events.push('asr-drained'); },
+                cleanupUser() { assert(events.includes('asr-drained')); events.push('receiver-cleaned'); }
+            }]]),
+            stopTranscriptSaving() { events.push('transcript-stopped'); },
+            async stopRecording() { events.push('recording-stopped'); return {}; },
+            async leaveChannel() { events.push('left'); }
+        });
+        const playback = b.playTtsAndRecord;
+        b.playTtsAndRecord = async function(g, audio, options) {
+            await options.preparePlaybackStart();
+            assert.equal(options.shouldAbortPlaybackStart(), false);
+            events.push('played');
+            return playback.call(this, g, audio, options);
+        };
+        const oldTurn = b.speakDirectGeneratorResponse('g', { shouldRespond: true, speech: 'Stale prepared answer.' },
+            { playFiller: false, participantActivityBaseline: 0, flushedUtterances: [oldWords] });
+        await new Promise(r => setTimeout(r, 35));
+        assert.equal(entries.length, 0, 'answer must really be parked before hangup');
+        const leaving = b.leavePodcastSession('g', { reason: 'last_participant_left', userId: 'u' });
+        assert.equal(leaving, b.leavePodcastSession('g', { reason: 'slash_command' }));
+        await leaving;
+        assert.equal((await oldTurn).stale, true);
+        assert.equal(inputs.length, 1);
+        assert.equal(inputs[0].participantPresence.humansPresent, 0);
+        assert.equal(entries.length, chooseSilence ? 0 : 1);
+        if (!chooseSilence) assert.equal(entries[0].transcription, 'A final thought for the recording.');
+        assert(events.indexOf(chooseSilence ? 'silence' : 'played') < events.indexOf('transcript-stopped'));
+        assert.equal(events.at(-1), 'left');
+        assert.equal(b.activeHostTurns.size, 0);
+        assert.equal(b.participantDepartures.size, 0);
+        cb.clear();
+    });
+}
+
+test('expired Discord acknowledgement still executes leave exactly once', async () => {
+    const b = Object.create(AlphaClawdVoiceBot.prototype);
+    let leaves = 0;
+    b.leavePodcastSession = async (guild, opts) => {
+        assert.equal(guild, 'g'); assert.equal(opts.reason, 'slash_command'); leaves++; return { message: 'done' };
+    };
+    await b.handleLeaveCommand({
+        guildId: 'g',
+        async deferReply() { throw Object.assign(new Error('Unknown interaction'), { code: 10062 }); },
+        async editReply() { assert.fail('Expired interaction cannot be edited'); }
+    });
+    assert.equal(leaves, 1);
+});
