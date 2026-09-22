@@ -368,6 +368,7 @@ class AlphaClawdVoiceBot {
         this.setupEventHandlers();
         
         // Set up voice manager utterance handler
+        this.voiceManager.onChannelEmpty = (guildId) => this.leavePodcastSession(guildId, { reason: 'last_participant_left' });
         this.voiceManager.onQuartzInputTranscript = (guildId, event) => this.observeAdmissionLive(guildId, event);
         this.voiceManager.onSavedTranscript = (guildId, entry) => {
             if (this.isRecordingActive(guildId)) this.podcastGenerator.observeSpokenTranscript?.(entry);
@@ -4176,7 +4177,7 @@ class AlphaClawdVoiceBot {
         const guildId = interaction.guildId;
 
         if (!voiceChannel) {
-            return interaction.reply({
+            return interaction[interaction.deferred ? 'editReply' : 'reply']({
                 content: 'You need to be in a voice channel first!',
                 ephemeral: true
             });
@@ -4185,13 +4186,13 @@ class AlphaClawdVoiceBot {
         // Check if already recording
         const currentState = this.recordingState.get(guildId);
         if (currentState === this.RecordingState.RECORDING) {
-            return interaction.reply({
+            return interaction[interaction.deferred ? 'editReply' : 'reply']({
                 content: '🎙️ Already recording! Use "/podcast-leave" to stop and leave.',
                 ephemeral: true
             });
         }
         if (currentState === this.RecordingState.AWAITING_CONSENT) {
-            return interaction.reply({
+            return interaction[interaction.deferred ? 'editReply' : 'reply']({
                 content: '⏳ Already waiting for consent. Please type YES or NO to proceed.',
                 ephemeral: true
             });
@@ -4199,19 +4200,19 @@ class AlphaClawdVoiceBot {
 
         const engine = resume ? 'current' : this.normalizeSessionHostMode(interaction.options.getString('engine'));
         if (engine === 'live-alpha' && (!process.env.PODCAST_LIVE_API_KEY || this.useGatewayGenerator())) {
-            return interaction.reply({
+            return interaction[interaction.deferred ? 'editReply' : 'reply']({
                 content: 'Live timing requires PODCAST_LIVE_API_KEY and the direct podcast generator.',
                 ephemeral: true
             });
         }
         if (engine === 'gemini-live' && !this.geminiApiKey) {
-            return interaction.reply({
+            return interaction[interaction.deferred ? 'editReply' : 'reply']({
                 content: 'Gemini Live is not configured. Add GEMINI_API_KEY before selecting the experimental engine.',
                 ephemeral: true
             });
         }
 
-        await interaction.deferReply();
+        if (!interaction.deferred) await interaction.deferReply();
 
         try {
             // Get topic FIRST (before joining)
@@ -5134,7 +5135,16 @@ class AlphaClawdVoiceBot {
         }
     }
 
-    async leavePodcastSession(guildId, options = {}) {
+    leavePodcastSession(guildId, options = {}) {
+        this.sessionFinalizations ||= new Map();
+        if (this.sessionFinalizations.has(guildId)) return this.sessionFinalizations.get(guildId);
+        const pending = Promise.resolve().then(() => this.finalizePodcastSession(guildId, options));
+        this.sessionFinalizations.set(guildId, pending);
+        pending.finally(() => this.sessionFinalizations.delete(guildId)).catch(() => {});
+        return pending;
+    }
+
+    async finalizePodcastSession(guildId, options = {}) {
         const clip = this.preparedClips?.get(guildId);
         if (clip) await clip.stop().catch(error => console.warn('[Evolve] Clip stopped with error: ' + error.message));
         this.evolveSessions?.get(guildId)?.save();
@@ -5159,6 +5169,11 @@ class AlphaClawdVoiceBot {
             this.recordingState.set(guildId, this.RecordingState.STOPPING);
             this.conversationBuffer?.clear?.();
             this.stopIdleDecisionLoop(guildId);
+            if (['last_participant_left', 'shutdown'].includes(options.reason)) {
+                this.voiceManager.transmitters?.get(guildId)?.stop();
+            }
+            try { this.saveEpisodePlanProgress(guildId); }
+            catch (error) { console.error('[Bot] Early episode plan checkpoint failed:', error.message); }
             await this.stopGeminiLiveSession(guildId);
             this.podcastGenerator.endSession();
             this.consecutiveGeneratorSilences?.delete?.(guildId);
@@ -7869,8 +7884,14 @@ class AlphaClawdVoiceBot {
 
         // Leave all voice channels
         for (const guildId of this.voiceManager.connections.keys()) {
-            await this.voiceManager.leaveChannel(guildId);
+            if ((this.RecordingState && this.recordingState?.get(guildId) === this.RecordingState.RECORDING) ||
+                this.sessionFinalizations?.has(guildId)) {
+                await this.leavePodcastSession(guildId, { reason: 'shutdown' });
+            } else {
+                await this.voiceManager.leaveChannel(guildId);
+            }
         }
+        await Promise.all(this.sessionFinalizations?.values() || []);
 
         // Clear conversation buffer
         if (this.conversationBuffer) {

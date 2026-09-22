@@ -24,6 +24,7 @@ const { QuartzPlayback } = require('./quartz-playback');
 const { AudioRecorder } = require('./audio-recorder');
 const { EpisodePostProcessor } = require('./post-processor');
 const { getRecordingDir } = require('./paths');
+const { writeJsonAtomic, recoverEpisodeCompletions } = require('./recording-completion');
 const { participantTag, planTag, writeTags } = require('./recording-tags');
 
 class VoiceManager {
@@ -85,6 +86,8 @@ class VoiceManager {
                         `${recovery.episodePath} (${recovery.stems.length} stems)`
                     );
                 }
+                const completions = recoverEpisodeCompletions(this.options.recordingDir);
+                for (const recording of completions) console.log('[VoiceManager] Recovered episode completion: ' + recording.recordingPath);
                 return recoveries;
             })
             .catch((error) => {
@@ -297,6 +300,15 @@ class VoiceManager {
 
         if (leftTrackedChannel) {
             console.log(`[VoiceManager] User ${userId} left active voice channel; closing receiver subscription`);
+            const channel = this.client.channels?.cache?.get(channelId) || oldState.channel;
+            const humans = channel?.members && [...channel.members.values()]
+                .filter(member => member.id !== userId && member.id !== this.client.user?.id && !member.user?.bot);
+            if (humans && humans.length === 0 && this.onChannelEmpty) {
+                try { await this.onChannelEmpty(guildId); }
+                catch (error) { console.error('[VoiceManager] Empty-channel finalization failed:', error); }
+                finally { receiver.cleanupUser(userId, 'user left voice channel'); }
+                return;
+            }
             try {
                 await receiver.flushUser(userId, 'user left voice channel');
             } catch (error) {
@@ -867,6 +879,10 @@ class VoiceManager {
             episodePlan
         };
         this.recordingMetadata.set(guildId, storedRecordingInfo);
+        writeJsonAtomic(path.join(recordingPath, 'recording-session.json'), {
+            guildId, startedAt: recordingInfo.startTime, episodePlan,
+            planTag: options.planTag || planTag(episodePlan)
+        });
         storedRecordingInfo.tags = [];
         storedRecordingInfo.planTag = options.planTag || planTag(episodePlan);
         if (storedRecordingInfo.planTag) storedRecordingInfo.tags.push(storedRecordingInfo.planTag);
@@ -974,6 +990,7 @@ class VoiceManager {
                 console.log(`[VoiceManager] Mixed audio saved: ${audioResult.audioFilePath}`);
             } catch (error) {
                 console.error('[VoiceManager] Error stopping audio recorder:', error);
+                throw error; // Keep durable journal/session evidence for recovery; do not mark failed audio complete.
             }
             this.recorders.delete(guildId);
         }
@@ -1005,7 +1022,7 @@ class VoiceManager {
             planTag: storedMetadata.planTag || null
         };
 
-        fs.writeFileSync(finalPath, JSON.stringify(recording, null, 2));
+        writeJsonAtomic(finalPath, recording);
 
         console.log(`[VoiceManager] Stopped recording. Files saved to ${recordingPath}`);
 
@@ -1027,7 +1044,7 @@ class VoiceManager {
         }
 
         recording.files = this.listRecordingFiles(recordingPath, ['episode-complete.json']);
-        fs.writeFileSync(finalPath, JSON.stringify(recording, null, 2));
+        writeJsonAtomic(finalPath, recording);
 
         return recording;
     }

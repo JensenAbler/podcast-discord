@@ -34,9 +34,16 @@ function loadResumeSource(root, recording, ownerId, guildId) {
         .map(e => e.name).sort().reverse();
     for (const name of names) {
         const dir = path.join(root, name);
-        if (!fs.existsSync(path.join(dir, 'episode-complete.json')) ||
-            (!fs.existsSync(path.join(dir, 'evolve-state.json')) &&
-             !fs.existsSync(path.join(dir, 'episode-plan-state.json')))) {
+        if (!fs.existsSync(path.join(dir, 'episode-complete.json'))) {
+            const identityFile = path.join(dir, 'resume-identity.json');
+            const identity = fs.existsSync(identityFile) ? JSON.parse(read(root, name + '/resume-identity.json')) : null;
+            if (recording || (identity?.ownerId === ownerId && identity?.guildId === guildId)) {
+                throw new Error('Latest recording ' + name + ' is not completed yet. Finish or recover it before resuming; an older episode was not selected.');
+            }
+            continue;
+        }
+        if (!fs.existsSync(path.join(dir, 'evolve-state.json')) &&
+            !fs.existsSync(path.join(dir, 'episode-plan-state.json'))) {
             if (recording) throw new Error('Source must be a completed resumable recording');
             continue;
         }
@@ -142,6 +149,9 @@ async function handleResumeCommand(bot, interaction) {
             s && s !== bot.RecordingState.IDLE) || bot.voiceManager.isConnected(interaction.guildId)) {
             throw new Error('Finish the current session with /podcast-leave before starting a new episode');
         }
+        // Recovery can exceed Discord's initial interaction deadline.
+        if (!interaction.deferred && !interaction.replied) await interaction.deferReply?.();
+        await bot.voiceManager.recoveryPromise;
         const source = loadResumeSource(bot.voiceManager.options.recordingDir,
             interaction.options.getString('recording'), interaction.user.id, interaction.guildId);
         preflightResume(bot.podcastGenerator, source,

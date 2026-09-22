@@ -19,3 +19,13 @@ Validation:
 npm test
 node --test test-podcast-resume.js test-recording-startup.js
 ```
+
+## Hang up and resume
+
+When the last human leaves the channel, the bot stops its host loop, checkpoints the episode plan, and finalizes the recording. Other humans remaining in the channel keep the session running. A concurrent leave command or shutdown shares the same finalization.
+
+Audio finalization may outlast a process shutdown. Startup recovery finishes interrupted audio journals and reconstructs missing episode-completion metadata from durable session/identity, consent, plan, tags, and journal records. It also handles audio recovered by an older bot that never wrote episode-completion metadata. Existing completion records and plan checkpoints are not overwritten.
+
+Resume waits for startup recovery. A newer owned recording that is still incomplete blocks default selection with an explicit error instead of silently falling back to an older episode. During normal finalization, wait for it to finish, then resume with fresh consent.
+
+Run the offline regression suite with `bash test-offline.sh`. Its preload blocks external Node sockets, TLS, and fetch while allowing local HTTP test servers. No provider credentials are required.
