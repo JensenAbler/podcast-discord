@@ -1167,10 +1167,12 @@ class AlphaClawdVoiceBot {
         const firstAngle = this.getFirstEpisodePlanAngle(plan);
         const generatorTiming = this.getGeneratorCallTiming(guildId);
         const episodePlanStructure = this.getEpisodePlanStructureForGenerator(guildId, generatorTiming);
+        const awarenessShelfItems = this.getAwarenessShelfItemsForGenerator(guildId, generatorTiming);
         const initialResponse = await this.beginGeneratorTurn({
             transcript: '',
             episodeOpening: true,
             episodePlanStructure,
+            awarenessShelfItems,
             preferredOpeningAngle: firstAngle?.id || '',
             consecutiveSilenceTurns: 0,
             ...generatorTiming,
@@ -1193,6 +1195,7 @@ class AlphaClawdVoiceBot {
             chosenAngle,
             source: 'episode_plan_opening',
             modelCrafted: true,
+            awarenessShelfItems,
             response: {
                 ...response,
                 shouldRespond: true,
@@ -1256,6 +1259,10 @@ class AlphaClawdVoiceBot {
                 source: opening.source || 'episode_plan_opening',
                 chosenAngle: opening.chosenAngle || ''
             };
+            const presentedAwarenessShelfItems = this.formatAwarenessShelfItemsForTranscript(opening.awarenessShelfItems);
+            if (presentedAwarenessShelfItems.length > 0) {
+                transcriptEntry.presentedAwarenessShelfItems = presentedAwarenessShelfItems;
+            }
             if (opening.modelCrafted === false && opening.fallbackReason) {
                 transcriptEntry.openingFallbackReason = opening.fallbackReason;
             }

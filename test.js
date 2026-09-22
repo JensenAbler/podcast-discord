@@ -3704,7 +3704,21 @@ async function runTests() {
         openingBot.RecordingState = { RECORDING: 'RECORDING' };
         openingBot.recordingState = new Map([[openingGuildId, openingBot.RecordingState.RECORDING]]);
         openingBot.internalThoughtsEnabled = false;
-        openingBot.internalThoughtManager = null;
+        const { AwarenessShelf } = require('./awareness-shelf');
+        const { seedEpisodeMemory } = require('./episode-background-memory');
+        const openingShelf = new AwarenessShelf({ enabled: true });
+        openingShelf.startSession(openingGuildId);
+        const openingMemory = seedEpisodeMemory({
+            addAwarenessShelfItem: (...args) => openingShelf.addItem(...args)
+        }, openingGuildId, { backgroundMemory: {
+            status: 'ready',
+            memories: [{ text: '00:01:02 Jensen: Exact opening memory.\n00:01:05 Alpha: Including the final line.', sourceIds: ['memory-source'] }],
+            sources: [{ id: 'memory-source', title: 'Earlier conversation', episodeNumber: 9,
+                startTimestamp: '00:01:02', endTimestamp: '00:01:05' }]
+        } });
+        openingBot.internalThoughtManager = {
+            getAwarenessShelfItemsForGenerator: (...args) => openingShelf.presentItemsForGenerator(...args)
+        };
         openingBot.episodePlanTrackers = new Map([[openingGuildId, openingTracker]]);
         let synthesizedOpening = '';
         let recordedOpeningBytes = 0;
@@ -3772,6 +3786,10 @@ async function runTests() {
             openingResult.fallback ||
             openingResult.chosenAngle !== '' ||
             modelOpeningInput?.episodeOpening !== true ||
+            modelOpeningInput?.awarenessShelfItems?.length !== 1 ||
+            modelOpeningInput.awarenessShelfItems[0].text !== openingMemory.text ||
+            savedOpeningTranscript?.presentedAwarenessShelfItems?.length !== 1 ||
+            savedOpeningTranscript.presentedAwarenessShelfItems[0].text !== openingMemory.text ||
             modelOpeningInput?.preferredOpeningAngle !== 'guest-background' ||
             !modelOpeningInput?.episodePlanStructure?.includes('Guest background:') ||
             !modelOpeningInput?.episodePlanStructure?.includes('Jensen (builder): Who is Jensen: the builder of Alpha-Clawd') ||
