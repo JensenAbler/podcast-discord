@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { hash, EvolveSession } = require('./evolve-session');
+const { hash } = require('./content-assets');
 const { PodcastGenerator } = require('./podcast-generator');
 const { AlphaClawdVoiceBot } = require('./bot');
 const { loadResumeSource, preflightResume, installResume, handleResumeCommand, buildResumeCommand } = require('./podcast-resume');
@@ -13,26 +13,18 @@ function fixture(t) {
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const name = 'episode-2026-09-17T18-31-16-590Z';
     const dir = path.join(root, name); fs.mkdirSync(dir);
-    const state = {
-        version: 1, ownerId: 'u', active: true, index: 0, phase: 'reflecting',
-        events: [{ type: 'reveal', episodeId: '1' }], responseStart: 0,
-        manifest: { version: 1, title: 'Retrospective', contextLimit: 200000,
-            episodes: ['exact full text\nwith punctuation — and spaces  ', 'UNREVEALED TEXT'].map((text, i) =>
-                ({ id: String(i + 1), title: 'Episode ' + (i + 1), transcript: text, sha256: hash(text) })) },
-        timeline: [{ speaker: 'Jensen', text: 'Where we left off', at: '2026-09-17T19:00:00Z' }]
-    };
     const entries = [
         { speaker: 'Jensen', text: 'Where we left off', timestamp: '2026-09-17T19:00:00Z' },
         { speaker: 'Alpha', text: 'Unheard output', playbackStatus: 'failed' },
         { speaker: 'Jensen', text: 'Excluded candidate', admission: { status: 'candidate' } }
     ];
     const write = (name, value) => fs.writeFileSync(path.join(dir, name), JSON.stringify(value));
-    write('evolve-state.json', state);
+    write('resume-identity.json', { ownerId: 'u', guildId: 'g' });
     write('episode-complete.json', { guildId: 'g', stoppedAt: '2026-09-17T20:00:00Z' });
     write('episode-plan.json', { basename: 'retrospective', version: 'v001', backgroundBrief: 'Original background' });
     fs.writeFileSync(path.join(dir, 'transcript.jsonl'), entries.map(e => JSON.stringify(e)).join('\n') + '\n');
     fs.writeFileSync(path.join(dir, 'mixed-audio.mp3'), 'published audio sentinel');
-    return { root, name, dir, state, write, source: () => loadResumeSource(root, null, 'u', 'g') };
+    return { root, name, dir, write, source: () => loadResumeSource(root, null, 'u', 'g') };
 }
 const generator = () => new PodcastGenerator({ apiKey: 'test', maxRequestTokens: 200000 });
 test('command is registered with original operator permission', () => {
@@ -46,28 +38,23 @@ test('new episode preserves exact context and never appends old speech/audio', t
     const before = Object.fromEntries(fs.readdirSync(f.dir).map(n => [n, hash(fs.readFileSync(path.join(f.dir, n)))]));
     const dest = path.join(f.root, 'episode-new'); fs.mkdirSync(dest);
     fs.writeFileSync(path.join(dest, 'transcript.jsonl'), '');
-    g.startSession(); const session = installResume(g, source, dest);
-    assert.deepEqual(session.state, f.state);
-    assert.equal(hash(session.context()), source.contextSha256);
-    const messages = g.buildMessages({});
-    assert.equal(messages[1].content, session.context());
-    assert(messages[1].content.includes(f.state.manifest.episodes[0].transcript));
-    assert(!messages[1].content.includes('UNREVEALED TEXT'));
+    g.startSession(); installResume(g, source, dest);
+    const content = JSON.stringify(g.buildMessages({}));
+    assert.match(content, /Where we left off/);
+    assert.doesNotMatch(content, /EVOLVE RETROSPECTIVE|new recorded episode|Jensen will guide|prior experience/);
     assert.equal(g.spokenTranscript.length, 1);
     assert.equal(fs.readFileSync(path.join(dest, 'transcript.jsonl'), 'utf8'), '');
     assert(!fs.existsSync(path.join(dest, 'mixed-audio.mp3')));
     g.observeSpokenTranscript({ speaker: 'Jensen', text: 'New episode speech', timestamp: '2026-09-18T01:00:00Z' });
-    assert.equal(session.state.timeline.length, 2);
-    assert.equal(source.state.timeline.length, 1);
+    assert.equal(g.spokenTranscript.length, 2);
+    assert.equal(source.entries.length, 1);
     assert.deepEqual(Object.fromEntries(fs.readdirSync(f.dir).map(n => [n, hash(fs.readFileSync(path.join(f.dir, n)))])), before);
     assert.throws(() => installResume(g, source, f.dir), /new recording/);
 });
-test('preflight leaves live generator unchanged and rejects insufficient budget', t => {
+test('preflight leaves live generator unchanged', t => {
     const f = fixture(t), g = generator(), before = JSON.stringify(g);
     preflightResume(g, f.source());
     assert.equal(JSON.stringify(g), before);
-    g.maxRequestTokens = 100;
-    assert.throws(() => preflightResume(g, f.source()), /exceeds/);
 });
 test('source requires matching operator, guild, completed recording and safe paths', t => {
     const f = fixture(t);
@@ -83,17 +70,16 @@ test('latest selection skips other owners and rejects corrupt latest eligible sn
     const f = fixture(t);
     const other = path.join(f.root, 'episode-2026-09-18T01-00-00-000Z');
     fs.cpSync(f.dir, other, { recursive: true });
-    fs.writeFileSync(path.join(other, 'evolve-state.json'), JSON.stringify({ ...f.state, ownerId: 'other' }));
+    fs.writeFileSync(path.join(other, 'resume-identity.json'), JSON.stringify({ ownerId: 'other', guildId: 'g' }));
     assert.equal(f.source().recording, f.name);
-    fs.writeFileSync(path.join(other, 'evolve-state.json'), JSON.stringify(f.state));
+    fs.writeFileSync(path.join(other, 'resume-identity.json'), JSON.stringify({ ownerId: 'u', guildId: 'g' }));
     assert.equal(f.source().recording, path.basename(other));
-    f.state.manifest.episodes[0].transcript = 'corrupt';
-    fs.writeFileSync(path.join(other, 'evolve-state.json'), JSON.stringify(f.state));
-    assert.throws(() => f.source(), /integrity/);
+    fs.writeFileSync(path.join(other, 'transcript.jsonl'), 'corrupt');
+    assert.throws(() => f.source(), SyntaxError);
 });
 test('snapshot is pinned and supports a later continuation without duplicating history', t => {
     const f = fixture(t), source = f.source(), g = generator();
-    f.write('evolve-state.json', { invalid: true });
+    fs.writeFileSync(path.join(f.dir, 'transcript.jsonl'), 'changed after source was pinned');
     const dest = path.join(f.root, 'episode-2026-09-18T01-00-00-000Z'); fs.mkdirSync(dest);
     g.startSession(); installResume(g, source, dest);
     const fresh = { speaker: 'Jensen', text: 'Next chapter', timestamp: '2026-09-18T01:01:00Z' };
@@ -102,7 +88,6 @@ test('snapshot is pinned and supports a later continuation without duplicating h
     fs.writeFileSync(path.join(dest, 'episode-complete.json'), JSON.stringify({ guildId: 'g', stoppedAt: '2026-09-18T01:30:00Z' }));
     const next = loadResumeSource(f.root, path.basename(dest), 'u', 'g');
     assert.equal(next.entries.length, 2);
-    assert.equal(next.state.timeline.length, 2);
     assert.deepEqual(next.plan, source.plan);
     assert.equal(source.planTag, 'plan:retrospective');
     assert.equal(next.planTag, source.planTag);
@@ -143,14 +128,13 @@ test('consent starts new recording, restores before idle loop and skips opener',
         startInternalThoughtSession() {}, startEpisodePlanTracker(guild, plan) { assert.equal(plan, null); },
         podcastGenerator: g, async speakRecordingStart() { opener = true; },
         startIdleDecisionLoop() {
-            assert.equal(hash(g.evolveSession.context()), source.contextSha256);
+            assert.match(JSON.stringify(g.buildMessages({})), /Where we left off/);
             assert.equal(g.spokenTranscript.length, 1); idle = true;
         },
         wsClient: { isAuthenticated: false }
     });
     await bot.grantConsent('g', source.topic, 'current', null, { resume: source });
     assert(idle); assert(!opener); assert(!bot.consentWaiters.has('g'));
-    assert.equal(bot.evolveSessions.get('g').file, path.join(dest, 'evolve-state.json'));
     assert.equal(fs.readFileSync(path.join(dest, 'transcript.jsonl'), 'utf8'), '');
 });
 test('failed restore stops new session without starting host or changing published source', async t => {
@@ -166,7 +150,7 @@ test('failed restore stops new session without starting host or changing publish
         async leavePodcastSession() { stopped = true; }, wsClient: { isAuthenticated: false }
     });
     await assert.rejects(bot.grantConsent('g', source.topic, 'current', null, { resume: source }), /new recording/);
-    assert(stopped); assert.equal(hash(fs.readFileSync(path.join(f.dir, 'evolve-state.json'))), source.stateSha256);
+    assert(stopped); assert.equal(hash(fs.readFileSync(path.join(f.dir, 'transcript.jsonl'))), source.transcriptSha256);
 });
 
 test('join stores pinned context for fresh consent without starting a recording', async t => {
@@ -255,16 +239,13 @@ test('saved closing progress survives resume and corrupt or mismatched state fai
 
 test('ordinary planned recordings resume with identity checks and preserve progress across generations', t => {
     const f = plannedFixture(t);
-    fs.unlinkSync(path.join(f.dir, 'evolve-state.json'));
     f.write('resume-identity.json', { ownerId: 'u', guildId: 'g' });
     const source = f.source();
-    assert.equal(source.state, null);
     assert.throws(() => loadResumeSource(f.root, f.name, 'other', 'g'), /operator/);
     const g = generator();
     preflightResume(g, source);
     const dest = path.join(f.root, 'episode-2026-09-19T01-00-00-000Z'); fs.mkdirSync(dest);
     g.startSession(); installResume(g, source, dest);
-    assert.equal(g.evolveSession, null);
     const bot = Object.create(AlphaClawdVoiceBot.prototype);
     bot.episodePlanTrackers = new Map();
     bot.startEpisodePlanTracker('g', { plan: source.plan }, {
@@ -315,13 +296,34 @@ test('consent restores the active plan before starting the resumed host', async 
         startInternalThoughtSession() {}, episodePlanTrackers: new Map(),
         podcastGenerator: g, async speakRecordingStart() { opener = true; },
         startIdleDecisionLoop() {
-            assert.equal(hash(g.evolveSession.context()), source.contextSha256);
+            assert.match(JSON.stringify(g.buildMessages({})), /Where we left off/);
             assert.equal(g.spokenTranscript.length, 1); assert.equal(bot.episodePlanTrackers.get('g').currentAngleHostTurns, 3); idle = true;
         },
         wsClient: { isAuthenticated: false }
     });
     await bot.grantConsent('g', source.topic, 'current', null, { resume: source });
     assert(idle); assert(!opener); assert(!bot.consentWaiters.has('g'));
-    assert.equal(bot.evolveSessions.get('g').file, path.join(dest, 'evolve-state.json'));
     assert.equal(fs.readFileSync(path.join(dest, 'transcript.jsonl'), 'utf8'), '');
+});
+
+test('resumed and uninterrupted conversations build the same prompt', t => {
+    const f = plannedFixture(t), source = f.source();
+    const resumed = generator(), uninterrupted = generator();
+    const options = { topic: source.topic, recording: true, speakers: ['Jensen'] };
+    resumed.startSession(options); uninterrupted.startSession(options);
+    require('./podcast-resume').restoreGenerator(resumed, source);
+    uninterrupted.hasBackchannels = true;
+    for (const row of source.entries) uninterrupted.observeSpokenTranscript(row);
+    const input = { transcript: 'What happened next?', currentTime: '2026-09-18T20:00:00Z',
+        episodePlanStructure: f.tracker.getStructureBlock('2026-09-17T20:00:00Z') };
+    assert.deepEqual(resumed.buildMessages(input), uninterrupted.buildMessages(input));
+});
+test('archival retrospective state is neither read nor copied', t => {
+    const f = plannedFixture(t);
+    f.write('evolve-state.json', { unsupported: 'ARCHIVAL_ONLY_SECRET' });
+    const source = f.source(), g = generator(), dest = path.join(f.root, 'episode-new');
+    fs.mkdirSync(dest); g.startSession(); installResume(g, source, dest);
+    assert(!fs.existsSync(path.join(dest, 'evolve-state.json')));
+    assert.doesNotMatch(JSON.stringify(g.buildMessages({})), /ARCHIVAL_ONLY_SECRET|EVOLVE RETROSPECTIVE/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(f.dir, 'evolve-state.json'))).unsupported, 'ARCHIVAL_ONLY_SECRET');
 });

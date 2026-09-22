@@ -28,7 +28,7 @@ const newState = { ...oldState, channelId: null };
 test('last human hangup finalizes, while another human or a mute event does not', async () => {
     const f = voice([{id:'bot',user:{bot:true}}, {id:'otherbot',user:{bot:true}}]);
     await f.vm.handleVoiceStateUpdate(oldState,newState);
-    assert.deepEqual(f.calls,['empty','cleanup']);
+    assert.deepEqual(f.calls,['cleanup','empty']);
     const g = voice([{id:'v',user:{bot:false}}]);
     await g.vm.handleVoiceStateUpdate(oldState,newState);
     assert.deepEqual(g.calls,['flush','cleanup']);

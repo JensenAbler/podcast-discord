@@ -304,9 +304,9 @@ class VoiceManager {
             const humans = channel?.members && [...channel.members.values()]
                 .filter(member => member.id !== userId && member.id !== this.client.user?.id && !member.user?.bot);
             if (humans && humans.length === 0 && this.onChannelEmpty) {
+                receiver.cleanupUser(userId, 'user left voice channel');
                 try { await this.onChannelEmpty(guildId); }
                 catch (error) { console.error('[VoiceManager] Empty-channel finalization failed:', error); }
-                finally { receiver.cleanupUser(userId, 'user left voice channel'); }
                 return;
             }
             try {

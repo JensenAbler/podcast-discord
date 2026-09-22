@@ -335,8 +335,6 @@ class PodcastGenerator {
         this.questionMoratoriumTurns = 0;
         this.standbyMode = false;
         this.episodeStructureNotes = [];
-        this.evolveSession = null;
-        this.continuationContext = '';
         this.session = {
             topic: 'general discussion',
             recording: false,
@@ -351,8 +349,6 @@ class PodcastGenerator {
         this.questionMoratoriumTurns = 0;
         this.standbyMode = false;
         this.episodeStructureNotes = [];
-        this.evolveSession = null;
-        this.continuationContext = '';
         this.session = {
             topic: options.topic || 'general discussion',
             recording: options.recording !== false,
@@ -368,8 +364,6 @@ class PodcastGenerator {
         this.questionMoratoriumTurns = 0;
         this.standbyMode = false;
         this.episodeStructureNotes = [];
-        this.evolveSession = null;
-        this.continuationContext = '';
         this.session.recording = false;
         console.log('[PodcastGenerator] Session ended');
     }
@@ -752,7 +746,6 @@ class PodcastGenerator {
             ['failed', 'not_started'].includes(entry.playbackStatus)) return;
         const text = String(entry.transcription || entry.text || '').trim();
         if (!text) return;
-        this.evolveSession?.observe(entry);
         if (entry.source === 'quartz') this.hasBackchannels = true;
         const start = entry.playbackStartedAt || entry.speechStartedAt || entry.timestamp;
         const end = entry.playbackEndedAt || entry.speechEndedAt || start;
@@ -785,17 +778,6 @@ class PodcastGenerator {
             { role: 'user', content: this.buildUserPrompt(transcript, input.wordData, input) },
             { role: 'system', content: this.buildDecisionPrompt(input) }
         ];
-        if (this.evolveSession) {
-            const full = [messages[0],
-                { role: 'user', content: this.evolveSession.context() },
-                ...(this.continuationContext ? [{ role: 'user', content: this.continuationContext }] : []),
-                { role: 'user', content: this.buildUserPrompt(transcript, input.wordData, input) },
-                messages[messages.length - 1]];
-            const limit = Math.min(this.getPromptTokenBudget(), this.evolveSession.state.manifest.contextLimit - this.maxCompletionTokens - 10000);
-            const estimated = Math.ceil(full.reduce((n, m) => n + Buffer.byteLength(m.content || '', 'utf8'), 0) / 3);
-            if (estimated > limit) throw new Error('Evolve full context exceeds the configured budget (' + estimated + ' estimated tokens). No transcript was trimmed. Reduce the episode set or verify a larger provider context limit.');
-            return full;
-        }
         return this.fitMessagesToPromptBudget(messages, transcript, input);
     }
 

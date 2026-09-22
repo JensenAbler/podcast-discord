@@ -115,6 +115,7 @@ test('JSONL persistence keeps delivery text, status and error alongside safe tra
         const manager = Object.create(VoiceManager.prototype);
         manager.recordingPaths = new Map([['g', dir]]);
         manager.transcriptSaveStops = new Map();
+        manager.recordingMetadata = new Map();
         manager.observeQuartzTranscript = () => {};
         const record = deliveryRecord(captureSynthesisInput('A full synthesized answer.'), {
             timing: { ...timing, playbackInterrupted: true },
@@ -160,3 +161,72 @@ test('premature audio stream closure is retained as a synthesis error', async ()
     assert.equal(capture.providerError.stage, 'synthesis');
     assert.match(capture.providerError.message, /closed before end/);
 });
+
+for (const pauseAt of ['synthesis', 'playback']) {
+    test('last-human hangup during ' + pauseAt + ' retains final thought and blocks new turns', async t => {
+        const { b } = harness();
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'finish-thought-'));
+        t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+        const dir = path.join(root, 'episode-2026-09-22T01-00-00-000Z'); fs.mkdirSync(dir);
+        const vm = Object.create(VoiceManager.prototype), events = [];
+        Object.assign(vm, {
+            recordingPaths: new Map([['g', dir]]), transcriptSaveStops: new Map(), recordingMetadata: new Map(),
+            observeQuartzTranscript() {}, isConnected: () => true,
+            transmitters: new Map([['g', { stop() { assert.fail('Must not cut off final thought'); } }]]),
+            async stopRecording() {
+                events.push('recording-stop');
+                const rows = fs.readFileSync(path.join(dir, 'transcript.jsonl'), 'utf8');
+                assert.match(rows, /That is what was synthesized/);
+                fs.writeFileSync(path.join(dir, 'episode-complete.json'),
+                    JSON.stringify({ guildId: 'g', stoppedAt: timing.playbackEndedAt }));
+                return { recordingPath: dir };
+            },
+            async leaveChannel() { events.push('disconnect'); }
+        });
+        fs.writeFileSync(path.join(dir, 'resume-identity.json'), JSON.stringify({ ownerId: 'u', guildId: 'g' }));
+        Object.assign(b, {
+            voiceManager: vm, recordingState: new Map([['g', 'RECORDING']]),
+            RecordingState: { RECORDING: 'RECORDING', STOPPING: 'STOPPING' },
+            recordingTextChannels: new Map(), consentWaiters: new Map(), sessionHostModes: new Map(),
+            discordContextProcessing: new Map(), disabledCronJobs: [], episodePlanTrackers: new Map(),
+            stopIdleDecisionLoop(g, options) { events.push(options?.preserveInFlight ? 'new-turns-stop' : 'idle-stop'); },
+            async stopGeminiLiveSession() {}, async endInternalThoughtSession() {},
+            saveEpisodePlanProgress: AlphaClawdVoiceBot.prototype.saveEpisodePlanProgress,
+            applyEpisodePlanResponse: AlphaClawdVoiceBot.prototype.applyEpisodePlanResponse,
+            podcastGenerator: { rememberAssistantResponse() {}, endSession() { events.push('generator-stop'); } }
+        });
+        b.startEpisodePlanTracker('g', { plan: { basename: 'la-no-car', version: 'v001',
+            phases: { developing: { angles: ['Van'] } } } }, { recordingPath: dir });
+        fs.writeFileSync(path.join(dir, 'episode-plan.json'), JSON.stringify(b.episodePlanTrackers.get('g').plan));
+        // Keep the final response's real delivery/persistence code; replace only providers.
+        let release, entered;
+        const enteredPromise = new Promise(r => entered = r);
+        const gate = new Promise(r => release = r);
+        const original = pauseAt === 'synthesis' ? b.synthesizeLiveTTS : b.playTtsAndRecord;
+        b[pauseAt === 'synthesis' ? 'synthesizeLiveTTS' : 'playTtsAndRecord'] = async function (...args) {
+            entered(); await gate; return original.apply(this, args);
+        };
+        const r = response();
+        r.completed = Promise.resolve({ shouldRespond: true, speech: 'Generator final text.',
+            chosenAngle: 'van', podcastLeave: { requested: true, reason: 'done' } });
+        const turn = b.speakDirectGeneratorResponse('g', r, opts);
+        await enteredPromise;
+        const leaving = b.leavePodcastSession('g', { reason: 'last_participant_left' });
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(b.recordingState.get('g'), 'RECORDING');
+        assert.equal(vm.isTranscriptSavingStopped('g'), false);
+        assert(!events.includes('recording-stop'));
+        assert.deepEqual(await b.handleDirectGeneratorFlush('g', [], 'new turn', null), { played: false });
+        assert.deepEqual(await b.handleIdleDecisionTick('g'), { played: false });
+        assert.equal((await b.dispatchBigBrainTurn('g', { bigBrain: { requested: true } })).reason, 'session_ending');
+        release();
+        await turn; await leaving;
+        assert.equal(events.at(-1), 'disconnect');
+        assert(events.indexOf('new-turns-stop') < events.indexOf('recording-stop'));
+        const source = require('./podcast-resume').loadResumeSource(root, null, 'u', 'g');
+        assert.equal(source.entries.at(-1).text, 'That is what was synthesized.');
+        assert.equal(source.entries.at(-1).playbackStatus, 'completed');
+        assert.equal(source.planProgress.state.lastChosenAngle, 'van');
+        assert.equal(b.activeHostTurns.size, 0);
+    });
+}

@@ -1476,7 +1476,7 @@ class AlphaClawdVoiceBot {
         console.log(`[Bot] Started idle decision loop (${this.idleDecisionIntervalMs}ms)`);
     }
 
-    stopIdleDecisionLoop(guildId) {
+    stopIdleDecisionLoop(guildId, options = {}) {
         const timer = this.idleDecisionTimers.get(guildId);
         if (timer) {
             clearInterval(timer);
@@ -1484,6 +1484,7 @@ class AlphaClawdVoiceBot {
             console.log('[Bot] Stopped idle decision loop');
         }
 
+        if (options.preserveInFlight) return;
         this.idleDecisionInFlight.delete(guildId);
         this.directResponseInFlight.delete(guildId);
         this.lastParticipantSpeechAt.delete(guildId);
@@ -1519,7 +1520,7 @@ class AlphaClawdVoiceBot {
     }
 
     canRunIdleDecision(guildId) {
-        if (this.preparedClips?.has(guildId) || this.evolveCommandLocks?.has(guildId)) return false;
+        if (this.preparedClips?.has(guildId)) return false;
         if (this.isLiveAlphaSession(guildId)) return false;
         if (this.useGatewayGenerator()) return false;
         if (!this.isRecordingActive(guildId)) return false;
@@ -2255,7 +2256,12 @@ class AlphaClawdVoiceBot {
         return !this.hasCurrentParticipantFloor(guildId);
     }
 
-    async handleIdleDecisionTick(guildId) {
+    handleIdleDecisionTick(guildId) {
+        if (this.sessionFinalizations?.has(guildId)) return Promise.resolve({ played: false });
+        return this.trackHostTurn(guildId, () => this.handleIdleDecisionTickRunning(guildId));
+    }
+
+    async handleIdleDecisionTickRunning(guildId) {
         if (!this.canRunIdleDecision(guildId)) {
             return;
         }
@@ -4977,9 +4983,7 @@ class AlphaClawdVoiceBot {
                 episodePlan: episodePlanSelection?.plan
             });
             if (context.resume) {
-                const session = installResume(this.podcastGenerator, context.resume, recordingInfo.recordingPath);
-                this.evolveSessions ||= new Map();
-                if (session) this.evolveSessions.set(guildId, session);
+                installResume(this.podcastGenerator, context.resume, recordingInfo.recordingPath);
             }
             this.startEpisodePlanTracker(guildId, episodePlanSelection, recordingInfo, context.resume?.planProgress);
             // An optional announcement must not prevent host initialization.
@@ -5135,6 +5139,20 @@ class AlphaClawdVoiceBot {
         }
     }
 
+    trackHostTurn(guildId, run) {
+        this.activeHostTurns ||= new Map();
+        let turns = this.activeHostTurns.get(guildId);
+        if (!turns) this.activeHostTurns.set(guildId, turns = new Set());
+        // Register before executing, so a disconnect cannot miss an in-flight turn.
+        const pending = Promise.resolve().then(run);
+        turns.add(pending);
+        pending.finally(() => {
+            turns.delete(pending);
+            if (!turns.size && this.activeHostTurns.get(guildId) === turns) this.activeHostTurns.delete(guildId);
+        }).catch(() => {});
+        return pending;
+    }
+
     leavePodcastSession(guildId, options = {}) {
         this.sessionFinalizations ||= new Map();
         if (this.sessionFinalizations.has(guildId)) return this.sessionFinalizations.get(guildId);
@@ -5146,9 +5164,7 @@ class AlphaClawdVoiceBot {
 
     async finalizePodcastSession(guildId, options = {}) {
         const clip = this.preparedClips?.get(guildId);
-        if (clip) await clip.stop().catch(error => console.warn('[Evolve] Clip stopped with error: ' + error.message));
-        this.evolveSessions?.get(guildId)?.save();
-        this.evolveSessions?.delete(guildId);
+        if (clip) await clip.stop().catch(error => console.warn('[PreparedClip] Clip stopped with error: ' + error.message));
         const wasRecording = this.recordingState.get(guildId) === this.RecordingState.RECORDING;
         const wasConnected = this.voiceManager.isConnected(guildId);
         const channelId = this.recordingTextChannels.get(guildId) || options.channelId || null;
@@ -5165,11 +5181,24 @@ class AlphaClawdVoiceBot {
         }
 
         if (wasRecording) {
+            if (options.reason === 'last_participant_left') {
+                // Block new turns via sessionFinalizations, but let the current
+                // turn finish generation, playback, transcript, and plan updates.
+                this.stopIdleDecisionLoop(guildId, { preserveInFlight: true });
+                this.conversationBuffer?.setFlushHold?.('session-ending', true);
+                try { this.saveEpisodePlanProgress(guildId); }
+                catch (error) { console.error('[Bot] Hangup checkpoint failed:', error.message); }
+                const turns = [...(this.activeHostTurns?.get(guildId) || [])];
+                if (turns.length) {
+                    console.log('[Bot] Last participant left; finishing the current host response');
+                    await Promise.allSettled(turns);
+                }
+            }
             this.voiceManager.stopTranscriptSaving?.(guildId, options.reason || 'podcast-leave');
             this.recordingState.set(guildId, this.RecordingState.STOPPING);
             this.conversationBuffer?.clear?.();
             this.stopIdleDecisionLoop(guildId);
-            if (['last_participant_left', 'shutdown'].includes(options.reason)) {
+            if (options.reason === 'shutdown') {
                 this.voiceManager.transmitters?.get(guildId)?.stop();
             }
             try { this.saveEpisodePlanProgress(guildId); }
@@ -5233,6 +5262,7 @@ class AlphaClawdVoiceBot {
 
         // Clean up recording state
         this.recordingState.delete(guildId);
+        this.conversationBuffer?.setFlushHold?.('session-ending', false);
         this.consentWaiters.delete(guildId);
         this.sessionHostModes.delete(guildId);
         this.recordingTextChannels.delete(guildId);
@@ -5375,6 +5405,7 @@ class AlphaClawdVoiceBot {
      */
     async handleBufferFlush(utterances) {
         const guildId = this.getActiveGuildId();
+        if (this.sessionFinalizations?.has(guildId)) return;
         if (!guildId) {
             console.warn('[Bot] Cannot flush buffer: No active recording session');
             return;
@@ -5489,9 +5520,14 @@ class AlphaClawdVoiceBot {
         }
     }
 
-    async handleDirectGeneratorFlush(guildId, utterances, transcript, wordData, turnOptions = {}) {
-        if (this.preparedClips?.has(guildId) || (this.evolveCommandLocks?.has(guildId) && !turnOptions.evolveControl)) {
-            this.conversationBuffer?.requeueUtterances?.(utterances, 'Evolve control or prepared clip active');
+    handleDirectGeneratorFlush(guildId, utterances, transcript, wordData, turnOptions = {}) {
+        if (this.sessionFinalizations?.has(guildId)) return Promise.resolve({ played: false });
+        return this.trackHostTurn(guildId, () => this.handleDirectGeneratorFlushRunning(guildId, utterances, transcript, wordData, turnOptions));
+    }
+
+    async handleDirectGeneratorFlushRunning(guildId, utterances, transcript, wordData, turnOptions = {}) {
+        if (this.preparedClips?.has(guildId)) {
+            this.conversationBuffer?.requeueUtterances?.(utterances, 'prepared clip active');
             return { played: false };
         }
         if (this.isLiveAlphaSession(guildId) && !turnOptions.liveDelegation) return { played: false };
@@ -5662,6 +5698,7 @@ class AlphaClawdVoiceBot {
         } catch (error) {
             console.error('[Bot] Direct generator failed:', error);
             if (turnOptions.liveDelegation) throw error;
+            if (this.sessionFinalizations?.has(guildId)) return { played: false };
             await this.waitForParticipantFloorToSettle(guildId);
             if (this.discardStaleDirectResponse(guildId, {
                 source: 'buffer',
@@ -6905,6 +6942,7 @@ class AlphaClawdVoiceBot {
     }
 
     async dispatchBigHeartTurn(guildId, response, options = {}) {
+        if (this.sessionFinalizations?.has(guildId)) return { dispatched: false, reason: 'session_ending' };
         if (!response?.bigHeart?.requested) {
             return { dispatched: false, reason: 'not_requested' };
         }
@@ -7005,6 +7043,7 @@ class AlphaClawdVoiceBot {
     }
 
     async dispatchBigBrainTurn(guildId, response, options = {}) {
+        if (this.sessionFinalizations?.has(guildId)) return { dispatched: false, reason: 'session_ending' };
         if (!response?.bigBrain?.requested) {
             return { dispatched: false, reason: 'not_requested' };
         }
@@ -7249,7 +7288,14 @@ class AlphaClawdVoiceBot {
         );
     }
 
-    async speakDirectGeneratorResponse(guildId, response, options = {}) {
+    speakDirectGeneratorResponse(guildId, response, options = {}) {
+        if (this.sessionFinalizations?.has(guildId) && !this.activeHostTurns?.get(guildId)?.size) {
+            return Promise.resolve({ played: false });
+        }
+        return this.trackHostTurn(guildId, () => this.speakDirectGeneratorResponseRunning(guildId, response, options));
+    }
+
+    async speakDirectGeneratorResponseRunning(guildId, response, options = {}) {
         const alreadyInFlight = this.directResponseInFlight.has(guildId);
         this.directResponseInFlight.add(guildId);
         if (!alreadyInFlight) {
@@ -7515,6 +7561,7 @@ class AlphaClawdVoiceBot {
     }
 
     async handleModelRequestedPodcastLeave(guildId, response = {}) {
+        if (this.sessionFinalizations?.has(guildId)) return null;
         if (!this.isRecordingActive(guildId)) {
             return null;
         }
@@ -7873,7 +7920,6 @@ class AlphaClawdVoiceBot {
      */
     async stop() {
         for (const clip of this.preparedClips?.values() || []) await clip.stop().catch(() => {});
-        for (const session of this.evolveSessions?.values() || []) session.save();
         this.discordContextClosing = true;
         const contextClosed = Promise.resolve()
             .then(() => this.discordContextInterpreter?.close?.())

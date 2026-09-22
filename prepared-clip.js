@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { Readable } = require('stream');
 const { StreamType } = require('@discordjs/voice');
-const { contained, hash } = require('./evolve-session');
+const { contained, hash } = require('./content-assets');
 const BYTES_PER_MS = 192; // 48 kHz, stereo, signed 16 bit
 const MAX_DURATION_MS = 600000;
 function validateCues(cues, durationMs) {
@@ -19,7 +19,7 @@ function validateCues(cues, durationMs) {
     });
 }
 async function decodeAudio(file, signal) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolve-clip-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prepared-clip-'));
     const output = path.join(dir, 'audio.pcm');
     try {
         await new Promise((resolve, reject) => {
@@ -82,7 +82,7 @@ class PreparedClipPlayer {
                     duration: cue.endMs - cue.startMs
                 });
                 // Ordinary sessions use the same explicit transcript, without STT.
-                if (!bot.podcastGenerator.evolveSession) bot.podcastGenerator.history.push({ role: 'user', content: '[Prepared clip: ' + cue.speaker + '] ' + cue.text });
+                bot.podcastGenerator.history.push({ role: 'user', content: '[Prepared clip: ' + cue.speaker + '] ' + cue.text });
             }
         };
         const finish = () => {

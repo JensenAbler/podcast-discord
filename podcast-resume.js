@@ -2,14 +2,14 @@
 const fs = require('fs');
 const path = require('path');
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { EvolveSession, contained, hash } = require('./evolve-session');
+const { contained, hash } = require('./content-assets');
 const { EpisodePlanTracker } = require('./episode-plan-tracker');
 const { validatePlanProgress, resumePlanOptions } = require('./episode-plan-progress');
 const { recordingTags } = require('./recording-tags');
 
 function buildResumeCommand() {
     return new SlashCommandBuilder().setName('podcast-resume')
-        .setDescription('Start a new episode with a previous episode’s conversation and saved plan progress')
+        .setDescription('Resume the conversation and saved showrunner progress')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .addStringOption(option => option.setName('recording')
             .setDescription('Source recording folder; defaults to your latest completed resumable episode'));
@@ -19,11 +19,6 @@ function audible(entry) {
     return entry.admission?.status !== 'candidate' &&
         !['failed', 'not_started'].includes(entry.playbackStatus) &&
         Boolean(String(entry.transcription || entry.text || '').trim());
-}
-function sessionFrom(state, file = null) {
-    return Object.assign(Object.create(EvolveSession.prototype), {
-        state: structuredClone(state), file
-    });
 }
 function loadResumeSource(root, recording, ownerId, guildId) {
     if (recording && (!/^episode-[A-Za-z0-9-]+$/.test(recording))) {
@@ -42,34 +37,14 @@ function loadResumeSource(root, recording, ownerId, guildId) {
             }
             continue;
         }
-        if (!fs.existsSync(path.join(dir, 'evolve-state.json')) &&
-            !fs.existsSync(path.join(dir, 'episode-plan-state.json'))) {
-            if (recording) throw new Error('Source must be a completed resumable recording');
-            continue;
-        }
         const metadata = JSON.parse(read(root, name + '/episode-complete.json'));
-        const stateBytes = fs.existsSync(path.join(dir, 'evolve-state.json'))
-            ? read(root, name + '/evolve-state.json') : null;
-        const state = stateBytes ? JSON.parse(stateBytes) : null;
         const identity = fs.existsSync(path.join(dir, 'resume-identity.json'))
             ? JSON.parse(read(root, name + '/resume-identity.json')) : null;
-        if (metadata.guildId !== guildId || (state?.ownerId || identity?.ownerId) !== ownerId) {
+        if (metadata.guildId !== guildId || identity?.guildId !== guildId || identity?.ownerId !== ownerId) {
             if (recording) throw new Error('Source must belong to this server and its original operator');
             continue;
         }
         if (!metadata.stoppedAt) throw new Error('Source must be completed');
-        if (state && (state.version !== 1 || !state.manifest?.episodes?.length ||
-            !Array.isArray(state.timeline) || !Array.isArray(state.events) ||
-            !Number.isInteger(state.index) || state.index < -1 || state.index >= state.manifest.episodes.length ||
-            !['ready', 'predicting', 'reflecting', 'reflected', 'prompt'].includes(state.phase) ||
-            !Number.isFinite(state.manifest.contextLimit))) {
-            throw new Error('Invalid saved retrospective state in ' + name);
-        }
-        for (const episode of state?.manifest.episodes || []) {
-            if (typeof episode.transcript !== 'string' || hash(episode.transcript) !== episode.sha256) {
-                throw new Error('Saved transcript integrity check failed in ' + name);
-            }
-        }
         const transcriptBytes = read(root, name + '/transcript.jsonl');
         const previous = fs.existsSync(path.join(dir, 'resume-history.json'))
             ? JSON.parse(read(root, name + '/resume-history.json')) : [];
@@ -83,30 +58,17 @@ function loadResumeSource(root, recording, ownerId, guildId) {
         const planProgress = fs.existsSync(path.join(dir, 'episode-plan-state.json'))
             ? validatePlanProgress(JSON.parse(read(root, name + '/episode-plan-state.json')), plan) : null;
         // Snapshot is pinned during consent. No source files are ever opened for writing.
-        return { recording: name, sourcePath: fs.realpathSync(dir), state, entries, plan, planProgress, ownerId, guildId,
+        return { recording: name, sourcePath: fs.realpathSync(dir), entries, plan, planProgress, ownerId, guildId,
             planTag: recordingTags(dir).planTag,
-            topic: state?.manifest.title || plan?.basename || 'continued conversation',
-            stateSha256: stateBytes ? hash(stateBytes) : null, transcriptSha256: hash(transcriptBytes),
-            contextSha256: state ? hash(sessionFrom(state).context()) : null };
+            topic: plan?.basename || 'general discussion',
+            transcriptSha256: hash(transcriptBytes) };
     }
     throw new Error('No completed resumable recording owned by you was found in this server');
 }
-function continuationContext(source) {
-    return 'This is a new recorded episode continuing our prior conversation. The inherited conversation is prior experience, not speech recorded in this episode. ' +
-        'Continue from where the conversation ended; do not replay the opening or repeat completed activities. ' +
-        'Jensen will guide the continuation.' +
-        (source.planProgress
-            ? '\nThe active episode plan and saved progress are restored in the current episode structure. Continue from that state.'
-            : source.plan ? '\nPrior episode plan, retained as historical background (this older recording has no saved tracker progress):\n' + JSON.stringify(source.plan) : '');
-}
-function restoreGenerator(generator, source, file = null) {
-    // Attach the copied retrospective only AFTER seeding speech: observe would otherwise duplicate its timeline.
-    generator.evolveSession = null;
+function restoreGenerator(generator, source) {
     generator.spokenTranscript = [];
     for (const entry of source.entries) generator.observeSpokenTranscript(entry);
-    generator.hasBackchannels = true; // Always include the inherited audible conversation.
-    generator.evolveSession = source.state ? sessionFrom(source.state, file) : null;
-    generator.continuationContext = continuationContext(source);
+    generator.hasBackchannels = true; // Use the same audible timeline as an uninterrupted session.
 }
 function preflightResume(generator, source, speakers = []) {
     const probe = Object.assign(Object.create(Object.getPrototypeOf(generator)), generator);
@@ -119,15 +81,12 @@ function preflightResume(generator, source, speakers = []) {
 function installResume(generator, source, destination) {
     const target = fs.realpathSync(destination);
     if (target === source.sourcePath) throw new Error('Resume requires a new recording directory');
-    const file = path.join(target, 'evolve-state.json');
     // Exclusive writes protect both the published source and any existing target state.
-    if (source.state) fs.writeFileSync(file, JSON.stringify(source.state, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     fs.writeFileSync(path.join(target, 'resume-history.json'), JSON.stringify(source.entries),
         { flag: 'wx', mode: 0o600 });
     fs.writeFileSync(path.join(target, 'resume-source.json'), JSON.stringify({
         version: 1, sourceRecording: source.recording, resumedAt: new Date().toISOString(),
-        sourceStateSha256: source.stateSha256, sourceTranscriptSha256: source.transcriptSha256,
-        restoredContextSha256: source.contextSha256, inheritedEntries: source.entries.length,
+        sourceTranscriptSha256: source.transcriptSha256, inheritedEntries: source.entries.length,
         planProgressRestored: Boolean(source.planProgress)
     }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     fs.writeFileSync(path.join(target, 'resume-background.json'), JSON.stringify(source.plan),
@@ -135,8 +94,7 @@ function installResume(generator, source, destination) {
     fs.writeFileSync(path.join(target, 'resume-identity.json'), JSON.stringify({
         ownerId: source.ownerId, guildId: source.guildId
     }), { flag: 'wx', mode: 0o600 });
-    restoreGenerator(generator, source, file);
-    return generator.evolveSession;
+    restoreGenerator(generator, source);
 }
 async function handleResumeCommand(bot, interaction) {
     try {
@@ -164,4 +122,4 @@ async function handleResumeCommand(bot, interaction) {
     }
 }
 module.exports = { buildResumeCommand, handleResumeCommand, loadResumeSource,
-    preflightResume, installResume, restoreGenerator, continuationContext };
+    preflightResume, installResume, restoreGenerator };
