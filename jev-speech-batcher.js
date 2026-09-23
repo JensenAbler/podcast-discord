@@ -214,13 +214,17 @@ async function* opportunisticSpeech(source, options = {}) {
             if (original === null) break;
             const chunks = [original];
             let text = original;
-            if (!first && !failed && judge.available) {
-                const gateAheadMs = ahead();
+            const eligible = !first && !failed && judge.available;
+            // Read the audio surplus once so the logged gate matches the branch taken.
+            const gateAheadMs = eligible ? ahead() : 0;
+            const audioReady = gateAheadMs >= 2000;
+            const lengthReady = text.length <= 1600;
+            if (eligible) {
                 onEvent({ reason: 'surplus-gate', stage: 'audio',
                     audioAheadMs: Math.round(gateAheadMs), firstChunkChars: text.length,
-                    audioReady: gateAheadMs >= 2000 });
+                    audioReady, lengthReady });
             }
-            if (!first && !failed && judge.available && ahead() >= 2000 && text.length <= 1600) {
+            if (eligible && audioReady && lengthReady) {
                 while (text.length < 1600 && chunks.length < 64) {
                     let immediate;
                     const result = await Promise.race([read(), aborted, new Promise(resolve => {

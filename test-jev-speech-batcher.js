@@ -225,6 +225,29 @@ test('Jev telemetry records a blocked audio gate without invoking the judge', as
         e.audioAheadMs===900 && e.audioReady===false));
     assert.equal(telemetry.some(e=>e.stage==='text'),false);
 });
+
+test('Jev audio gate telemetry matches the branch taken when surplus drops between reads', async () => {
+    const values=[2500,1500];
+    const telemetry=[];
+    const input=['Start',passage.slice(0,150),passage.slice(150)];
+    await collect(opportunisticSpeech(input,{audioAheadMs:()=>values.length?values.shift():1500,
+        judge:judge(async()=>[]),onEvent:event=>telemetry.push(event)}));
+    const audio=telemetry.find(e=>e.reason==='surplus-gate' && e.stage==='audio');
+    assert.ok(audio && audio.audioReady && audio.lengthReady);
+    assert.ok(telemetry.some(e=>e.reason==='surplus-gate' && e.stage==='text'));
+});
+
+test('Jev telemetry records an oversized first chunk without invoking the judge', async () => {
+    let calls=0; const telemetry=[];
+    const input=['Start','x'.repeat(1700)];
+    const out=await collect(opportunisticSpeech(input,{audioAheadMs:()=>3000,
+        judge:judge(async()=>{calls++; return [];}),onEvent:event=>telemetry.push(event)}));
+    assert.deepEqual(out,input.map(text=>({text,flush:false})));
+    assert.equal(calls,0);
+    assert.ok(telemetry.some(e=>e.reason==='surplus-gate' && e.stage==='audio' &&
+        e.audioReady===true && e.lengthReady===false && e.firstChunkChars===1700));
+    assert.equal(telemetry.some(e=>e.stage==='text'),false);
+});
 test('Fish close before first text cancels promptly', async () => {
     const p=new FishAudioProvider({apiKey:'test-only',semanticBatching:false});
     const {EventEmitter}=require('events');
