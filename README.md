@@ -140,8 +140,10 @@ separate podcast generator.
 
 Each image request includes all 30 pages of *A Read Her* as reference images.
 These are the original JPEGs extracted from the supplied PDF, without resizing
-or recompression; `assets/xenolex/manifest.json` records the source PDF hash and
-each page's hash. Astra is instructed to consult this material only when a
+or recompression. They are not stored in this repository: place the 30
+`page-NN.jpg` files and `manifest.json` in `<content root>/xenolex/` (or set
+`XENOLEX_REFERENCE_DIR`). The manifest records the source PDF hash and each
+page's hash, and every page is verified before use. Astra is instructed to consult this material only when a
 target contains Xenolex or the participant explicitly requests Xenolex decoding.
 Ordinary images receive an ordinary interpretation. Uncertain readings belong
 in the existing confidence and caveats fields.
