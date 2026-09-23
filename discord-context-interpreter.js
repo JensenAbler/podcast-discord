@@ -119,15 +119,25 @@ class DiscordContextInterpreter {
 
         const prepared = await this.prepareAttachments(attachments);
         if (this.codexImageContext.isEnabled() && this.codexImageContext.canInterpret(prepared)) {
-            const result = await this.codexImageContext.interpret({
-                prepared,
-                systemPrompt: this.buildSystemPrompt(),
-                contextText: this.buildContextText(input),
-                schema: this.getResponseSchema()
-            });
-            const output = this.normalizeOutput(result, input);
-            console.log(`[DiscordContextInterpreter] Interpreted Discord context: provider=codex-chatgpt, attachments=${attachments.length}, chars=${output.awarenessText.length}`);
-            return output;
+            try {
+                const result = await this.codexImageContext.interpret({
+                    prepared,
+                    systemPrompt: this.buildSystemPrompt(),
+                    contextText: this.buildContextText(input),
+                    schema: this.getResponseSchema()
+                });
+                const output = this.normalizeOutput(result, input);
+                console.log(`[DiscordContextInterpreter] Interpreted Discord context: provider=codex-chatgpt, attachments=${attachments.length}, chars=${output.awarenessText.length}`);
+                return output;
+            } catch (error) {
+                if (!this.apiKey || this.provider !== 'anthropic') throw error;
+                console.warn(`[DiscordContextInterpreter] Astra image interpretation failed; falling back to Claude: ${error?.message || error}`);
+                const result = await this.fetchAnthropicInterpretation(input, prepared);
+                const content = this.extractContent(result);
+                const output = this.normalizeOutput(this.parseJsonContent(content), input);
+                console.log(`[DiscordContextInterpreter] Interpreted Discord context: provider=anthropic-fallback, attachments=${attachments.length}, chars=${output.awarenessText.length}`);
+                return output;
+            }
         }
         if (!this.apiKey) {
             throw new Error('The configured text/PDF context interpreter API key is not set');

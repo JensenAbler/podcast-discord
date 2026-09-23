@@ -214,12 +214,12 @@ for (const mode of ['text', 'pdf', 'mixed']) {
     });
 }
 
-test('failed subscription request never falls back to an API request', async () => {
+test('failed Astra image request falls back to the Anthropic API route', async () => {
     const failure = Object.assign(new Error('fixture subscription failure'), { code: 'XENOLEX_TIMEOUT' });
     const f = interpreterFixture({ failure });
-    await assert.rejects(f.interpreter.interpret({ attachments: [f.attachment('image.png', 'image/png')] }), failure);
+    await f.interpreter.interpret({ attachments: [f.attachment('image.png', 'image/png')] });
     assert.equal(f.calls.filter(call => call.kind === 'codex').length, 1);
-    assert.equal(f.calls.filter(call => call.kind === 'api').length, 0);
+    assert.equal(f.calls.filter(call => call.kind === 'api').length, 1);
 });
 
 test('before activation the existing image API route remains available', async () => {
