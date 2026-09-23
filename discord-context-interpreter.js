@@ -4,6 +4,7 @@ const {
 } = require('./anthropic-messages');
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-5-20250929';
+const CLAUDE_IMAGE_FALLBACK_MODEL = 'claude-opus-5-5';
 const DEFAULT_OPENAI_MODEL = 'gpt-4.1-mini';
 const { CodexImageContext } = require('./codex-image-context');
 
@@ -132,7 +133,7 @@ class DiscordContextInterpreter {
             } catch (error) {
                 if (!this.apiKey || this.provider !== 'anthropic') throw error;
                 console.warn(`[DiscordContextInterpreter] Astra image interpretation failed; falling back to Claude: ${error?.message || error}`);
-                const result = await this.fetchAnthropicInterpretation(input, prepared);
+                const result = await this.fetchAnthropicInterpretation(input, prepared, CLAUDE_IMAGE_FALLBACK_MODEL);
                 const content = this.extractContent(result);
                 const output = this.normalizeOutput(this.parseJsonContent(content), input);
                 console.log(`[DiscordContextInterpreter] Interpreted Discord context: provider=anthropic-fallback, attachments=${attachments.length}, chars=${output.awarenessText.length}`);
@@ -242,9 +243,9 @@ class DiscordContextInterpreter {
         }
     }
 
-    async fetchAnthropicInterpretation(input, prepared) {
+    async fetchAnthropicInterpretation(input, prepared, model = this.model) {
         const body = {
-            model: this.model,
+            model,
             max_tokens: this.maxTokens,
             system: this.buildSystemPrompt(),
             messages: [{
