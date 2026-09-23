@@ -5,6 +5,8 @@ const {
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-5-20250929';
 const CLAUDE_IMAGE_FALLBACK_MODEL = 'claude-opus-5-5';
+const CLAUDE_IMAGE_FALLBACK_MAX_TOKENS = 128000;
+const CLAUDE_IMAGE_FALLBACK_EFFORT = 'medium';
 const DEFAULT_OPENAI_MODEL = 'gpt-4.1-mini';
 const { CodexImageContext } = require('./codex-image-context');
 
@@ -133,7 +135,7 @@ class DiscordContextInterpreter {
             } catch (error) {
                 if (!this.apiKey || this.provider !== 'anthropic') throw error;
                 console.warn(`[DiscordContextInterpreter] Astra image interpretation failed; falling back to Claude: ${error?.message || error}`);
-                const result = await this.fetchAnthropicInterpretation(input, prepared, CLAUDE_IMAGE_FALLBACK_MODEL);
+                const result = await this.fetchAnthropicInterpretation(input, prepared, CLAUDE_IMAGE_FALLBACK_MODEL, { maxTokens: CLAUDE_IMAGE_FALLBACK_MAX_TOKENS, effort: CLAUDE_IMAGE_FALLBACK_EFFORT, adaptiveThinking: true });
                 const content = this.extractContent(result);
                 const output = this.normalizeOutput(this.parseJsonContent(content), input);
                 console.log(`[DiscordContextInterpreter] Interpreted Discord context: provider=anthropic-fallback, attachments=${attachments.length}, chars=${output.awarenessText.length}`);
@@ -243,16 +245,20 @@ class DiscordContextInterpreter {
         }
     }
 
-    async fetchAnthropicInterpretation(input, prepared, model = this.model) {
+    async fetchAnthropicInterpretation(input, prepared, model = this.model, options = {}) {
+        const maxTokens = Number(options.maxTokens || this.maxTokens);
+        const effort = String(options.effort || '').trim();
         const body = {
             model,
-            max_tokens: this.maxTokens,
+            max_tokens: maxTokens,
+            ...(options.adaptiveThinking ? { thinking: { type: 'adaptive' } } : {}),
             system: this.buildSystemPrompt(),
             messages: [{
                 role: 'user',
                 content: this.buildAnthropicUserContent(input, prepared)
             }],
             output_config: {
+                ...(effort ? { effort } : {}),
                 format: {
                     type: 'json_schema',
                     schema: this.getResponseSchema()

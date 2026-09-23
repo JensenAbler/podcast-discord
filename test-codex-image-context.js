@@ -220,7 +220,11 @@ test('failed Astra image request falls back to the Anthropic API route', async (
     await f.interpreter.interpret({ attachments: [f.attachment('image.png', 'image/png')] });
     assert.equal(f.calls.filter(call => call.kind === 'codex').length, 1);
     assert.equal(f.calls.filter(call => call.kind === 'api').length, 1);
-    assert.equal(f.calls.find(call => call.kind === 'api').body.model, 'claude-opus-5-5');
+    const fallbackCall = f.calls.find(call => call.kind === 'api');
+    assert.equal(fallbackCall.body.model, 'claude-opus-5-5');
+    assert.equal(fallbackCall.body.max_tokens, 128000);
+    assert.deepEqual(fallbackCall.body.thinking, { type: 'adaptive' });
+    assert.equal(fallbackCall.body.output_config.effort, 'medium');
 });
 
 test('before activation the existing image API route remains available', async () => {
