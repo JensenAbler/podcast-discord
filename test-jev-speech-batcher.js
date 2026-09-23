@@ -205,8 +205,25 @@ test('Opus granules account for preskip, fragmented pages, and chained streams',
 });
 test('no approved cuts preserve original backlog boundaries', async () => {
     const input=['Start',passage.slice(0,150),passage.slice(150)];
-    const out=await collect(opportunisticSpeech(input,{audioAheadMs:()=>3000,judge:judge(async()=>[])}));
+    const telemetry=[];
+    const out=await collect(opportunisticSpeech(input,{audioAheadMs:()=>3000,judge:judge(async()=>[]),
+        onEvent:event=>telemetry.push(event)}));
     assert.deepEqual(out,input.map(text=>({text,flush:false})));
+    assert.ok(telemetry.some(e=>e.reason==='surplus-gate' && e.stage==='audio' && e.audioReady));
+    assert.ok(telemetry.some(e=>e.reason==='surplus-gate' && e.stage==='text' &&
+        e.immediateChars>=240 && e.immediateChunks>=1 && e.textReady));
+});
+
+test('Jev telemetry records a blocked audio gate without invoking the judge', async () => {
+    let calls=0; const telemetry=[];
+    const input=['Start',passage];
+    const out=await collect(opportunisticSpeech(input,{audioAheadMs:()=>900,
+        judge:judge(async()=>{calls++; return [];}),onEvent:event=>telemetry.push(event)}));
+    assert.deepEqual(out,input.map(text=>({text,flush:false})));
+    assert.equal(calls,0);
+    assert.ok(telemetry.some(e=>e.reason==='surplus-gate' && e.stage==='audio' &&
+        e.audioAheadMs===900 && e.audioReady===false));
+    assert.equal(telemetry.some(e=>e.stage==='text'),false);
 });
 test('Fish close before first text cancels promptly', async () => {
     const p=new FishAudioProvider({apiKey:'test-only',semanticBatching:false});

@@ -214,6 +214,12 @@ async function* opportunisticSpeech(source, options = {}) {
             if (original === null) break;
             const chunks = [original];
             let text = original;
+            if (!first && !failed && judge.available) {
+                const gateAheadMs = ahead();
+                onEvent({ reason: 'surplus-gate', stage: 'audio',
+                    audioAheadMs: Math.round(gateAheadMs), firstChunkChars: text.length,
+                    audioReady: gateAheadMs >= 2000 });
+            }
             if (!first && !failed && judge.available && ahead() >= 2000 && text.length <= 1600) {
                 while (text.length < 1600 && chunks.length < 64) {
                     let immediate;
@@ -227,7 +233,13 @@ async function* opportunisticSpeech(source, options = {}) {
                     if (chunk === null) break;
                     chunks.push(chunk); text += chunk;
                 }
-                if (text.length >= 240 && text.length <= 1600 && ahead() >= 2000) {
+                const textGateAheadMs = ahead();
+                onEvent({ reason: 'surplus-gate', stage: 'text',
+                    audioAheadMs: Math.round(textGateAheadMs), immediateChars: text.length,
+                    immediateChunks: chunks.length,
+                    textReady: text.length >= 240 && text.length <= 1600,
+                    audioReady: textGateAheadMs >= 2000 });
+                if (text.length >= 240 && text.length <= 1600 && textGateAheadMs >= 2000) {
                     const controller = new AbortController();
                     const abortJudge = () => controller.abort();
                     signal?.addEventListener('abort', abortJudge, { once: true });
