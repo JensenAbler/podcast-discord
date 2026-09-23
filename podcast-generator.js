@@ -10,6 +10,7 @@
  * - podcastLeave: model-owned request to end the live episode after a closing signoff
  */
 const {
+    CACHE_SEGMENTS,
     DEFAULT_ANTHROPIC_VERSION,
     buildAnthropicMessagesBody,
     fetchAnthropicMessages,
@@ -778,7 +779,53 @@ class PodcastGenerator {
             { role: 'user', content: this.buildUserPrompt(transcript, input.wordData, input) },
             { role: 'system', content: this.buildDecisionPrompt(input) }
         ];
+        this.attachTranscriptCacheSegments(messages[messages.length - 2], transcript, input);
         return this.fitMessagesToPromptBudget(messages, transcript, input);
+    }
+
+    /**
+     * Mark stable transcript prefixes for Anthropic prompt caching. The transcript
+     * is cut on a fixed line grid so earlier blocks stay byte-identical as the
+     * episode grows. One breakpoint sits on the last complete grid block (reused
+     * by later turns); one sits at the transcript end (reused by idle checks and
+     * retries that see no new speech).
+     */
+    attachTranscriptCacheSegments(message, transcript = '', input = {}) {
+        if (!message || !shouldUseAnthropicPromptCache(this.baseUrl)) return message;
+        if (/^(0|false|off|no)$/i.test(String(process.env.PODCAST_ANTHROPIC_TRANSCRIPT_CACHE || '').trim())) return message;
+
+        const text = this.formatTranscriptWithPauses(input.conversationUtterances || input.utterances || []) ||
+            String(transcript || '');
+        const content = String(message.content || '');
+        const offset = text.trim() ? content.indexOf(text) : -1;
+        if (offset < 0) return message;
+
+        const gridLines = this.parsePositiveInt(process.env.PODCAST_ANTHROPIC_CACHE_GRID_LINES, 24);
+        const lines = text.split('\n');
+        // Keep the newest lines off the grid; their pause/overlap annotations can still change.
+        const stableLines = Math.floor(Math.max(0, lines.length - 2) / gridLines) * gridLines;
+        const cuts = [];
+        let position = offset;
+        for (let index = 0; index < stableLines; index++) {
+            position += lines[index].length + 1;
+            if ((index + 1) % gridLines === 0) cuts.push(position);
+        }
+
+        const transcriptEnd = offset + text.length;
+        const lastGridCut = cuts[cuts.length - 1];
+        const bounds = [0, ...cuts, transcriptEnd, content.length];
+        const segments = [];
+        for (let index = 1; index < bounds.length; index++) {
+            const start = bounds[index - 1];
+            const end = bounds[index];
+            if (end <= start) continue;
+            segments.push({
+                text: content.slice(start, end),
+                cache: end === lastGridCut || end === transcriptEnd
+            });
+        }
+        message[CACHE_SEGMENTS] = segments;
+        return message;
     }
 
     isFishTtsActive() {

@@ -10025,6 +10025,57 @@ async function runTests() {
         failed++;
     }
 
+    console.log('\nTest 46-cache: Anthropic transcript prefixes get stable cache breakpoints');
+    try {
+        const { PodcastGenerator } = require('./podcast-generator');
+        const { buildAnthropicMessagesBody } = require('./anthropic-messages');
+        const cacheGenerator = new PodcastGenerator({
+            apiKey: 'anthropic-test-key',
+            baseUrl: 'https://api.anthropic.com/v1',
+            model: 'claude-sonnet-4-5-20250929',
+            timeout: 1000
+        });
+        const transcriptOf = (count) => Array.from({ length: count }, (_, index) => `Jensen: cache line ${index}`).join('\n');
+        const anthropicBodyFor = (count, cacheControl = true) => buildAnthropicMessagesBody(
+            cacheGenerator.buildRequestBody(cacheGenerator.buildMessages({ transcript: transcriptOf(count) })),
+            { cacheControl }
+        );
+        const lastUser = (body) => body.messages[body.messages.length - 1];
+        const breakpointPrefix = (body, which) => {
+            const blocks = lastUser(body).content;
+            const marked = blocks.map((block, index) => (block.cache_control ? index : -1)).filter((index) => index >= 0);
+            return blocks.slice(0, marked[which] + 1).map((block) => block.text).join('');
+        };
+        const countBreakpoints = (body) =>
+            (Array.isArray(body.system) ? body.system.filter((block) => block.cache_control).length : 0) +
+            body.messages.reduce((sum, message) => sum +
+                (Array.isArray(message.content) ? message.content.filter((block) => block.cache_control).length : 0), 0);
+
+        const earlier = anthropicBodyFor(60);
+        const later = anthropicBodyFor(63);
+        const plain = anthropicBodyFor(60, false);
+        const rawMessages = cacheGenerator.buildMessages({ transcript: transcriptOf(60) });
+
+        if (
+            !Array.isArray(lastUser(earlier).content) ||
+            !Array.isArray(lastUser(later).content) ||
+            typeof lastUser(plain).content !== 'string' ||
+            lastUser(earlier).content.map((block) => block.text).join('') !== lastUser(plain).content ||
+            breakpointPrefix(earlier, 0) !== breakpointPrefix(later, 0) ||
+            !breakpointPrefix(earlier, 0).endsWith('Jensen: cache line 47\n') ||
+            countBreakpoints(earlier) !== 3 ||
+            Object.keys(rawMessages[rawMessages.length - 2]).join(',') !== 'role,content'
+        ) {
+            throw new Error(`Transcript cache breakpoints were wrong: ${JSON.stringify({ earlier: lastUser(earlier), later: lastUser(later) }).slice(0, 2000)}`);
+        }
+
+        console.log('  Anthropic transcript cache breakpoints stay stable as the transcript grows');
+        passed++;
+    } catch (error) {
+        console.log(`  Anthropic transcript cache breakpoints failed: ${error.message}`);
+        failed++;
+    }
+
     console.log('\nTest 46a: Anthropic streaming accepts partial JSON deltas');
     try {
         const { PodcastGenerator } = require('./podcast-generator');

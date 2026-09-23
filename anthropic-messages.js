@@ -31,22 +31,106 @@ function shouldUseAnthropicPromptCache(baseUrl = '') {
     return isAnthropicBaseUrl(baseUrl) && getAnthropicCompatibleProvider(baseUrl) === 'anthropic';
 }
 
+// Callers can attach [CACHE_SEGMENTS] to a message: an array of { text, cache }
+// whose texts concatenate to exactly message.content. Segments marked cache get
+// an Anthropic cache breakpoint. Symbol keys never reach JSON.stringify, so
+// OpenAI-compatible routes keep sending the plain string unchanged.
+const CACHE_SEGMENTS = Symbol.for('podcast-discord.anthropicCacheSegments');
+const MAX_CACHE_BREAKPOINTS = 4;
+
+function sliceSegments(segments, start, end) {
+    const sliced = [];
+    let position = 0;
+    for (const segment of segments) {
+        const segmentStart = position;
+        const segmentEnd = position + segment.text.length;
+        position = segmentEnd;
+        const from = Math.max(segmentStart, start);
+        const to = Math.min(segmentEnd, end);
+        if (to > from) {
+            sliced.push({
+                text: segment.text.slice(from - segmentStart, to - segmentStart),
+                cache: segment.cache
+            });
+        }
+    }
+    return sliced;
+}
+
+function readMessageSegments(message = {}) {
+    const content = String(message.content || '');
+    const raw = Array.isArray(message[CACHE_SEGMENTS]) ? message[CACHE_SEGMENTS] : null;
+    const segments = raw && raw.map((segment) => String(segment?.text || '')).join('') === content
+        ? raw.map((segment) => ({ text: String(segment?.text || ''), cache: Boolean(segment?.cache) }))
+        : [{ text: content, cache: false }];
+
+    // Same edges as trim() on the whole message.
+    const start = content.length - content.trimStart().length;
+    const end = content.trimEnd().length;
+    if (end <= start) {
+        return [];
+    }
+
+    // Anthropic rejects whitespace-only text blocks, so fold them backward.
+    const folded = [];
+    for (const segment of sliceSegments(segments, start, end)) {
+        const previous = folded[folded.length - 1];
+        if (previous && !segment.text.trim()) {
+            previous.text += segment.text;
+            previous.cache = previous.cache || segment.cache;
+        } else {
+            folded.push(segment);
+        }
+    }
+    return folded;
+}
+
 function mergeAdjacentMessages(messages = []) {
     const merged = [];
     for (const message of messages) {
         if (!message?.content) continue;
         const role = message.role === 'assistant' ? 'assistant' : 'user';
-        const content = String(message.content || '').trim();
-        if (!content) continue;
+        const segments = readMessageSegments(message);
+        if (segments.length === 0) continue;
 
         const previous = merged[merged.length - 1];
         if (previous?.role === role) {
-            previous.content = `${previous.content}\n\n${content}`;
+            segments[0] = { ...segments[0], text: `\n\n${segments[0].text}` };
+            previous.segments.push(...segments);
         } else {
-            merged.push({ role, content });
+            merged.push({ role, segments });
         }
     }
     return merged;
+}
+
+function renderAnthropicMessages(merged = [], options = {}) {
+    const flagged = [];
+    merged.forEach((message, messageIndex) => {
+        message.segments.forEach((segment, segmentIndex) => {
+            if (segment.cache) flagged.push(`${messageIndex}:${segmentIndex}`);
+        });
+    });
+    const allowed = options.cacheControl ? Math.max(0, Number(options.maxBreakpoints) || 0) : 0;
+    // Later breakpoints cover longer prefixes, so keep the last ones.
+    const kept = new Set(allowed > 0 ? flagged.slice(-allowed) : []);
+
+    return merged.map((message, messageIndex) => {
+        const keys = message.segments.map((_, segmentIndex) => `${messageIndex}:${segmentIndex}`);
+        if (!keys.some((key) => kept.has(key))) {
+            return { role: message.role, content: message.segments.map((segment) => segment.text).join('') };
+        }
+        return {
+            role: message.role,
+            content: message.segments.map((segment, segmentIndex) => {
+                const block = { type: 'text', text: segment.text };
+                if (kept.has(keys[segmentIndex])) {
+                    block.cache_control = { type: 'ephemeral' };
+                }
+                return block;
+            })
+        };
+    });
 }
 
 function buildAnthropicSystem(systemParts = [], options = {}) {
@@ -85,7 +169,11 @@ function buildAnthropicMessagesBody(body = {}, options = {}) {
         }
     }
 
-    const messages = mergeAdjacentMessages(conversationMessages);
+    const systemBreakpoints = options.cacheControl && systemParts.length > 0 ? 1 : 0;
+    const messages = renderAnthropicMessages(mergeAdjacentMessages(conversationMessages), {
+        cacheControl: Boolean(options.cacheControl),
+        maxBreakpoints: MAX_CACHE_BREAKPOINTS - systemBreakpoints
+    });
     if (messages.length === 0) {
         messages.push({
             role: 'user',
@@ -228,6 +316,7 @@ async function fetchAnthropicMessages({
 }
 
 module.exports = {
+    CACHE_SEGMENTS,
     DEFAULT_ANTHROPIC_VERSION,
     buildAnthropicMessagesBody,
     buildAnthropicSystem,
