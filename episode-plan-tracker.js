@@ -365,9 +365,12 @@ class EpisodePlanTracker {
 }
 
 function durationFromEntry(entry = {}, startedAt, endedAt) {
+    // Transcript entries always record duration/speechDuration in milliseconds.
+    // Never guess the unit from magnitude: a sub-second guest fragment (e.g. 966)
+    // is 966 ms, not 966 seconds.
     const explicitDuration = Number(entry.duration ?? entry.speechDuration);
     if (Number.isFinite(explicitDuration) && explicitDuration > 0) {
-        return explicitDuration > 1000 ? explicitDuration : explicitDuration * 1000;
+        return explicitDuration;
     }
     const start = Date.parse(startedAt || '');
     const end = Date.parse(endedAt || '');

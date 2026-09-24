@@ -3694,6 +3694,17 @@ async function runTests() {
             throw new Error(`Episode plan tracker did not treat queued social signoff as closing prompt: ${JSON.stringify(socialCloseTracker.snapshot())}`);
         }
 
+        const durationTracker = new EpisodePlanTracker(generated.plan, {
+            startedAt: '2026-05-15T00:00:00.000Z'
+        });
+        durationTracker.observeTranscriptEntry({ speaker: 'Sonoma', speakerRole: 'guest', timestamp: '2026-05-15T00:01:00.000Z', duration: 966 });
+        durationTracker.observeTranscriptEntry({ speaker: 'Sonoma', speakerRole: 'guest', timestamp: '2026-05-15T00:01:02.000Z', duration: 3695 });
+        durationTracker.observeTranscriptEntry({ speaker: 'Sonoma', speakerRole: 'guest', timestamp: '2026-05-15T00:01:04.000Z', speechDuration: 120 });
+        const trackedDurations = durationTracker.snapshot().recentTurns.map((turn) => turn.durationMs);
+        if (JSON.stringify(trackedDurations) !== JSON.stringify([966, 3695, 120])) {
+            throw new Error(`Episode plan tracker misread sub-second durations as seconds: ${JSON.stringify(trackedDurations)}`);
+        }
+
         const openingGuildId = 'guild-planned-opening';
         const openingTracker = new EpisodePlanTracker(generated.plan, {
             startedAt: '2026-05-15T00:00:00.000Z'
