@@ -7,8 +7,11 @@ class RealtimePcmMixer {
         this.maxBufferedMs = Number(options.maxBufferedMs || 2000);
         this.onFrame = options.onFrame || (() => {});
         this.onDrop = options.onDrop || (() => {});
+        this.maxCatchUpFrames = Math.max(1, Number(options.maxCatchUpFrames || 5));
+        this.now = typeof options.now === 'function' ? options.now : () => performance.now();
         this.sources = new Map();
         this.timer = null;
+        this.nextFrameAt = null;
 
         if (
             this.inputSampleRate !== 48000 ||
@@ -33,7 +36,8 @@ class RealtimePcmMixer {
     start() {
         if (this.timer) return;
 
-        this.timer = setInterval(() => this.emitFrame(), this.frameDurationMs);
+        this.nextFrameAt = this.now();
+        this.timer = setInterval(() => this.tick(), this.frameDurationMs);
         if (typeof this.timer.unref === 'function') {
             this.timer.unref();
         }
@@ -44,7 +48,28 @@ class RealtimePcmMixer {
             clearInterval(this.timer);
             this.timer = null;
         }
+        this.nextFrameAt = null;
         this.sources.clear();
+    }
+
+    // Emit every frame that wall-clock time says is due. setInterval ticks are
+    // lost (not queued) when the event loop is busy, so emitting one frame per
+    // tick lets buffered audio fall behind real time until push() starts
+    // discarding it. Catch up a few frames per tick instead; if we are more
+    // than the buffer window behind, resynchronize rather than burst.
+    tick() {
+        const now = this.now();
+        if (this.nextFrameAt === null) this.nextFrameAt = now;
+        let emitted = 0;
+        while (now >= this.nextFrameAt && emitted < this.maxCatchUpFrames) {
+            this.emitFrame();
+            this.nextFrameAt += this.frameDurationMs;
+            emitted += 1;
+        }
+        if (now - this.nextFrameAt > this.maxBufferedMs) {
+            this.nextFrameAt = now;
+        }
+        return emitted;
     }
 
     push(sourceId, chunk) {

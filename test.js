@@ -241,6 +241,28 @@ async function runTests() {
             throw new Error(`Expected mixed sample 300, got ${mixedFrame.readInt16LE(0)}`);
         }
 
+        // A late timer tick must catch up on due frames instead of emitting one.
+        let fakeNow = 1000;
+        let catchUpFrames = 0;
+        let catchUpDrops = 0;
+        const catchUpMixer = new RealtimePcmMixer({
+            now: () => fakeNow,
+            onFrame: () => { catchUpFrames += 1; },
+            onDrop: () => { catchUpDrops += 1; }
+        });
+        catchUpMixer.nextFrameAt = fakeNow;
+        catchUpMixer.push('speaker-a', createSpeechPcm(100));
+        fakeNow += 80; // four ticks lost to a busy event loop
+        const caughtUp = catchUpMixer.tick();
+        if (caughtUp !== 5 || catchUpFrames !== 5 || catchUpDrops !== 0) {
+            throw new Error(`Expected late tick to emit 5 due frames without drops, got ${caughtUp}/${catchUpFrames} drops=${catchUpDrops}`);
+        }
+        fakeNow += 10000; // far behind: resync instead of bursting ten seconds of frames
+        const bounded = catchUpMixer.tick();
+        if (bounded !== 5 || catchUpMixer.nextFrameAt !== fakeNow) {
+            throw new Error(`Expected bounded catch-up and resync, got ${bounded} frames, nextFrameAt=${catchUpMixer.nextFrameAt}`);
+        }
+
         console.log('  Gemini PCM resampling and concurrent participant mixing preserve frame shape');
         passed++;
     } catch (error) {
