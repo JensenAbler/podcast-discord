@@ -25,13 +25,15 @@ function parseBrief(text) {
     }
     brief.transcript = input.transcript;
     const excludeEpisodes = [...new Set((input.excludeEpisodes || []).map(Number).filter(Number.isInteger))];
-    return { brief, excludeEpisodes, ref: typeof input.ref === 'string' ? input.ref : null };
+    const focus = typeof input.focus === 'string' && input.focus.trim() ? input.focus.trim() : null;
+    return { brief, excludeEpisodes, ref: typeof input.ref === 'string' ? input.ref : null, focus };
 }
 
 async function recall(brief, options = {}, builder) {
     const { EpisodeMemoryBuilder, formatSourceCitation } = require('./episode-background-memory');
     const result = await (builder || new EpisodeMemoryBuilder({})).build(brief, {
-        kind: 'recording', excludeEpisodes: options.excludeEpisodes || [], ref: options.ref || null
+        kind: 'recording', excludeEpisodes: options.excludeEpisodes || [], ref: options.ref || null,
+        focus: options.focus || null
     });
     const sources = new Map(result.sources.map(source => [source.id, source]));
     result.memories = result.memories.map(memory => ({
@@ -45,8 +47,8 @@ async function main() {
     // Generators log progress with console.log; keep stdout reserved for the JSON result.
     console.log = (...args) => console.error(...args);
     loadEnv(path.join(__dirname, '.env'));
-    const { brief, excludeEpisodes, ref } = parseBrief(fs.readFileSync(0, 'utf8'));
-    const result = await recall(brief, { excludeEpisodes, ref });
+    const { brief, excludeEpisodes, ref, focus } = parseBrief(fs.readFileSync(0, 'utf8'));
+    const result = await recall(brief, { excludeEpisodes, ref, focus });
     process.stdout.write(JSON.stringify(result) + '\n');
 }
 
