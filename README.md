@@ -246,11 +246,15 @@ The guest utterances remain requeued for a fresh evaluation of the completed
 question. Normal buffer and idle requests dispatch only after host playback.
 
 
-Quartz playback uses a 4x gain (+12.0 dB), halved from the previous 8x boost,
-with a -1 dBFS peak limiter and 100 ms release. The same adjusted PCM is
-encoded for Discord and saved to the recording. Muting and speech detection
-continue to use the original PCM. Set PODCAST_QUARTZ_OUTPUT_GAIN (linear, 0 < gain
-<= 32) to recalibrate if a provider changes its output level; the default is 4.
+Quartz normally plays at 25% of its calibrated level. On entering the rising-
+intonation state (after ten seconds of guest silence), it ramps linearly back
+to 100% over five seconds, stays there while rising, and returns to 25% when
+that state ends. Repeated state announcements and reconnects do not restart
+an ongoing ramp. Volume is applied as each 20 ms frame is played, after the
+existing -1 dBFS peak limiter with 100 ms release. Discord and the recording
+receive the same adjusted PCM; muting and speech detection use the original PCM.
+PODCAST_QUARTZ_OUTPUT_GAIN sets the calibrated maximum (linear, 0 < gain <= 32,
+default 4): with that default, the effective gain ramps from 1x to 4x.
 
 Confirmed participant speech activates Quartz’s “RARELY hmm, mmhmm, ah” state.
 Participant endpoints return to the existing progressive floor-holding states;

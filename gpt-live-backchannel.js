@@ -62,6 +62,7 @@ class GptLiveBackchannel {
         this.environmentRevision = 0;
         this.socketFactory = options.socketFactory || ((url, config) => new WebSocket(url, config));
         this.onAudio = options.onAudio || (() => {});
+        this.onEnvironment = options.onEnvironment || (() => {});
         this.onOutputBlocked = options.onOutputBlocked || (() => {});
         this.waitingForGuest = false;
         this.mutedSpeechGate = new MutedSpeechGate();
@@ -440,6 +441,7 @@ class GptLiveBackchannel {
             state = HOLDING_STATES[Math.min(2, Math.floor(Math.max(0, this.holdingNow() - this.holdingSince) / 5000))];
         }
         this.environment = state;
+        this.onEnvironment(state);
         if (!HOLDING_STATES.includes(state)) this.cancelLagNotice();
         else if (!this.turnControl) this.beginLagNotice();
         if (this.lagContextId) this.contextQueue.cancelQueued(this.lagContextId);

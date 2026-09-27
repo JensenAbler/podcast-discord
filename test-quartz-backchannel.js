@@ -135,8 +135,8 @@ test('Alpha preempts Quartz before its first packet; no stale audio or host call
     const stream = t.p.stream;
     assert.equal(stream.read().length, 3840);
     assert.equal(t.consumed.length, 1);
-    assert.equal(t.consumed[0].readInt16LE(0), 1234);
-    assert.equal(t.consumed[0].readInt16LE(10), 1234);
+    assert.equal(t.consumed[0].readInt16LE(0), 309);
+    assert.equal(t.consumed[0].readInt16LE(10), 309);
     t.callbacks.onAudio(mono); // pending data must be discarded
     t.alpha.transition('buffering');
     assert.equal(t.connection.subscribed, t.alpha);
@@ -830,8 +830,8 @@ test('Quartz default level reaches both encoded playback and consumed recording 
     for (let i = 0; i < input.length; i += 2) input.writeInt16LE(500, i);
     t.callbacks.onAudio(input);
     const packet = t.p.stream.read();
-    assert.equal(packet.readInt16LE(0), 2000);
-    assert.equal(t.consumed[0].readInt16LE(0), 2000);
+    assert.equal(packet.readInt16LE(0), 500);
+    assert.equal(t.consumed[0].readInt16LE(0), 500);
     assert.equal(input.readInt16LE(0), 500, 'raw receipt evidence must stay unchanged');
     await t.p.stop();
 });
@@ -1021,4 +1021,50 @@ test('a failed replacement reports failure and retries without unmuting or reviv
     assert.equal(t.client.environment, 'aside');
     assert.equal(t.client.outputBlocked, true);
     const stop = t.client.stop(); fresh.event({ type: 'session.closed' }); await stop;
+});
+
+test('actual holding transitions ramp queued PCM at playback and reset on guest speech', async () => {
+    const clock = lagClock(), socket = new Socket();
+    const alpha = new Player(), quartz = new Player(), consumed = [];
+    const p = new QuartzPlayback({
+        outputGain: 4, outputNow: clock.holdingNow,
+        connection: { subscribe() {} }, alphaPlayer: alpha, player: quartz,
+        resourceFactory: stream => stream,
+        encoderFactory: () => ({ encode(pcm) { return pcm; }, delete() {} }),
+        onPcm: pcm => consumed.push(pcm),
+        clientFactory: options => new GptLiveBackchannel({
+            ...options, ...clock, apiKey: 'test', socketFactory: () => socket,
+            mixer: { start() {}, stop() {}, push() {} }, closeTimeoutMs: 10
+        })
+    });
+    const start = p.start(); socket.open();
+    socket.event({ type: 'session.started', session: { id: 'volume-ramp' } }); await start;
+    const voice = Buffer.alloc(640);
+    for (let i = 0; i < voice.length; i += 2) voice.writeInt16LE(500, i);
+    const play = expected => {
+        emitPcm({ socket }, voice);
+        const packet = p.stream.read();
+        assert.equal(packet.readInt16LE(0), expected);
+        assert.equal(consumed.at(-1).readInt16LE(0), expected);
+        assert.equal(p.quietFrames, 0, 'handoff still sees the original voice');
+    };
+    p.updateAlphaProgress('guest speaking'); play(500);
+    p.updateAlphaProgress('guest finished'); play(500);
+    clock.tick(5000); play(500);
+    clock.tick(5000);
+    assert.equal(p.client.environment, 'holding_rising'); play(500);
+    // Queue raw PCM without consuming it. Its gain must follow playback time.
+    emitPcm({ socket }, voice);
+    clock.tick(2500);
+    p.client.setAlphaPlaying(false, true); // reconnect's state reannouncement
+    assert.equal(p.stream.read().readInt16LE(0), 1250);
+    assert.equal(consumed.at(-1).readInt16LE(0), 1250);
+    clock.tick(2500); play(2000);
+    clock.tick(10000); play(2000);
+    p.updateAlphaProgress('guest speaking'); play(500);
+    p.updateAlphaProgress('guest finished'); clock.tick(10000); play(500);
+    clock.tick(2500); play(1250);
+    p.client.requestHandoff(); play(500);
+    assert.equal(voice.readInt16LE(0), 500, 'raw receipt evidence stays unchanged');
+    const stop = p.stop(); socket.event({ type: 'session.closed' }); await stop;
 });
