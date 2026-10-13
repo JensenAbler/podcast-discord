@@ -62,7 +62,7 @@ class AudioJournal {
         this.options = {
             outputFormat: this.normalizeOutputFormat(options.outputFormat || 'mp3'),
             mp3Bitrate: options.mp3Bitrate || '192k',
-            preserveStems: Boolean(options.preserveStems),
+            preserveStems: options.preserveStems !== false,
             preserveJournalAudio: Boolean(options.preserveJournalAudio),
             sampleRate: Number(options.sampleRate || 48000),
             channels: Number(options.channels || 2),
@@ -343,7 +343,7 @@ class AudioJournal {
             const channels = Number(first.channels || this.options.channels);
             const frameSize = this.bytesPerFrame(sampleRate, channels);
             const rawPath = path.join(this.stemDir, `${safeName(first.sourceType)}-${safeName(first.sourceId)}.timeline.raw`);
-            const wavPath = path.join(this.stemDir, `${safeName(first.sourceType)}-${safeName(first.sourceId)}.wav`);
+            const stemPath = path.join(this.stemDir, `${safeName(first.sourceType)}-${safeName(first.sourceId)}.mp3`);
             const rawFd = fs.openSync(rawPath, 'w');
             let finalByte = 0;
 
@@ -392,17 +392,18 @@ class AudioJournal {
                 '-ar', String(sampleRate),
                 '-ac', String(channels),
                 '-i', rawPath,
-                '-c:a', 'pcm_s16le',
+                '-c:a', 'libmp3lame',
+                '-b:a', this.options.mp3Bitrate,
                 '-ar', String(this.options.sampleRate),
                 '-ac', String(this.options.channels),
-                wavPath
+                stemPath
             ]);
             fs.unlinkSync(rawPath);
             stems.push({
                 key,
                 sourceType: first.sourceType,
                 sourceId: first.sourceId,
-                filePath: wavPath,
+                filePath: stemPath,
                 volume: Number(first.volume ?? 1)
             });
         }

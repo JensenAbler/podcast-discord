@@ -9019,10 +9019,12 @@ async function runTests() {
             metadata.files.mixedAudio !== 'mixed-audio.mp3' ||
             manifest.outputFormat !== 'mp3' ||
             manifest.mixedAudio !== 'mixed-audio.mp3' ||
-            manifest.stems.length !== 0 ||
+            manifest.stems.length !== 1 ||
+            manifest.stems[0] !== 'stems/participant-guest-1.mp3' ||
             sourceFiles.length !== 0 ||
             encodedFiles.length !== 0 ||
-            stemFiles.length !== 0
+            stemFiles.length !== 1 ||
+            stemFiles[0] !== 'participant-guest-1.mp3'
         ) {
             throw new Error(`MP3 finalization policy failed: ${JSON.stringify({
                 result,
@@ -9036,7 +9038,7 @@ async function runTests() {
         }
 
         fs.rmSync(tempDir, { recursive: true, force: true });
-        console.log('  Finalized recordings use MP3 and leave no duplicate raw audio archive');
+        console.log('  Finalized recordings preserve MP3 stems and leave no duplicate raw audio archive');
         passed++;
     } catch (error) {
         console.log(`  MP3 finalization failed: ${error.message}`);
