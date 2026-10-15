@@ -1,6 +1,10 @@
 import json, math, struct, statistics, re, sys
 from pathlib import Path
 out=Path(sys.argv[1]); manifest=json.loads((out/'manifest.json').read_text()); p=Path(manifest['episode']); startMs=manifest['startMs']; durationMs=manifest['durationMs']
+earlyMetrics=out/'metrics.json'
+if earlyMetrics.exists():
+ early=json.loads(earlyMetrics.read_text())
+ if early.get('failure'):durationMs=min(durationMs,early.get('completedMs',durationMs))
 journal=[json.loads(x) for x in (p/'audio-journal/chunks.jsonl').read_text().splitlines()]
 data={};handles={}
 for r in journal:
@@ -30,9 +34,12 @@ for threshold in [100,200,400]:
     rows.append({**t,'speaker':speaker,'otherShortOverlaps':other})
   baseline[str(threshold)+'/'+str(gap)]={'turns':len(rows),'turnsWithOtherShortOverlap':sum(bool(t['otherShortOverlaps']) for t in rows),'otherShortOverlapCount':sum(len(t['otherShortOverlaps']) for t in rows),'rows':rows}
 summary={'humanBaseline':{k:{a:b for a,b in v.items() if a!='rows'} for k,v in baseline.items()},'limitations':['Energy-derived speech spans, not manually labeled conversational turns. Short other-speaker overlaps are backchannel candidates, not verified acknowledgments.','One replay excerpt; original ASR may be fragmented, and replay uses historical completion times. Recorded Alpha state timing, no new Alpha generation. Boundary speech spans may be censored; first-contact latency is conditional on receiving contact.']}
+if manifest.get('alignment'):
+ summary['limitations']=[manifest['scope'],'No isolated interviewer track: human overlap/backchannel rates are unavailable. Energy groups measure guest-audio spans, not verified conversational turns.','Alignment exclusions and source hashes are in configuration.alignment. Rates use observed timeline duration including blocked interviewer/excluded intervals. No blind listening-fit score has been assigned.']
+ summary['humanBaselineAvailable']=False
 metrics=out/'metrics.json'
 if metrics.exists():
- m=json.loads(metrics.read_text()); frames=[f for f in m['consumed'] if 0<=f['t']<durationMs]; qg=groups(frames,80,180)
+ m=json.loads(metrics.read_text()); summary['validity']=m.get('validity',{'timingValid':False,'reasons':['legacy-run-without-timing-integrity-gate']}); summary['diagnosticOnly']=not summary['validity'].get('timingValid',False); frames=[f for f in m['consumed'] if 0<=f['t']<durationMs]; qg=groups(frames,80,180)
  rows=baseline['200/700']['rows']
  for t in rows:
   qs=[q for q in qg if t['start']<=q['start']<t['end']]
@@ -49,7 +56,7 @@ if metrics.exists():
    update=json.loads(e['message'].split(': ',1)[1]);nxt=update['state'];t=0 if update.get('revision')==1 else max(last,min(durationMs,e['t']))
    stateTimes[state]=stateTimes.get(state,0)+max(0,t-last);last=t;state=nxt
  stateTimes[state]=stateTimes.get(state,0)+max(0,durationMs-last)
- summary.update({'failure':m['failure'],'configuration':m['manifest'],'quartz':{'vocalizationGroups':len(qg),'groupsPerMinute':len(qg)/(durationMs/60000),'medianGroupDurationMs':med([q['end']-q['start'] for q in qg]),'medianInterOnsetMs':med([b['start']-a['start'] for a,b in zip(qg,qg[1:])]),'activeSeconds':sum(f['rms']>80 for f in frames)*.02,'stateAudio':states,'stateDurationsMs':stateTimes,'turns':turnstats(rows),'byTurnLength':{label:turnstats([t for t in rows if lo<=t['end']-t['start']<hi]) for label,lo,hi in [('2-5s',2000,5000),('5-15s',5000,15000),('15s+',15000,float('inf'))]},'groups':qg,'perTurn':rows},'playedTranscript':m['played'],'rawTranscript':m['raw'],'timing':{'lateActions':len(m['lags']),'maxLateMs':max(m['lags'],default=0)},'diagnostics':[e for e in events if any(s in e['message'] for s in ['dropped','Dropping','recovery','Session started'])]})
+ summary.update({'observedDurationMs':durationMs,'failure':m['failure'],'configuration':m['manifest'],'quartz':{'vocalizationGroups':len(qg),'groupsPerMinute':len(qg)/(durationMs/60000),'medianGroupDurationMs':med([q['end']-q['start'] for q in qg]),'medianInterOnsetMs':med([b['start']-a['start'] for a,b in zip(qg,qg[1:])]),'activeSeconds':sum(f['rms']>80 for f in frames)*.02,'stateAudio':states,'stateDurationsMs':stateTimes,'turns':turnstats(rows),'byTurnLength':{label:turnstats([t for t in rows if lo<=t['end']-t['start']<hi]) for label,lo,hi in [('2-5s',2000,5000),('5-15s',5000,15000),('15s+',15000,float('inf'))]},'groups':qg,'perTurn':rows},'playedTranscript':m['played'],'rawTranscript':m['raw'],'timing':{'lateActions':len(m['lags']),'maxLateMs':max(m['lags'],default=0)},'diagnostics':[e for e in events if any(s in e['message'] for s in ['dropped','Dropping','recovery','Session started'])]})
 out.parent.mkdir(parents=True,exist_ok=True)
 target=out/('summary.json' if metrics.exists() else 'human-baseline.json')
 target.write_text(json.dumps(summary,indent=2))
