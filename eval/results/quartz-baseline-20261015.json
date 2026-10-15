@@ -1,0 +1,1394 @@
+{
+  "aggregate": {
+    "minutes": 20,
+    "groups": 131,
+    "groupsPerMinute": 6.55,
+    "medianGroupDurationMs": 580,
+    "completeSpeechSpans": {
+      "speechSpans": 29,
+      "withContact": 20,
+      "onsets": 62,
+      "medianFirstLatencyMs": 1435.5
+    },
+    "bySpanLength": {
+      "2-5s": {
+        "speechSpans": 7,
+        "withContact": 3,
+        "onsets": 3,
+        "medianFirstLatencyMs": 1428
+      },
+      "5-15s": {
+        "speechSpans": 10,
+        "withContact": 7,
+        "onsets": 11,
+        "medianFirstLatencyMs": 1443
+      },
+      "15s+": {
+        "speechSpans": 12,
+        "withContact": 10,
+        "onsets": 48,
+        "medianFirstLatencyMs": 1346.5
+      }
+    },
+    "maxWithinSpanInterOnsetMs": 19979
+  },
+  "runs": [
+    {
+      "run": "andy8-0000s",
+      "configuration": {
+        "episode": "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z",
+        "startMs": 0,
+        "durationMs": 300000,
+        "productionCommit": "9539d6d291ed3bd31c32970c706420f52ceb758e",
+        "stateChannel": "thinking",
+        "voice": "quartz",
+        "turnControl": false,
+        "promptSha256": "f0d3256920dd46bb2b5f6d37e12506e0a969f18d04b70f8ae481ca1079c37bac",
+        "outputGain": "4",
+        "inputs": [
+          {
+            "path": "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z/audio-journal/sources/participant-119719160686051328.pcm.part",
+            "bytes": 297811200
+          },
+          {
+            "path": "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z/audio-journal/sources/participant-874332743171981372.pcm.part",
+            "bytes": 439023360
+          }
+        ],
+        "journalSha256": "7c428666b0acad24504d0a7c701edd6249298010819146dc120bc3c8fa88c8e6",
+        "transcriptSha256": "04c2bb9a804f3b2fa145320a808e509e235203a3c265177c834423a5dcb4f985",
+        "scope": "Recorded isolated participant PCM and original ASR completion updates; real production Quartz client, mixer, gate, gain, Opus player and local sink. Recorded Alpha playback state/reset timing; no live Alpha generation or fresh ASR. Human turn grouping and acknowledgments require separate analysis."
+      },
+      "quartz": {
+        "vocalizationGroups": 22,
+        "groupsPerMinute": 4.4,
+        "medianGroupDurationMs": 490.0,
+        "medianInterOnsetMs": 7422,
+        "activeSeconds": 14.58,
+        "stateAudio": {
+          "listening": {
+            "frames": 369,
+            "activeFrames": 0
+          },
+          "rare": {
+            "frames": 11169,
+            "activeFrames": 402
+          },
+          "holding": {
+            "frames": 980,
+            "activeFrames": 250
+          },
+          "holding_longer": {
+            "frames": 164,
+            "activeFrames": 77
+          }
+        },
+        "stateDurationsMs": {
+          "listening": 9045,
+          "aside": 39296,
+          "waiting_for_guest": 5290,
+          "rare": 223458,
+          "holding": 19621,
+          "holding_longer": 3290
+        },
+        "turns": {
+          "turns": 10,
+          "withQuartz": 5,
+          "quartzCount": 15,
+          "medianFirstLatencyMs": 5769
+        },
+        "byTurnLength": {
+          "2-5s": {
+            "turns": 1,
+            "withQuartz": 1,
+            "quartzCount": 1,
+            "medianFirstLatencyMs": 4095
+          },
+          "5-15s": {
+            "turns": 4,
+            "withQuartz": 1,
+            "quartzCount": 1,
+            "medianFirstLatencyMs": 6974
+          },
+          "15s+": {
+            "turns": 5,
+            "withQuartz": 3,
+            "quartzCount": 13,
+            "medianFirstLatencyMs": 5769
+          }
+        },
+        "groups": [
+          {
+            "start": 23436,
+            "end": 23915
+          },
+          {
+            "start": 24378,
+            "end": 24838
+          },
+          {
+            "start": 25396,
+            "end": 26196
+          },
+          {
+            "start": 30197,
+            "end": 30616
+          },
+          {
+            "start": 31817,
+            "end": 33556
+          },
+          {
+            "start": 59695,
+            "end": 60114
+          },
+          {
+            "start": 73315,
+            "end": 73615
+          },
+          {
+            "start": 75915,
+            "end": 76395
+          },
+          {
+            "start": 78336,
+            "end": 78715
+          },
+          {
+            "start": 142977,
+            "end": 143395
+          },
+          {
+            "start": 153116,
+            "end": 154734
+          },
+          {
+            "start": 187820,
+            "end": 187959
+          },
+          {
+            "start": 196502,
+            "end": 197101
+          },
+          {
+            "start": 203080,
+            "end": 203561
+          },
+          {
+            "start": 205021,
+            "end": 205762
+          },
+          {
+            "start": 217982,
+            "end": 218341
+          },
+          {
+            "start": 220801,
+            "end": 221362
+          },
+          {
+            "start": 240780,
+            "end": 241301
+          },
+          {
+            "start": 248202,
+            "end": 250780
+          },
+          {
+            "start": 271071,
+            "end": 271713
+          },
+          {
+            "start": 277033,
+            "end": 277532
+          },
+          {
+            "start": 285353,
+            "end": 286013
+          }
+        ],
+        "perTurn": [
+          {
+            "start": 44178,
+            "end": 56390,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [
+              {
+                "start": 47247,
+                "end": 47867,
+                "speaker": "874332743171981372"
+              }
+            ],
+            "quartzCount": 0,
+            "quartzFirstLatencyMs": null
+          },
+          {
+            "start": 80058,
+            "end": 99997,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [
+              {
+                "start": 80663,
+                "end": 80703,
+                "speaker": "874332743171981372"
+              }
+            ],
+            "quartzCount": 0,
+            "quartzFirstLatencyMs": null
+          },
+          {
+            "start": 100727,
+            "end": 127503,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 0,
+            "quartzFirstLatencyMs": null
+          },
+          {
+            "start": 128477,
+            "end": 134924,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [
+              {
+                "start": 132241,
+                "end": 133001,
+                "speaker": "874332743171981372"
+              }
+            ],
+            "quartzCount": 0,
+            "quartzFirstLatencyMs": null
+          },
+          {
+            "start": 136003,
+            "end": 146883,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [
+              {
+                "start": 137661,
+                "end": 137701,
+                "speaker": "874332743171981372"
+              },
+              {
+                "start": 142280,
+                "end": 142300,
+                "speaker": "874332743171981372"
+              }
+            ],
+            "quartzCount": 1,
+            "quartzFirstLatencyMs": 6974
+          },
+          {
+            "start": 26102,
+            "end": 30582,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 1,
+            "quartzFirstLatencyMs": 4095
+          },
+          {
+            "start": 57530,
+            "end": 78250,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [
+              {
+                "start": 59612,
+                "end": 60152,
+                "speaker": "119719160686051328"
+              },
+              {
+                "start": 75756,
+                "end": 76417,
+                "speaker": "119719160686051328"
+              }
+            ],
+            "quartzCount": 3,
+            "quartzFirstLatencyMs": 2165
+          },
+          {
+            "start": 165219,
+            "end": 246575,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 7,
+            "quartzFirstLatencyMs": 22601
+          },
+          {
+            "start": 265302,
+            "end": 289802,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 3,
+            "quartzFirstLatencyMs": 5769
+          },
+          {
+            "start": 290642,
+            "end": 300002,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 0,
+            "quartzFirstLatencyMs": null
+          }
+        ]
+      },
+      "timing": {
+        "lateActions": 0,
+        "maxLateMs": 0
+      },
+      "providerErrors": [],
+      "consumedText": [
+        "Mm-hmm.",
+        "Ah.",
+        "Mm.",
+        "Mhm.",
+        "Mm-hmm.",
+        "Mm.",
+        "Mm.",
+        "Mm.",
+        "Yeah.",
+        "Mm-hmm.",
+        "Mm.Uh.",
+        "Mm.",
+        "Mm-hmm.",
+        "Mm.",
+        "Mm-hmm.",
+        "Mm.",
+        "Okay.",
+        "Mm-hmm.",
+        "Hmm.um.",
+        "Uh.",
+        "Mm-hmm."
+      ],
+      "completeSpeechSpans": 9
+    },
+    {
+      "run": "andy8-0300s",
+      "configuration": {
+        "episode": "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z",
+        "startMs": 300000,
+        "durationMs": 300000,
+        "productionCommit": "9539d6d291ed3bd31c32970c706420f52ceb758e",
+        "stateChannel": "thinking",
+        "voice": "quartz",
+        "turnControl": false,
+        "promptSha256": "f0d3256920dd46bb2b5f6d37e12506e0a969f18d04b70f8ae481ca1079c37bac",
+        "outputGain": "4",
+        "inputs": [
+          {
+            "path": "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z/audio-journal/sources/participant-874332743171981372.pcm.part",
+            "bytes": 439023360
+          },
+          {
+            "path": "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z/audio-journal/sources/participant-119719160686051328.pcm.part",
+            "bytes": 297811200
+          }
+        ],
+        "journalSha256": "7c428666b0acad24504d0a7c701edd6249298010819146dc120bc3c8fa88c8e6",
+        "transcriptSha256": "04c2bb9a804f3b2fa145320a808e509e235203a3c265177c834423a5dcb4f985",
+        "scope": "Recorded isolated participant PCM and original ASR completion updates; real production Quartz client, mixer, gate, gain, Opus player and local sink. Recorded Alpha playback state/reset timing; no live Alpha generation or fresh ASR. Human turn grouping and acknowledgments require separate analysis."
+      },
+      "quartz": {
+        "vocalizationGroups": 27,
+        "groupsPerMinute": 5.4,
+        "medianGroupDurationMs": 401,
+        "medianInterOnsetMs": 7548.5,
+        "activeSeconds": 10.68,
+        "stateAudio": {
+          "rare": {
+            "frames": 12420,
+            "activeFrames": 475
+          },
+          "holding": {
+            "frames": 460,
+            "activeFrames": 59
+          }
+        },
+        "stateDurationsMs": {
+          "listening": 3,
+          "rare": 249374,
+          "holding": 9195,
+          "aside": 38776,
+          "waiting_for_guest": 2652
+        },
+        "turns": {
+          "turns": 7,
+          "withQuartz": 6,
+          "quartzCount": 24,
+          "medianFirstLatencyMs": 425.0
+        },
+        "byTurnLength": {
+          "2-5s": {
+            "turns": 1,
+            "withQuartz": 0,
+            "quartzCount": 0,
+            "medianFirstLatencyMs": null
+          },
+          "5-15s": {
+            "turns": 2,
+            "withQuartz": 2,
+            "quartzCount": 2,
+            "medianFirstLatencyMs": 401.5
+          },
+          "15s+": {
+            "turns": 4,
+            "withQuartz": 4,
+            "quartzCount": 22,
+            "medianFirstLatencyMs": 444.0
+          }
+        },
+        "groups": [
+          {
+            "start": 868,
+            "end": 1254
+          },
+          {
+            "start": 2805,
+            "end": 2994
+          },
+          {
+            "start": 24425,
+            "end": 24626
+          },
+          {
+            "start": 25886,
+            "end": 26067
+          },
+          {
+            "start": 26506,
+            "end": 26686
+          },
+          {
+            "start": 38287,
+            "end": 38586
+          },
+          {
+            "start": 38846,
+            "end": 38885
+          },
+          {
+            "start": 74226,
+            "end": 74607
+          },
+          {
+            "start": 88065,
+            "end": 88566
+          },
+          {
+            "start": 111682,
+            "end": 111944
+          },
+          {
+            "start": 121483,
+            "end": 121942
+          },
+          {
+            "start": 122464,
+            "end": 122942
+          },
+          {
+            "start": 127483,
+            "end": 127983
+          },
+          {
+            "start": 134004,
+            "end": 134383
+          },
+          {
+            "start": 142284,
+            "end": 142903
+          },
+          {
+            "start": 146282,
+            "end": 146682
+          },
+          {
+            "start": 151884,
+            "end": 152403
+          },
+          {
+            "start": 164883,
+            "end": 165284
+          },
+          {
+            "start": 179724,
+            "end": 180103
+          },
+          {
+            "start": 183733,
+            "end": 183949
+          },
+          {
+            "start": 200204,
+            "end": 200606
+          },
+          {
+            "start": 205863,
+            "end": 206502
+          },
+          {
+            "start": 228903,
+            "end": 229663
+          },
+          {
+            "start": 261104,
+            "end": 261865
+          },
+          {
+            "start": 267492,
+            "end": 268427
+          },
+          {
+            "start": 274309,
+            "end": 274752
+          },
+          {
+            "start": 284150,
+            "end": 284808
+          }
+        ],
+        "perTurn": [
+          {
+            "start": 2,
+            "end": 86663,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 8,
+            "quartzFirstLatencyMs": 866
+          },
+          {
+            "start": 111305,
+            "end": 121205,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 1,
+            "quartzFirstLatencyMs": 377
+          },
+          {
+            "start": 122000,
+            "end": 141140,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 3,
+            "quartzFirstLatencyMs": 464
+          },
+          {
+            "start": 141860,
+            "end": 227443,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 8,
+            "quartzFirstLatencyMs": 424
+          },
+          {
+            "start": 255521,
+            "end": 259781,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 0,
+            "quartzFirstLatencyMs": null
+          },
+          {
+            "start": 260678,
+            "end": 266267,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 1,
+            "quartzFirstLatencyMs": 426
+          },
+          {
+            "start": 267167,
+            "end": 300007,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 3,
+            "quartzFirstLatencyMs": 325
+          }
+        ]
+      },
+      "timing": {
+        "lateActions": 2,
+        "maxLateMs": 98
+      },
+      "providerErrors": [],
+      "consumedText": [
+        "ah",
+        "ah",
+        "hmm",
+        "um",
+        "hmm",
+        "mmm",
+        "hmm um",
+        "Um.",
+        "Mm.",
+        "Hmm.",
+        "Mm-hmm.",
+        "Mm.",
+        "Mm-hmm.",
+        "Mm.",
+        "Mm-hmm.",
+        "Mm.",
+        "Mm.",
+        "Mm.",
+        "Mm.",
+        "Mm-hmm.",
+        "Mm.",
+        "Right."
+      ],
+      "completeSpeechSpans": 5
+    },
+    {
+      "run": "andy8-0900s",
+      "configuration": {
+        "episode": "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z",
+        "startMs": 900000,
+        "durationMs": 300000,
+        "productionCommit": "9539d6d291ed3bd31c32970c706420f52ceb758e",
+        "stateChannel": "thinking",
+        "voice": "quartz",
+        "turnControl": false,
+        "promptSha256": "f0d3256920dd46bb2b5f6d37e12506e0a969f18d04b70f8ae481ca1079c37bac",
+        "outputGain": "4",
+        "inputs": [
+          {
+            "path": "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z/audio-journal/sources/participant-119719160686051328.pcm.part",
+            "bytes": 297811200
+          },
+          {
+            "path": "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z/audio-journal/sources/participant-874332743171981372.pcm.part",
+            "bytes": 439023360
+          }
+        ],
+        "journalSha256": "7c428666b0acad24504d0a7c701edd6249298010819146dc120bc3c8fa88c8e6",
+        "transcriptSha256": "04c2bb9a804f3b2fa145320a808e509e235203a3c265177c834423a5dcb4f985",
+        "scope": "Recorded isolated participant PCM and original ASR completion updates; real production Quartz client, mixer, gate, gain, Opus player and local sink. Recorded Alpha playback state/reset timing; no live Alpha generation or fresh ASR. Human turn grouping and acknowledgments require separate analysis."
+      },
+      "quartz": {
+        "vocalizationGroups": 56,
+        "groupsPerMinute": 11.2,
+        "medianGroupDurationMs": 610.5,
+        "medianInterOnsetMs": 3739,
+        "activeSeconds": 33.22,
+        "stateAudio": {
+          "rare": {
+            "frames": 9443,
+            "activeFrames": 792
+          },
+          "holding": {
+            "frames": 2359,
+            "activeFrames": 367
+          },
+          "holding_longer": {
+            "frames": 725,
+            "activeFrames": 242
+          },
+          "holding_rising": {
+            "frames": 737,
+            "activeFrames": 260
+          }
+        },
+        "stateDurationsMs": {
+          "listening": 2,
+          "rare": 189899,
+          "holding": 47176,
+          "aside": 29671,
+          "waiting_for_guest": 4048,
+          "holding_longer": 14460,
+          "holding_rising": 14744
+        },
+        "turns": {
+          "turns": 15,
+          "withQuartz": 11,
+          "quartzCount": 24,
+          "medianFirstLatencyMs": 1443
+        },
+        "byTurnLength": {
+          "2-5s": {
+            "turns": 6,
+            "withQuartz": 3,
+            "quartzCount": 3,
+            "medianFirstLatencyMs": 1315
+          },
+          "5-15s": {
+            "turns": 6,
+            "withQuartz": 5,
+            "quartzCount": 9,
+            "medianFirstLatencyMs": 2968
+          },
+          "15s+": {
+            "turns": 3,
+            "withQuartz": 3,
+            "quartzCount": 12,
+            "medianFirstLatencyMs": 1749
+          }
+        },
+        "groups": [
+          {
+            "start": 1315,
+            "end": 2114
+          },
+          {
+            "start": 3573,
+            "end": 4733
+          },
+          {
+            "start": 5092,
+            "end": 5493
+          },
+          {
+            "start": 18111,
+            "end": 18673
+          },
+          {
+            "start": 23453,
+            "end": 23932
+          },
+          {
+            "start": 37431,
+            "end": 38251
+          },
+          {
+            "start": 60252,
+            "end": 60671
+          },
+          {
+            "start": 65932,
+            "end": 66371
+          },
+          {
+            "start": 66732,
+            "end": 67191
+          },
+          {
+            "start": 68891,
+            "end": 69412
+          },
+          {
+            "start": 71073,
+            "end": 71472
+          },
+          {
+            "start": 72331,
+            "end": 72852
+          },
+          {
+            "start": 96391,
+            "end": 96852
+          },
+          {
+            "start": 102911,
+            "end": 103592
+          },
+          {
+            "start": 111211,
+            "end": 111852
+          },
+          {
+            "start": 117311,
+            "end": 118113
+          },
+          {
+            "start": 137041,
+            "end": 137621
+          },
+          {
+            "start": 138423,
+            "end": 139003
+          },
+          {
+            "start": 139883,
+            "end": 140483
+          },
+          {
+            "start": 142281,
+            "end": 142982
+          },
+          {
+            "start": 145761,
+            "end": 146902
+          },
+          {
+            "start": 147700,
+            "end": 148463
+          },
+          {
+            "start": 149361,
+            "end": 150462
+          },
+          {
+            "start": 151542,
+            "end": 152582
+          },
+          {
+            "start": 153442,
+            "end": 155103
+          },
+          {
+            "start": 159742,
+            "end": 160481
+          },
+          {
+            "start": 161802,
+            "end": 162241
+          },
+          {
+            "start": 166601,
+            "end": 167301
+          },
+          {
+            "start": 167982,
+            "end": 169022
+          },
+          {
+            "start": 171721,
+            "end": 173001
+          },
+          {
+            "start": 174103,
+            "end": 174863
+          },
+          {
+            "start": 183142,
+            "end": 183849
+          },
+          {
+            "start": 190083,
+            "end": 190944
+          },
+          {
+            "start": 191483,
+            "end": 192162
+          },
+          {
+            "start": 202122,
+            "end": 202702
+          },
+          {
+            "start": 205143,
+            "end": 205604
+          },
+          {
+            "start": 205803,
+            "end": 205882
+          },
+          {
+            "start": 210582,
+            "end": 211203
+          },
+          {
+            "start": 216563,
+            "end": 216863
+          },
+          {
+            "start": 223842,
+            "end": 224162
+          },
+          {
+            "start": 228764,
+            "end": 229481
+          },
+          {
+            "start": 230342,
+            "end": 231062
+          },
+          {
+            "start": 235262,
+            "end": 236161
+          },
+          {
+            "start": 239061,
+            "end": 239703
+          },
+          {
+            "start": 241502,
+            "end": 241783
+          },
+          {
+            "start": 256121,
+            "end": 256362
+          },
+          {
+            "start": 257922,
+            "end": 258242
+          },
+          {
+            "start": 260042,
+            "end": 260183
+          },
+          {
+            "start": 265762,
+            "end": 266302
+          },
+          {
+            "start": 279301,
+            "end": 279841
+          },
+          {
+            "start": 280301,
+            "end": 280981
+          },
+          {
+            "start": 284142,
+            "end": 284881
+          },
+          {
+            "start": 287863,
+            "end": 287883
+          },
+          {
+            "start": 288102,
+            "end": 288603
+          },
+          {
+            "start": 294522,
+            "end": 295221
+          },
+          {
+            "start": 299901,
+            "end": 299983
+          }
+        ],
+        "perTurn": [
+          {
+            "start": 0,
+            "end": 2400,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 1,
+            "quartzFirstLatencyMs": 1315
+          },
+          {
+            "start": 3320,
+            "end": 58718,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 5,
+            "quartzFirstLatencyMs": 253
+          },
+          {
+            "start": 59617,
+            "end": 63957,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 1,
+            "quartzFirstLatencyMs": 635
+          },
+          {
+            "start": 94642,
+            "end": 115946,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 3,
+            "quartzFirstLatencyMs": 1749
+          },
+          {
+            "start": 154588,
+            "end": 158308,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 0,
+            "quartzFirstLatencyMs": null
+          },
+          {
+            "start": 180174,
+            "end": 192478,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 3,
+            "quartzFirstLatencyMs": 2968
+          },
+          {
+            "start": 200694,
+            "end": 203894,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 1,
+            "quartzFirstLatencyMs": 1428
+          },
+          {
+            "start": 210994,
+            "end": 222380,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 1,
+            "quartzFirstLatencyMs": 5569
+          },
+          {
+            "start": 240059,
+            "end": 254759,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 1,
+            "quartzFirstLatencyMs": 1443
+          },
+          {
+            "start": 257943,
+            "end": 282769,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 4,
+            "quartzFirstLatencyMs": 2099
+          },
+          {
+            "start": 283994,
+            "end": 289289,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 3,
+            "quartzFirstLatencyMs": 148
+          },
+          {
+            "start": 294612,
+            "end": 300010,
+            "speaker": "119719160686051328",
+            "otherShortOverlaps": [],
+            "quartzCount": 1,
+            "quartzFirstLatencyMs": 5289
+          },
+          {
+            "start": 134283,
+            "end": 136583,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 0,
+            "quartzFirstLatencyMs": null
+          },
+          {
+            "start": 193104,
+            "end": 201384,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 0,
+            "quartzFirstLatencyMs": null
+          },
+          {
+            "start": 288322,
+            "end": 292982,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 0,
+            "quartzFirstLatencyMs": null
+          }
+        ]
+      },
+      "timing": {
+        "lateActions": 8,
+        "maxLateMs": 206
+      },
+      "providerErrors": [],
+      "consumedText": [
+        "Mhm.",
+        "Mm. Mhm.",
+        "Mhm.",
+        "Mhm.",
+        "Hmm.",
+        "Mhm.",
+        "Mhm.",
+        "Mhm.Hmm.",
+        "Mhm.",
+        "Mhm.",
+        "Mhm.",
+        "Mhm.",
+        "Hmm.",
+        "Mm.",
+        "Mm.",
+        "Hmm.",
+        "Mm",
+        "Mm-hmm.",
+        "Hmm.",
+        "Um.",
+        "Uh.",
+        "Hmm",
+        "Umh.",
+        "Hmm",
+        "Hmm.",
+        "Mm.",
+        "Um.",
+        "Hmm.",
+        "Umh.",
+        "Hmm.",
+        "Hmm.",
+        "Hmm.",
+        "Hmm.",
+        "Mm.",
+        "Hmm.",
+        "Um.",
+        "Mm.",
+        "Um.",
+        "Hmm.",
+        "Um.",
+        "Um.",
+        "Hmm.",
+        "Hmm.",
+        "Um.",
+        "Hmm.",
+        "Hmm.",
+        "Mm.",
+        "Hmm.",
+        "Mm.",
+        "Um.",
+        "Mm."
+      ],
+      "completeSpeechSpans": 13
+    },
+    {
+      "run": "andy8-1800s",
+      "configuration": {
+        "episode": "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z",
+        "startMs": 1800000,
+        "durationMs": 300000,
+        "productionCommit": "9539d6d291ed3bd31c32970c706420f52ceb758e",
+        "stateChannel": "thinking",
+        "voice": "quartz",
+        "turnControl": false,
+        "promptSha256": "f0d3256920dd46bb2b5f6d37e12506e0a969f18d04b70f8ae481ca1079c37bac",
+        "outputGain": "4",
+        "inputs": [
+          {
+            "path": "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z/audio-journal/sources/participant-874332743171981372.pcm.part",
+            "bytes": 439023360
+          }
+        ],
+        "journalSha256": "7c428666b0acad24504d0a7c701edd6249298010819146dc120bc3c8fa88c8e6",
+        "transcriptSha256": "04c2bb9a804f3b2fa145320a808e509e235203a3c265177c834423a5dcb4f985",
+        "scope": "Recorded isolated participant PCM and original ASR completion updates; real production Quartz client, mixer, gate, gain, Opus player and local sink. Recorded Alpha playback state/reset timing; no live Alpha generation or fresh ASR. Human turn grouping and acknowledgments require separate analysis."
+      },
+      "quartz": {
+        "vocalizationGroups": 26,
+        "groupsPerMinute": 5.2,
+        "medianGroupDurationMs": 730.0,
+        "medianInterOnsetMs": 7179,
+        "activeSeconds": 18.42,
+        "stateAudio": {
+          "rare": {
+            "frames": 12036,
+            "activeFrames": 733
+          },
+          "holding": {
+            "frames": 429,
+            "activeFrames": 188
+          }
+        },
+        "stateDurationsMs": {
+          "listening": 13,
+          "rare": 241580,
+          "holding": 8564,
+          "aside": 47648,
+          "waiting_for_guest": 2195
+        },
+        "turns": {
+          "turns": 4,
+          "withQuartz": 4,
+          "quartzCount": 21,
+          "medianFirstLatencyMs": 5285.5
+        },
+        "byTurnLength": {
+          "2-5s": {
+            "turns": 0,
+            "withQuartz": 0,
+            "quartzCount": 0,
+            "medianFirstLatencyMs": null
+          },
+          "5-15s": {
+            "turns": 0,
+            "withQuartz": 0,
+            "quartzCount": 0,
+            "medianFirstLatencyMs": null
+          },
+          "15s+": {
+            "turns": 4,
+            "withQuartz": 4,
+            "quartzCount": 21,
+            "medianFirstLatencyMs": 5285.5
+          }
+        },
+        "groups": [
+          {
+            "start": 9639,
+            "end": 10139
+          },
+          {
+            "start": 21679,
+            "end": 22299
+          },
+          {
+            "start": 26999,
+            "end": 27639
+          },
+          {
+            "start": 56099,
+            "end": 56599
+          },
+          {
+            "start": 58519,
+            "end": 59518
+          },
+          {
+            "start": 64518,
+            "end": 65399
+          },
+          {
+            "start": 100118,
+            "end": 102358
+          },
+          {
+            "start": 102578,
+            "end": 103298
+          },
+          {
+            "start": 130054,
+            "end": 130074
+          },
+          {
+            "start": 131934,
+            "end": 132713
+          },
+          {
+            "start": 135253,
+            "end": 135934
+          },
+          {
+            "start": 142372,
+            "end": 143153
+          },
+          {
+            "start": 143433,
+            "end": 143533
+          },
+          {
+            "start": 144454,
+            "end": 145153
+          },
+          {
+            "start": 150632,
+            "end": 151413
+          },
+          {
+            "start": 158033,
+            "end": 158834
+          },
+          {
+            "start": 166254,
+            "end": 166952
+          },
+          {
+            "start": 173433,
+            "end": 174253
+          },
+          {
+            "start": 177813,
+            "end": 178692
+          },
+          {
+            "start": 204849,
+            "end": 206170
+          },
+          {
+            "start": 210428,
+            "end": 211168
+          },
+          {
+            "start": 225609,
+            "end": 226369
+          },
+          {
+            "start": 246769,
+            "end": 247670
+          },
+          {
+            "start": 265610,
+            "end": 266248
+          },
+          {
+            "start": 274788,
+            "end": 275209
+          },
+          {
+            "start": 293169,
+            "end": 293808
+          }
+        ],
+        "perTurn": [
+          {
+            "start": 12,
+            "end": 98798,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 6,
+            "quartzFirstLatencyMs": 9627
+          },
+          {
+            "start": 131604,
+            "end": 176204,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 9,
+            "quartzFirstLatencyMs": 330
+          },
+          {
+            "start": 203905,
+            "end": 246733,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 3,
+            "quartzFirstLatencyMs": 944
+          },
+          {
+            "start": 247493,
+            "end": 299913,
+            "speaker": "874332743171981372",
+            "otherShortOverlaps": [],
+            "quartzCount": 3,
+            "quartzFirstLatencyMs": 18117
+          }
+        ]
+      },
+      "timing": {
+        "lateActions": 0,
+        "maxLateMs": 0
+      },
+      "providerErrors": [],
+      "consumedText": [
+        "Mm.",
+        "Mm-hmm.",
+        "Mm.",
+        "Mm-hmm.",
+        "Hmm.",
+        "Mm-hmm.",
+        "Hmm.",
+        "Uh.",
+        "Mm.",
+        "Mm-hmm.",
+        "Mm.",
+        "[sigh]",
+        "Mm-hmm.",
+        "Mm.",
+        "Mm-hmm.",
+        "Mm.",
+        "Hum.",
+        "Is that what I think it is?",
+        "Mm.",
+        "Mhm.",
+        "Eheh mm.",
+        "Mm.",
+        "Mhm.",
+        "Mm."
+      ],
+      "completeSpeechSpans": 2
+    }
+  ],
+  "provenance": {
+    "observedAt": "2026-10-15T01:29:52.430416+00:00",
+    "productionCommit": "9539d6d291ed3bd31c32970c706420f52ceb758e",
+    "sourceHashes": {
+      "gpt-live-backchannel.js": "7279563a6875dacee041abe6f18ad2e4ef387fe73aaaa819eee7c86cfd843e27",
+      "quartz-playback.js": "3e39083c9cf35eac3a54bf5df2c444d31e873444bcabe6ac9a3b131e1ebd98cc",
+      "quartz-output-level.js": "ac7f56068645f9672decbb2bbe078c33ac088e60815ee4defadd471b9cd19e93",
+      "package-lock.json": "6d0c859d6781d0f99628a0f56f9f4673c75fb489d0fe725aaf729b869d1f1acb"
+    },
+    "inputHashes": {
+      "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z/audio-journal/sources/participant-119719160686051328.pcm.part": "6b93543c1965b6662d209599a447841793e06a5e368508fde2373e119c4f639c",
+      "/opt/clawcast-network/content/recordings/episode-2026-07-07T18-33-00-539Z/audio-journal/sources/participant-874332743171981372.pcm.part": "22496fbec86b6bd426d2309c74f2a6742cf7617ae686ed1483a9ae24ae3f372c"
+    },
+    "replayJobId": "818be2d8-4f3c-4e33-8602-d94daa0cceb1",
+    "workspaceId": "6776716e-243e-49a2-8c66-1fd019bf20ae"
+  }
+}
