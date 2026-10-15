@@ -23,22 +23,32 @@ test('full resume-sized context survives while acknowledgments keep up', () => {
     } finally { q.reset(); }
 });
 
-test('no trimming before deadline, and a late acknowledgment cannot revive the backlog', () => {
+test('late timeline acknowledgment preserves backlog and measures send age separately', () => {
     let now = 0;
-    const sent = [], lag = [];
-    const q = new LiveContextQueue({ maxAgeMs: 1000, now: () => now, send: e => { sent.push(e); return true; }, onLag: e => lag.push(e) });
-    for (let i = 0; i < 469; i++) q.enqueue({ event_id: String(i) });
-    now = 999;
-    assert.equal(q.checkLag(), false);
-    assert.equal(q.waiting.length, 465);
-    now = 1000;
-    q.accept('0');
-    assert.equal(lag.length, 1);
-    assert.equal(lag[0].reason, 'context-delivery-lag');
-    assert.equal(q.pending.size + q.waiting.length, 0);
-    q.accept('1');
-    assert.equal(sent.length, 4);
-    assert.equal(q.timer, null);
+    const sent = [], warnings = [], accepted = [];
+    const q = new LiveContextQueue({ maxAgeMs: 1000, maxPending: 1, now: () => now,
+        send: e => { sent.push(e); return true; }, onLag: e => warnings.push(e), onAccepted: e => accepted.push(e) });
+    try {
+        q.enqueue({ event_id: 'a' }); q.enqueue({ event_id: 'b' });
+        now = 5000;
+        q.checkLag(); q.checkLag();
+        assert.equal(warnings.length, 1, 'warn once, do not reset');
+        assert.equal(q.pending.size, 1);
+        q.accept('a', { start_ms: 0, end_ms: 5000 });
+        assert.equal(q.pending.size, 1);
+        assert.equal(q.checkLag(), false, 'queued time is not delivery time');
+        now = 5500; q.accept('b');
+        assert.equal(accepted[1].queueMs, 5000);
+        assert.equal(accepted[1].deliveryMs, 500);
+        assert.equal(q.timer, null);
+    } finally { q.reset(); }
+});
+test('send failure resets bounded queue and invokes failure recovery', () => {
+    const failures = [];
+    const q = new LiveContextQueue({ send: () => false, onFailure: e => failures.push(e) });
+    q.enqueue({ event_id: 'a' });
+    assert.equal(failures[0].reason, 'context-send-failed');
+    assert.equal(q.pending.size, 0);
 });
 
 class Socket extends EventEmitter {
@@ -71,45 +81,21 @@ async function start(t) {
     await ready;
 }
 
-test('slow context resets session, uses freshest text, resumes live audio, and rejects old socket events', async () => {
+test('slow context does not reconnect and guest transcripts never become live appends', async () => {
     const t = setup();
     try {
         await start(t);
-        const first = t.sockets[0];
-        for (let i = 0; i < 391; i++) t.client.appendConversation('Guest transcript', 'old speech ' + i);
-        assert.equal(first.sent.filter(e => e.type === 'session.thinking.append').length, 4);
-        // Advance the scheduler's measured age without waiting on wall-clock time.
-        t.client.contextQueue.now = () => Date.now() + 1001;
+        const before = t.sockets[0].sent.length;
+        for (let i = 0; i < 391; i++) t.client.appendConversation('Guest transcript', 'speech ' + i);
+        assert.equal(t.sockets[0].sent.length, before);
+        t.client.contextQueue.now = () => Date.now() + 20000;
         t.client.contextQueue.checkLag();
-        assert.equal(first.readyState, 3);
-        t.client.appendConversation('Guest transcript', 'CURRENT QUESTION');
-        await waitFor(() => t.sockets.length === 2);
-        const second = t.sockets[1];
-        second.open();
-        second.event({ type: 'session.started', session: { id: 'fresh' } });
-        const context = second.sent.filter(e => e.type === 'session.thinking.append');
-        assert.ok(context.some(e => e.content.includes('CURRENT QUESTION')));
-        assert.ok(!context.some(e => e.content.includes('old speech')));
-        const audio = { type: 'session.output_audio.delta', delta: Buffer.alloc(640, 10).toString('base64') };
-        first.event(audio);
-        assert.equal(t.audio.length, 0);
-        second.event(audio);
-        assert.equal(t.audio.length, 1);
-        assert.ok(t.logs.some(x => x.startsWith('Context recovery:')));
-        assert.equal(t.client.contextQueue.waiting.length, 0);
-        // Once recovered, new healthy turns are complete, not permanently windowed.
-        for (const e of [...second.sent]) {
-            if (e.event_id) second.event({ type: 'session.thinking.appended', client_event_id: e.event_id });
-        }
-        const full = 'A detailed new answer. '.repeat(100) + 'FINAL DETAIL';
-        const before = second.sent.length;
-        t.client.appendConversation('Guest transcript', full);
-        while (t.client.contextQueue.pending.size) {
-            second.event({ type: 'session.thinking.appended',
-                client_event_id: t.client.contextQueue.pending.keys().next().value });
-        }
-        const delivered = second.sent.slice(before).filter(e => e.content?.startsWith('Conversation data'));
-        assert.equal(delivered.map(e => JSON.parse(e.content.slice(e.content.indexOf(': ') + 2))).join(''), full);
+        assert.equal(t.client.started, true);
+        assert.equal(t.sockets.length, 1);
+        assert.ok(t.client.recoveryHistory.length <= 64);
+        const id = t.client.contextQueue.pending.keys().next().value;
+        t.sockets[0].event({ type: 'session.instructions.appended', client_event_id: id });
+        assert.equal(t.client.contextQueue.pending.size, 0);
     } finally { await t.client.stop(); }
 });
 

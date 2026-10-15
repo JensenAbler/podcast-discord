@@ -1,8 +1,10 @@
-// Preserve all context while the provider keeps up. Sacrifice it only on measured lag.
+// Append acknowledgments follow the model timeline; elapsed time alone is not a connection failure.
 class LiveContextQueue {
-    constructor({ send, onLag, now = Date.now, maxPending = 4, maxAgeMs = 2000 }) {
+    constructor({ send, onLag = () => {}, onFailure = () => {}, onAccepted = () => {}, now = Date.now, maxPending = 4, maxAgeMs = 10000 }) {
         this.send = send;
         this.onLag = onLag;
+        this.onFailure = onFailure;
+        this.onAccepted = onAccepted;
         this.now = now;
         this.maxPending = maxPending;
         this.maxAgeMs = maxAgeMs;
@@ -26,10 +28,12 @@ class LiveContextQueue {
         this.clearTimerIfIdle();
     }
 
-    accept(id) {
-        if (!this.pending.has(id)) return false;
-        if (this.checkLag()) return true;
+    accept(id, event = {}) {
+        const item = this.pending.get(id);
+        if (!item) return false;
         this.pending.delete(id);
+        this.onAccepted({ eventId: id, queueMs: item.sentAt - item.queuedAt,
+            deliveryMs: this.now() - item.sentAt, startMs: event.start_ms, endMs: event.end_ms });
         this.pump();
         this.clearTimerIfIdle();
         return true;
@@ -41,6 +45,7 @@ class LiveContextQueue {
         try {
             while (this.waiting.length && this.pending.size < this.maxPending) {
                 const item = this.waiting.shift();
+                item.sentAt = this.now();
                 this.pending.set(item.event.event_id, item);
                 if (!this.send(item.event)) {
                     this.fail('context-send-failed');
@@ -52,19 +57,22 @@ class LiveContextQueue {
     }
 
     checkLag() {
-        const oldest = Math.min(this.waiting[0]?.queuedAt ?? Infinity,
-            ...Array.from(this.pending.values(), x => x.queuedAt));
-        if (Number.isFinite(oldest) && this.now() - oldest >= this.maxAgeMs) {
-            this.fail('context-delivery-lag', this.now() - oldest);
-            return true;
+        let warned = false;
+        for (const item of this.pending.values()) {
+            if (!item.warned && this.now() - item.sentAt >= this.maxAgeMs) {
+                item.warned = true;
+                this.onLag({ reason: 'context-delivery-pending', eventId: item.event.event_id,
+                    ageMs: this.now() - item.sentAt, pending: this.pending.size, queued: this.waiting.length });
+                warned = true;
+            }
         }
-        return false;
+        return warned;
     }
 
     fail(reason, ageMs = 0) {
         const report = { reason, ageMs, pending: this.pending.size, queued: this.waiting.length };
         this.reset();
-        this.onLag(report);
+        this.onFailure(report);
     }
 
     clearTimerIfIdle() {

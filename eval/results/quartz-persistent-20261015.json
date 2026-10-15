@@ -1,0 +1,370 @@
+{
+  "batch": "persistent-audio-only-v1",
+  "fixtures": {
+    "jacob": {
+      "sourceStartSec": 300.0,
+      "durationSec": 600,
+      "timingValid": true,
+      "maxSchedulingLagMs": 73.00346300000092,
+      "referenceCount": 6,
+      "quartzCount": 17,
+      "matches": {
+        "0.25": 0,
+        "0.5": 0,
+        "1.0": 1
+      },
+      "sessions": 1,
+      "recoveries": 0,
+      "inputLoss": 0,
+      "providerErrors": 0,
+      "maxContextDeliveryMs": 1274,
+      "contextPendingWarnings": 0,
+      "maxSocketBufferedBytes": 3648,
+      "finalInputMinusOutputDurationMs": 10840,
+      "quartzCountByMinute": [
+        1,
+        3,
+        1,
+        2,
+        2,
+        1,
+        1,
+        1,
+        2,
+        3
+      ],
+      "playedTranscriptCounts": {
+        "Hmm.": 2,
+        "Mm-hmm.": 8,
+        "Mmhmm.": 1,
+        "Ah.": 1,
+        "Mm-hm.": 4,
+        "[gulp]": 1
+      },
+      "manifest": {
+        "sourceRoot": "/var/lib/praxis-root/workspaces/341a4071-5b1e-4956-80e0-35954d8f4608",
+        "schemaVersion": 2,
+        "replayMode": "continuous",
+        "transcriptInput": "startup-history-only; no live transcript appends",
+        "startupHistoryMessages": 0,
+        "episode": "/var/lib/praxis-root/home/quartz-youtube-evals-20261015/jacob-guest-only",
+        "startMs": 300000,
+        "durationMs": 600000,
+        "scoreStartMs": 0,
+        "productionCommit": "190736bc8b6a97e78dd65bd7341eab889a284825",
+        "stateChannel": "instructions",
+        "voice": "quartz",
+        "turnControl": false,
+        "promptSha256": "027d1da0613c514b87d8c87aae890db282cb5364878d2acfc83ca040ad9afce8",
+        "outputGain": "4",
+        "clock": "performance.now monotonic",
+        "maxLateMs": 100,
+        "codecWarmupMs": 124.14353500000001,
+        "harnessSha256": "e585055ab0eb1cae145857be5c33601a99e21160bd1d708a4ef00cc058fb9da9",
+        "timingModuleSha256": "e6aec422db15f0217f3889106721410d774dbb25208eb5acc702f74eb7f6f9aa",
+        "productionCodeSha256": "113d9f553416370b7a6cb37074678ba8583d08ea0aa1a063f9fd30bbbfb911c2",
+        "journalSha256": "08916f4ed723ab4e72d6f2ed12fba593f7936105a9441b7e273dc0994c5961d7",
+        "transcriptSha256": "8cdb9f70b194e71915e6ea6485b7a3a36f45be081fe37b11891f3d384ca65ddb",
+        "scope": "Guest-only best-effort input: accepted guest intervals with all fixture/diarized interviewer intervals muted using 150ms padding. Reference backchannels do not block Quartz. Substantive interviewer turns and uncertain regions block output. No interviewer audio or text fed to Quartz; unknown overlaps may remain. Guest text at aligned turn end; no new Alpha generation.",
+        "alignment": {
+          "startedAtMs": 1767225600000,
+          "sourceType": "aligned-publisher-mix",
+          "alignmentFile": "/var/lib/praxis-root/home/quartz-youtube-evals-20261015/jacob-aligned/alignment.json",
+          "startSec": 277.76,
+          "endSec": 8867.76,
+          "durationSec": 8590,
+          "guestAudioSec": 5006.56,
+          "excludedIntervals": [
+            {
+              "start": 2143.2,
+              "end": 2189.28,
+              "reason": [
+                "token coverage below 75%"
+              ]
+            },
+            {
+              "start": 2189.68,
+              "end": 2218.48,
+              "reason": [
+                "internal alignment gap above ten seconds"
+              ]
+            },
+            {
+              "start": 2609.36,
+              "end": 2618.88,
+              "reason": [
+                "token coverage below 75%",
+                "uncertain edge exceeds two words"
+              ]
+            },
+            {
+              "start": 2619.04,
+              "end": 2866.3199999999997,
+              "reason": [
+                "uncertain edge exceeds two words"
+              ]
+            },
+            {
+              "start": 3766.8,
+              "end": 3892.72,
+              "reason": [
+                "internal alignment gap above ten seconds"
+              ]
+            },
+            {
+              "start": 5453.92,
+              "end": 5459.200000000001,
+              "reason": [
+                "token coverage below 75%",
+                "uncertain edge exceeds two words"
+              ]
+            },
+            {
+              "start": 6363.44,
+              "end": 6364.4,
+              "reason": [
+                "token coverage below 75%"
+              ]
+            },
+            {
+              "start": 7792.16,
+              "end": 7792.639999999999,
+              "reason": [
+                "token coverage below 75%"
+              ]
+            },
+            {
+              "start": 3902.7999999999997,
+              "end": 4054.72,
+              "reason": [
+                "unmatched audio gap >10s"
+              ]
+            }
+          ],
+          "sourceAudioSha256": "5c8154a2309b4c1231a51f99f54c19e44f0263ab99338a1e4f94a624153b9061",
+          "scope": "Guest-only best-effort input: accepted guest intervals with all fixture/diarized interviewer intervals muted using 150ms padding. Reference backchannels do not block Quartz. Substantive interviewer turns and uncertain regions block output. No interviewer audio or text fed to Quartz; unknown overlaps may remain. Guest text at aligned turn end; no new Alpha generation.",
+          "referenceFile": "/var/lib/praxis-root/home/quartz-youtube-evals-20261015/jacob-guest-only/reference.json",
+          "referenceSha256": "ac7fc6c79f31a3dc0b6512466216abaf238a77de9d2212aeb569d7a6ae38443a",
+          "maskedInputSec": 37.36
+        }
+      }
+    },
+    "horn": {
+      "sourceStartSec": 1380.0,
+      "durationSec": 600,
+      "timingValid": true,
+      "maxSchedulingLagMs": 22.71719799999846,
+      "referenceCount": 6,
+      "quartzCount": 4,
+      "matches": {
+        "0.25": 0,
+        "0.5": 0,
+        "1.0": 1
+      },
+      "sessions": 1,
+      "recoveries": 0,
+      "inputLoss": 0,
+      "providerErrors": 0,
+      "maxContextDeliveryMs": 1097,
+      "contextPendingWarnings": 0,
+      "maxSocketBufferedBytes": 3648,
+      "finalInputMinusOutputDurationMs": 5120,
+      "quartzCountByMinute": [
+        1,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "playedTranscriptCounts": {
+        "[ch Hmm.": 1,
+        "Hmm.": 1,
+        "Mm-hmm.": 2
+      },
+      "manifest": {
+        "sourceRoot": "/var/lib/praxis-root/workspaces/341a4071-5b1e-4956-80e0-35954d8f4608",
+        "schemaVersion": 2,
+        "replayMode": "continuous",
+        "transcriptInput": "startup-history-only; no live transcript appends",
+        "startupHistoryMessages": 4,
+        "episode": "/var/lib/praxis-root/home/quartz-youtube-evals-20261015/horn-guest-only",
+        "startMs": 1380000,
+        "durationMs": 600000,
+        "scoreStartMs": 0,
+        "productionCommit": "190736bc8b6a97e78dd65bd7341eab889a284825",
+        "stateChannel": "instructions",
+        "voice": "quartz",
+        "turnControl": false,
+        "promptSha256": "027d1da0613c514b87d8c87aae890db282cb5364878d2acfc83ca040ad9afce8",
+        "outputGain": "4",
+        "clock": "performance.now monotonic",
+        "maxLateMs": 100,
+        "codecWarmupMs": 107.55466399999999,
+        "harnessSha256": "e585055ab0eb1cae145857be5c33601a99e21160bd1d708a4ef00cc058fb9da9",
+        "timingModuleSha256": "e6aec422db15f0217f3889106721410d774dbb25208eb5acc702f74eb7f6f9aa",
+        "productionCodeSha256": "113d9f553416370b7a6cb37074678ba8583d08ea0aa1a063f9fd30bbbfb911c2",
+        "journalSha256": "2f0928cf4d44776249a4e2133a938a7047acac73770d6e75900e5840b258672f",
+        "transcriptSha256": "cb8d7bf805ba61212ebadbbd1e5e6ec4a638163d8e7c5c9f716c830aff93212f",
+        "scope": "Guest-only best-effort input: accepted guest intervals with all fixture/diarized interviewer intervals muted using 150ms padding. Reference backchannels do not block Quartz. Substantive interviewer turns and uncertain regions block output. No interviewer audio or text fed to Quartz; unknown overlaps may remain. Guest text at aligned turn end; no new Alpha generation.",
+        "alignment": {
+          "startedAtMs": 1767225600000,
+          "sourceType": "aligned-publisher-mix",
+          "alignmentFile": "/var/lib/praxis-root/home/quartz-youtube-evals-20261015/horn-aligned/alignment.json",
+          "startSec": 168.07999999999998,
+          "endSec": 9840.64,
+          "durationSec": 9672.56,
+          "guestAudioSec": 6379.7,
+          "excludedIntervals": [
+            {
+              "start": 730.88,
+              "end": 947.1199999999999,
+              "reason": [
+                "token coverage below 75%",
+                "internal alignment gap above ten seconds"
+              ]
+            },
+            {
+              "start": 1999.68,
+              "end": 2052.32,
+              "reason": [
+                "uncertain edge exceeds two words"
+              ]
+            },
+            {
+              "start": 4178.96,
+              "end": 4179.44,
+              "reason": [
+                "token coverage below 75%",
+                "uncertain edge exceeds two words"
+              ]
+            },
+            {
+              "start": 4180.56,
+              "end": 4184.88,
+              "reason": [
+                "token coverage below 75%"
+              ]
+            },
+            {
+              "start": 4186.24,
+              "end": 4187.44,
+              "reason": [
+                "token coverage below 75%"
+              ]
+            },
+            {
+              "start": 4321.52,
+              "end": 4326.2,
+              "reason": [
+                "uncertain edge exceeds two words"
+              ]
+            },
+            {
+              "start": 4481.68,
+              "end": 4482.16,
+              "reason": [
+                "token coverage below 75%"
+              ]
+            },
+            {
+              "start": 4589.2,
+              "end": 4589.5199999999995,
+              "reason": [
+                "token coverage below 75%"
+              ]
+            },
+            {
+              "start": 4754.96,
+              "end": 4756.48,
+              "reason": [
+                "token coverage below 75%"
+              ]
+            },
+            {
+              "start": 5481.44,
+              "end": 5639.44,
+              "reason": [
+                "uncertain edge exceeds two words"
+              ]
+            },
+            {
+              "start": 5992.8,
+              "end": 6006.16,
+              "reason": [
+                "uncertain edge exceeds two words"
+              ]
+            },
+            {
+              "start": 6006.16,
+              "end": 6071.120000000001,
+              "reason": [
+                "token coverage below 75%",
+                "uncertain edge exceeds two words",
+                "internal alignment gap above ten seconds"
+              ]
+            },
+            {
+              "start": 6451.84,
+              "end": 6452.24,
+              "reason": [
+                "token coverage below 75%"
+              ]
+            },
+            {
+              "start": 6618.64,
+              "end": 6619.84,
+              "reason": [
+                "token coverage below 75%"
+              ]
+            },
+            {
+              "start": 7019.36,
+              "end": 7020.32,
+              "reason": [
+                "token coverage below 75%"
+              ]
+            },
+            {
+              "start": 7307.6,
+              "end": 7604.719999999999,
+              "reason": [
+                "internal alignment gap above ten seconds"
+              ]
+            },
+            {
+              "start": 8907.44,
+              "end": 8909.36,
+              "reason": [
+                "token coverage below 75%",
+                "uncertain edge exceeds two words"
+              ]
+            },
+            {
+              "start": 9600,
+              "end": 9654.64,
+              "reason": [
+                "uncertain edge exceeds two words"
+              ]
+            }
+          ],
+          "sourceAudioSha256": "9c877c3e0467bddf0e76a27c230800bb4d7aff5f81c7ed9b81aec25de1a73687",
+          "scope": "Guest-only best-effort input: accepted guest intervals with all fixture/diarized interviewer intervals muted using 150ms padding. Reference backchannels do not block Quartz. Substantive interviewer turns and uncertain regions block output. No interviewer audio or text fed to Quartz; unknown overlaps may remain. Guest text at aligned turn end; no new Alpha generation.",
+          "referenceFile": "/var/lib/praxis-root/home/quartz-youtube-evals-20261015/horn-guest-only/reference.json",
+          "referenceSha256": "bc7e2831f0c313cb6cb3d5f776bcc540f54b94e4230bf695bbe3317dd4cdcac1",
+          "maskedInputSec": 44.74
+        }
+      }
+    }
+  },
+  "limitations": [
+    "Single trial per fixture; combined prompt, context, and lifecycle changes cannot be attributed individually.",
+    "Prior baseline used isolated turns and more boundary exclusions; counts are descriptive, not a controlled effect estimate.",
+    "Human references are provisional ASR-derived events; overlap muting can also remove guest audio.",
+    "Input/output sample-duration difference is not a measured response latency."
+  ]
+}

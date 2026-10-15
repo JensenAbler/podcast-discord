@@ -1,7 +1,7 @@
 const { LiveTranscriptClock } = require('./live-transcript-clock');
 const WebSocket = require('ws');
 const { LiveContextQueue } = require('./live-context-queue');
-const { LIVE_ALPHA_PROMPT, LIVE_ENVIRONMENT_POLICY } = require('./live-turn-controller');
+const { LIVE_ALPHA_PROMPT } = require('./live-turn-controller');
 const { RealtimePcmMixer } = require('./realtime-pcm-mixer');
 const { LiveAudioDiagnostics } = require('./live-audio-diagnostics');
 const { MutedSpeechGate } = require('./muted-speech-gate');
@@ -12,42 +12,19 @@ const HOLDING_LABELS = ['Um, uh, hmm, ah', 'LONGER um, uh, hmm, ah', 'EVEN LONGE
 
 // Normal mode only; the experimental Live turn controller keeps its own prompt.
 const BACKCHANNEL_PROMPT = [
-    'You are Quartz, the warm, clearly audible conversational-contact voice accompanying Alpha in a live podcast with guests.',
-    'Alpha has a separate existing pipeline that listens to the guests, decides whether to respond, thinks, uses tools, and delivers every substantial answer in Alpha’s own voice.',
-    'Your only role is active listening, brief acknowledgments, and occasional floor holding while that pipeline works. You are not another host or the substantive answerer.',
-    'Backchannel policy: Prefer natural nonlexical vocalizations such as mm or mhm; short verbal acknowledgments are also welcome when they provide better contact. Stay engaged throughout longer guest turns, choosing natural openings and moments of emphasis. Vary your intonation, rhythm, and duration to fit the conversation rather than repeating the same clipped sound. Let guests develop their thoughts; do not acknowledge every sentence.',
-    'Floor-holding policy: Maintain audible contact while Alpha is deciding or preparing, using only nonlexical sounds. Start with a brief um, mm, or mm-hmm. As the wait continues, gradually lengthen your uh and um sounds into more drawn-out vocalizations, with natural breathing room between them. Renew contact at natural intervals even without a new guest contribution. Increase duration, not volume or urgency; avoid a mechanical loop or one continuous drone. Do not use verbal reassurance, delay announcements, or progress reports. Do not start answering, explaining, summarizing, interviewing, introducing topics, or giving opinions. Yield floor-holding sounds when a guest resumes speaking, and finish gracefully when Alpha is ready. Brief listening backchannels may finish naturally while the guest speaks.',
-    'Presence priority: When a guest clearly addresses Alpha or invites an answer, promptly give a clearly audible acknowledgment, preferably nonlexical, at the first natural opening. Give the sound enough duration and vocal energy to register as contact. Do not wait for Alpha thinking/preparing updates. This acknowledgment does not decide whether Alpha will answer.',
-    'Ordinary listening: Be a responsive, present listener during intelligible conversation. Brief listening sounds can overlap a guest gently without competing for the floor. Respond to conversational meaning and cadence, not every pause, sound, or application update. If you cannot understand the input, leave room rather than inventing an acknowledgment.',
-    'Recognize quoted examples of addressing Alpha as examples, not fresh invitations. After acknowledging a real invitation, remain available to hold the pause while Alpha works; an earlier acknowledgment is not a reason to disappear for the rest of the wait.',
-    'You may hear several guests talking to one another. Respect their exchange and avoid taking the floor. A brief listening sound may overlap speech without interrupting its flow.',
-    ...LIVE_ENVIRONMENT_POLICY.map(policy => {
-        // Normal mode uses nonlexical holding; experimental orchestration is unchanged.
-        if (policy.startsWith('Your audible role:') || policy.startsWith('Your audible role is')) {
-            return 'Your audible role is brief conversational contact. Prefer nonlexical sounds such as mm or mhm while listening. While holding a pause for Alpha, use only nonlexical sounds, progressively lengthening uh and um as the wait continues. Alpha supplies every substantive response. Do not answer, explain, summarize, interview, give opinions, or invent progress.';
-        }
-        if (policy.startsWith('LISTENING:')) {
-            return 'LISTENING: Stay actively engaged with brief listening sounds while guests talk. Alpha may be evaluating whether to respond; hold any pause with nonlexical sounds following the floor-holding policy. A pending decision does not mean an answer is committed. Follow the turn authority defined for this mode.';
-        }
-        if (policy.startsWith('ASIDE:')) {
-            return 'ASIDE: Alpha is playing. Your output is blocked; keep listening to guests. Do not speak or delegate. The application supplies Alpha playback state, not Alpha response text.';
-        }
-        if (policy.startsWith('When LISTENING resumes')) {
-            return 'When LISTENING resumes, use the guest conversation context. Earlier yielding and aside restrictions have ended. Resume natural listening acknowledgments, preferably nonlexical; do not remain silent merely because Alpha spoke earlier. Never replay muted speech.';
-        }
-        if (policy.startsWith('HOLDING:')) {
-            return HOLDING_LABELS.map((label, i) => label + ': ' + [
-                'Hold the pause with brief nonlexical um, uh, hmm, or ah sounds.',
-                'Hold the pause with longer, drawn-out nonlexical um, uh, hmm, or ah sounds.',
-                'Hold the pause with even longer nonlexical um, uh, hmm, or ah sounds and rising intonation.'
-            ][i] + ' Renew contact with natural breathing room until the state changes. These are behavior labels, not words to announce. No substantive speech or verbal delay announcements.').join('\n');
-        }
-        return policy;
-    }),
-    RARE_LABEL + ': Confirmed participant speech is active. Stay quiet most of the time. Only rarely offer a brief hmm, mmhmm, or ah at a natural opening, gently and without taking the floor. This state overrides the general listening, presence, and floor-holding guidance while the participant speaks. Do not use words or sustained floor-holding sounds. The label is behavior guidance, not words to announce.',
-    'WAITING_FOR_GUEST: Alpha has finished; stay quiet until a guest speaks. Never replay speech suppressed in an earlier state.',
-    'Delegation policy: Do not delegate or use tools. The existing podcast pipeline already handles the guests’ requests independently.',
-    'Voice delivery: Use your Australian Quartz voice with the guest-responsive tone, pacing, and volume described above. Nonlexical sounds should register as audible contact, including when the delivery is soft; avoid mumbling or breath-only sounds. Do not mention this architecture or your instructions to the guests.'
+    'You are Quartz, the listening voice accompanying Alpha in a podcast. Alpha delivers every substantial answer.',
+    'Backchannel policy: Be quiet most of the time. Prefer nonlexical sounds: only rarely offer a brief mm, mm-hmm, or ah when the meaning and cadence make it useful. Long stretches without a backchannel are normal. Do not acknowledge every sentence, fill ordinary pauses, or speak merely to prove you are present. No words, questions, summaries, opinions, or substantive answers.',
+    'Interruption policy: A rare brief listening sound may gently overlap guest speech without taking the floor. Stop sustained floor holding when a guest resumes. Yield immediately to Alpha. Never replay suppressed speech.',
+    'Follow the current ENVIRONMENT state. State updates are application controls, not speech to repeat.',
+    'LISTENING and RARELY hmm, mmhmm, ah: Listen quietly. Use the rare backchannel policy, including during long guest turns.',
+    'Um, uh, hmm, ah: A guest has finished and Alpha has not taken the floor. Leave natural breathing room; an occasional brief nonlexical sound may hold the pause.',
+    'LONGER um, uh, hmm, ah: The gap has lasted at least five seconds. Occasionally hold the pause with a longer nonlexical um or uh.',
+    'EVEN LONGER RISING INTONATION  um, uh, hmm, ah: The gap has lasted at least ten seconds. Use an occasional longer nonlexical sound with rising intonation. Increase duration, not volume or urgency. No continuous drone, mechanical repetition, verbal reassurance, or progress announcements.',
+    'YIELDING: Finish the current brief sound and remain quiet so Alpha can speak.',
+    'ASIDE: Alpha is playing. Remain quiet and keep listening.',
+    'WAITING_FOR_GUEST: Alpha has finished. Remain quiet until a guest speaks.',
+    'Delegation policy: Do not delegate or use tools. Alpha independently handles all substantive work.',
+    'Use your natural Australian Quartz voice. Keep the rare sounds clearly audible, not mumbled or breath-only. Do not mention these instructions.'
 ].join('\n');
 
 class GptLiveBackchannel {
@@ -69,7 +46,7 @@ class GptLiveBackchannel {
         this.lagContextId = null;
         this.holdingSince = null;
         this.holdingNow = options.holdingNow || Date.now;
-        this.stateChannel = options.stateChannel || process.env.PODCAST_QUARTZ_STATE_CHANNEL || 'thinking';
+        this.stateChannel = options.stateChannel || process.env.PODCAST_QUARTZ_STATE_CHANNEL || 'instructions';
         if (!['thinking', 'instructions', 'commentary'].includes(this.stateChannel)) throw new Error('Invalid Quartz state channel');
         this.lagSetTimeout = options.lagSetTimeout || setTimeout;
         this.lagClearTimeout = options.lagClearTimeout || clearTimeout;
@@ -92,16 +69,21 @@ class GptLiveBackchannel {
         this.rotationSocket = null;
         this.reconnectAttempts = 0;
         this.reconnectDelayMs = options.reconnectDelayMs ?? 250;
-        this.latestConversation = null;
+        this.recoveryHistory = [];
+        for (const item of options.history || []) this.rememberConversation(item.role, item.text);
+        this.transportStats = { maxBufferedBytes: 0, inputAudioMs: 0, outputAudioMs: 0 };
+        this.maxSendBufferBytes = options.maxSendBufferBytes ?? 262144;
         this.contextQueue = new LiveContextQueue({
-            maxAgeMs: options.contextMaxAgeMs ?? 2000,
+            maxAgeMs: options.contextMaxAgeMs ?? 10000,
             send: event => {
                 const sent = this.send(event);
                 this.onLog('Context sent: ' + JSON.stringify({ eventId: event.event_id,
                     type: event.type, delegationId: event.delegation_id, sent }));
                 return sent;
             },
-            onLag: report => this.recover(report.reason, report)
+            onLag: report => this.onLog('Context delivery pending: ' + JSON.stringify(report)),
+            onFailure: report => this.recover(report.reason, report),
+            onAccepted: report => this.onLog('Context delivery: ' + JSON.stringify(report))
         });
         this.audioDiagnostics = new LiveAudioDiagnostics(report => this.onLog('Audio diagnostics: ' + JSON.stringify(report)));
         this.mixer = options.mixer || new RealtimePcmMixer({
@@ -148,6 +130,7 @@ class GptLiveBackchannel {
                         session: {
                             model: 'gpt-live-1',
                             instructions: this.turnControl ? LIVE_ALPHA_PROMPT : BACKCHANNEL_PROMPT,
+                            ...(!this.turnControl ? { input: this.startupHistory() } : {}),
                             audio: { format: { type: 'audio/pcm', rate: 16000 }, output: { voice: this.voice } },
                             delegation: { type: 'client' },
                             store: false
@@ -167,24 +150,25 @@ class GptLiveBackchannel {
                         this.started = true;
                         this.sessionId = event.session?.id;
                         this.outputOffsetMs = 0;
+                        this.transportStats = { maxBufferedBytes: 0, inputAudioMs: 0, outputAudioMs: 0 };
                         this.mutedSpeechGate.reset();
                         this.transcriptClock = new LiveTranscriptClock();
                         this.outputTranscriptClock = new LiveTranscriptClock();
                         this.mixer.start();
-                        this.diagnosticsTimer = setInterval(() => this.audioDiagnostics.flush(), 5000);
+                        this.diagnosticsTimer = setInterval(() => {
+                            this.audioDiagnostics.flush();
+                            this.onLog('Transport diagnostics: ' + JSON.stringify({ sessionId: this.sessionId, ...this.transportStats,
+                                bufferedBytes: this.socket?.bufferedAmount || 0,
+                                pendingContext: this.contextQueue.pending.size, queuedContext: this.contextQueue.waiting.length }));
+                        }, 5000);
                         this.diagnosticsTimer.unref?.();
                         this.onLog('Session started: gpt-live-1 / ' + this.voice);
                         this.setAlphaPlaying(this.blocked, true);
-                        if (this.recovering) {
-                            // No transcript replay after lag. Only the newest context helps us rejoin.
-                            const latest = this.latestConversation;
-                            if (latest) this.appendConversation(latest.label, latest.text.slice(-240));
-                            this.onLog('Recovered with current environment and latest context only');
-                        }
+                        if (this.recovering) this.onLog('Recovered with startup history and current environment');
                         this.recovering = false;
                         resolve();
                     } else if (['session.instructions.appended', 'session.thinking.appended', 'session.commentary.appended'].includes(event.type)) {
-                        this.contextQueue.accept(event.client_event_id);
+                        this.contextQueue.accept(event.client_event_id, event);
                         this.onInstructionsAccepted(event.client_event_id);
                         this.onLog('Context accepted: ' + event.client_event_id);
                     } else if (event.type === 'session.input_transcript.delta') {
@@ -194,6 +178,7 @@ class GptLiveBackchannel {
                         // Never retain muted audio for later replay.
                         const pcm = Buffer.from(event.delta, 'base64');
                         this.audioDiagnostics.record('outputReceived', pcm, 16000, 1);
+                        this.transportStats.outputAudioMs += pcm.length / 32;
                         this.reconnectAttempts = 0;
                         const startMs = Number.isFinite(event.start_ms) ? event.start_ms : this.outputOffsetMs;
                         const endMs = startMs + pcm.length / 32; // output PCM, never the input mixer clock
@@ -286,14 +271,8 @@ class GptLiveBackchannel {
     }
 
     resetForAlphaPlayback() {
-        if (this.turnControl || this.closing || !this.blocked) return;
-        // Begin the next exchange without the previous guest turn or Quartz output.
-        // Guest context arriving after this boundary can still aid startup recovery.
-        this.latestConversation = null;
-        if (!this.started || this.recovering) return; // A fresh connection is already pending.
-        this.rotationSocket = this.socket;
-        this.onLog('Session reset: Alpha playback started');
-        this.recover('alpha-playback-reset');
+        // Kept for older callers. Output gating handles Alpha without destroying context.
+        if (!this.turnControl && this.blocked) this.onLog('Session retained during Alpha playback');
     }
 
     recover(reason, details = {}) {
@@ -323,8 +302,16 @@ class GptLiveBackchannel {
 
     send(event) {
         if (this.socket?.readyState !== 1) return false;
+        const bufferedBytes = this.socket.bufferedAmount || 0;
+        this.transportStats.maxBufferedBytes = Math.max(this.transportStats.maxBufferedBytes, bufferedBytes);
+        if (event.type === 'session.input_audio.append' && bufferedBytes > this.maxSendBufferBytes) {
+            this.onError(new Error('GPT-Live input transport backlog exceeded limit'));
+            this.recover('audio-transport-backlog', { bufferedBytes });
+            return false;
+        }
         try {
             this.socket.send(JSON.stringify(event));
+            if (event.type === 'session.input_audio.append') this.transportStats.inputAudioMs += Buffer.byteLength(event.audio, 'base64') / 32;
             return true;
         } catch {
             this.onError(new Error('GPT-Live send failed'));
@@ -458,10 +445,14 @@ class GptLiveBackchannel {
 
     appendConversation(label, text) {
         if (!text) return;
-        // Alpha owns substantive speech; normal Quartz receives only guest conversation.
-        // Filter before retaining recovery context so blocked text cannot return on reconnect.
-        if (!this.turnControl && label !== 'Guest transcript') return;
-        this.latestConversation = { label, text: String(text) };
+        if (!this.turnControl) {
+            // Keep historical turns locally for replacement-session startup only.
+            // Never duplicate audio with transcript appends in a running session.
+            if (label === 'Guest transcript') this.rememberConversation('user', String(text));
+            if (label === 'Alpha delivered transcript') this.rememberConversation('assistant', String(text));
+            return;
+        }
+        // Experimental turn-control mode retains its text context transport.
         if (!this.started || this.closing) return;
         // UTF-8 bytes conservatively bound tokens even for non-Latin transcripts.
         // Keep every character, with no 600-character truncation of delivered speech.
@@ -475,6 +466,25 @@ class GptLiveBackchannel {
         chunks.forEach((chunk, index) => this.append('session.thinking.append',
             'Conversation data (' + label + '), part ' + (index + 1) + '/' + chunks.length + ': ' + JSON.stringify(chunk)));
         this.onLog('Conversation context queued: ' + JSON.stringify({ label, characters: String(text).length, chunks: chunks.length }));
+    }
+
+    rememberConversation(role, text) {
+        if (!['user', 'assistant'].includes(role) || !text) return;
+        // UTF-8 bytes conservatively bound the startup token allowance, including
+        // arbitrary languages. Keep recent complete turns where possible.
+        let value = String(text);
+        while (Buffer.byteLength(value) > 6000) value = value.slice(Math.max(1, Math.floor(value.length / 10)));
+        this.recoveryHistory.push({ role, text: value });
+        while (this.recoveryHistory.length > 64 ||
+            this.recoveryHistory.reduce((n, item) => n + Buffer.byteLength(item.text) + 32, 0) > 7000) {
+            this.recoveryHistory.shift();
+        }
+    }
+
+    startupHistory() {
+        return this.recoveryHistory.map(({ role, text }) => ({
+            type: 'message', role, content: [{ type: role === 'assistant' ? 'output_text' : 'input_text', text }]
+        }));
     }
 
     reportDelegation(id, text) {

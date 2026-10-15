@@ -36,6 +36,8 @@ class QuartzPlayback {
             apiKey: options.apiKey,
             voice: options.voice || 'quartz',
             turnControl: options.turnControl,
+            history: options.history,
+            stateChannel: options.stateChannel,
             onDelegation: options.onDelegation,
             onInputTranscript: options.onInputTranscript,
             onOutputAudio: (pcm, span) => this.playedTranscript.receive(pcm, span),
@@ -61,14 +63,8 @@ class QuartzPlayback {
             }
         };
         this.client = options.clientFactory ? options.clientFactory(clientOptions) : new GptLiveBackchannel(clientOptions);
-        this.resetForCurrentPlayback = false;
         this.onAlphaState = (_old, next) => {
             this.setBlocked(next.status !== AudioPlayerStatus.Idle);
-            if (next.status === AudioPlayerStatus.Idle) this.resetForCurrentPlayback = false;
-            if (next.status === AudioPlayerStatus.Playing && !this.resetForCurrentPlayback && !this.closed) {
-                this.resetForCurrentPlayback = true;
-                this.client.resetForAlphaPlayback?.();
-            }
         };
         this.alphaPlayer.on('stateChange', this.onAlphaState);
         this.onPlayerIdle = () => this.clearOutput();

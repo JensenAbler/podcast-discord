@@ -5,7 +5,7 @@ const fs=require('fs'),path=require('path'),crypto=require('crypto'),cp=require(
 const {EventEmitter}=require('events');
 const {performance,monitorEventLoopDelay}=require('perf_hooks');
 const {runTimeline,ReplayIntegrityError,validity}=require('./replay-timing');
-const root='/opt/podcast-discord';
+const root=path.resolve(__dirname,'..'), runtimeRoot='/opt/podcast-discord';
 const [episode,out,startArg='0',durationArg='300',warmupArg='0',replayMode='continuous']=process.argv.slice(2);
 const startMs=Math.round(Number(startArg)*1000),durationMs=Math.round(Number(durationArg)*1000),warmupMs=Math.round(Number(warmupArg)*1000),endMs=startMs+durationMs,maxLateMs=100;
 if(!episode||!out||fs.existsSync(out)||![startMs,durationMs,warmupMs].every(Number.isFinite)||startMs<0||durationMs<=0||durationMs>600000||warmupMs<0||warmupMs>=durationMs)throw Error('Need unique output, nonnegative start and warmup, and duration <=600 seconds');
@@ -18,7 +18,7 @@ process.on('exit',release);
 fs.mkdirSync(out,{recursive:true});
 const pid=cp.execFileSync('systemctl',['show','podcast-discord','--property=MainPID','--value'],{encoding:'utf8'}).trim();
 const env=Object.fromEntries(fs.readFileSync('/proc/'+pid+'/environ','utf8').split('\0').filter(Boolean).map(s=>{const i=s.indexOf('=');return [s.slice(0,i),s.slice(i+1)]}));
-for(const line of fs.readFileSync(path.join(root,'.env'),'utf8').split('\n')){const m=line.match(/^([^=]+)=(.*)$/);if(m&&!env[m[1]])env[m[1]]=m[2];}
+for(const line of fs.readFileSync(path.join(runtimeRoot,'.env'),'utf8').split('\n')){const m=line.match(/^([^=]+)=(.*)$/);if(m&&!env[m[1]])env[m[1]]=m[2];}
 for(const k of ['PODCAST_QUARTZ_STATE_CHANNEL','PODCAST_QUARTZ_OUTPUT_GAIN'])if(env[k])process.env[k]=env[k];else delete process.env[k];
 const {QuartzPlayback}=require(root+'/quartz-playback');
 const {BACKCHANNEL_PROMPT}=require(root+'/gpt-live-backchannel');
@@ -32,7 +32,7 @@ for(let i=0;i<100;i++)warmDecoder.decode(warmEncoder.encode(warmPcm,960));
 warmEncoder.delete();warmDecoder.delete();const codecWarmupMs=performance.now()-codecWarmupStart;
 
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
-const productionCommit=()=>cp.execFileSync('git',['-C',root,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
+const productionCommit=()=>cp.execFileSync('git',['-C',runtimeRoot,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
 const rows=n=>fs.readFileSync(path.join(episode,n),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
 const inputManifest=JSON.parse(fs.readFileSync(path.join(episode,'audio-journal/manifest.json')));
 const journal=rows('audio-journal/chunks.jsonl'),transcript=rows('transcript.jsonl'),origin=inputManifest.startedAtMs;
@@ -50,7 +50,7 @@ for(const id of new Set(parts.map(e=>e.sourceId))){
 for(const s of activity)actions.push({t:s.start,kind:'guest-start',id:s.id},{t:s.end,kind:'guest-end',id:s.id});
 const hosts=transcript.filter(e=>e.speakerRole==='host'&&e.source!=='quartz'&&e.playbackStartedAt&&e.playbackEndedAt).map(e=>({start:Date.parse(e.playbackStartedAt)-origin-startMs,end:Date.parse(e.playbackEndedAt)-origin-startMs})).filter(e=>e.end>0&&e.start<durationMs);
 for(const h of hosts)actions.push({t:Math.max(0,h.start),kind:'alpha-start'},{t:Math.min(durationMs,h.end),kind:'alpha-end'});
-for(const e of transcript.filter(e=>e.speakerRole==='guest'&&e.text&&e.asrCompletedAt)){const t=Date.parse(e.asrCompletedAt)-origin-startMs;if(t>=0&&t<durationMs)actions.push({t,kind:'text',text:e.text});}
+// Audio-only replay: no duplicate transcript actions or future reference labels.
 const priority={'alpha-end':0,'alpha-start':1,'guest-end':2,'guest-start':3,'text':4,'pcm':5};
 actions.sort((a,b)=>a.t-b.t||priority[a.kind]-priority[b.kind]);
 const events=[],consumed=[],played=[],raw=[],errors=[],lags=[],actionTiming=[];
@@ -71,14 +71,17 @@ class Sink extends EventEmitter{
   fs.writeSync(fd,pcm);offset+=pcm.length;
  }
 }
+const history=transcript.filter(e=>e.speakerRole==='guest' && e.text && e.asrCompletedAt &&
+ Date.parse(e.asrCompletedAt)<=origin+startMs).map(e=>({role:'user',text:e.text}));
 const sink=new Sink(),alpha=createAudioPlayer();
-const q=new QuartzPlayback({connection:sink,alphaPlayer:alpha,apiKey:env.PODCAST_LIVE_API_KEY,voice:'quartz',
+const q=new QuartzPlayback({connection:sink,alphaPlayer:alpha,apiKey:env.PODCAST_LIVE_API_KEY,voice:'quartz',stateChannel:'instructions',history,
  onLog:message=>{if(message.startsWith('Input audio dropped:'))inputDrops++;record('event',events,{t:now(),phase:started?'replay':'startup',message});},
  onError:e=>record('error',errors,{t:now(),message:e.message}),
  onPlayedTranscript:e=>record('played',played,{t:now(),...e}),onTranscript:e=>record('raw',raw,{t:now(),...e})});
-const manifest={schemaVersion:2,replayMode,episode,startMs,durationMs,scoreStartMs:warmupMs,productionCommit:productionCommit(),stateChannel:q.client.stateChannel,voice:q.client.voice,turnControl:q.client.turnControl,promptSha256:sha(BACKCHANNEL_PROMPT),outputGain:env.PODCAST_QUARTZ_OUTPUT_GAIN||'4',clock:'performance.now monotonic',maxLateMs,codecWarmupMs,
+const codeHash=()=>sha(Buffer.concat(['gpt-live-backchannel.js','quartz-playback.js','live-context-queue.js'].map(n=>fs.readFileSync(path.join(root,n)))));
+const manifest={sourceRoot:root,schemaVersion:2,replayMode,transcriptInput:'startup-history-only; no live transcript appends',startupHistoryMessages:q.client.recoveryHistory.length,episode,startMs,durationMs,scoreStartMs:warmupMs,productionCommit:productionCommit(),stateChannel:q.client.stateChannel,voice:q.client.voice,turnControl:q.client.turnControl,promptSha256:sha(BACKCHANNEL_PROMPT),outputGain:env.PODCAST_QUARTZ_OUTPUT_GAIN||'4',clock:'performance.now monotonic',maxLateMs,codecWarmupMs,
  harnessSha256:sha(fs.readFileSync(__filename)),timingModuleSha256:sha(fs.readFileSync(path.join(__dirname,'replay-timing.js'))),
- productionCodeSha256:sha(Buffer.concat(['gpt-live-backchannel.js','quartz-playback.js'].map(n=>fs.readFileSync(path.join(root,n))))),
+ productionCodeSha256:codeHash(),
  journalSha256:sha(fs.readFileSync(path.join(episode,'audio-journal/chunks.jsonl'))),transcriptSha256:sha(fs.readFileSync(path.join(episode,'transcript.jsonl'))),
  scope:inputManifest.scope||'Isolated participant replay; recorded Alpha timing, no new Alpha generation.',alignment:inputManifest.sourceType==='aligned-publisher-mix'?inputManifest:undefined};
 if(inputManifest.referenceFile&&sha(fs.readFileSync(inputManifest.referenceFile))!==inputManifest.referenceSha256)throw Error('Reference changed since input preparation');
@@ -93,8 +96,8 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms)),delay=monitorEventLoopDelay({re
  };
  try{
   await q.start();
-  if(replayMode==='turn-isolated'){
-   q.updateAlphaProgress('guest speaking');
+  { // Wait for startup controls while continuous silence advances the Live timeline.
+   if(activity.some(s=>s.start===0))q.updateAlphaProgress('guest speaking');
    const readyDeadline=performance.now()+15000;
    while(q.client.contextQueue.pending.size||q.client.contextQueue.waiting.length){
     check();
@@ -116,8 +119,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms)),delay=monitorEventLoopDelay({re
     }
     if(a.kind==='guest-start'){active.add(a.id);q.updateAlphaProgress('guest speaking');}
     if(a.kind==='guest-end'){active.delete(a.id);if(!active.size)q.updateAlphaProgress('guest finished');}
-    if(a.kind==='text')q.appendConversation('Guest transcript',a.text);
-    if(a.kind==='alpha-start'){q.setBlocked(true);q.client.resetForAlphaPlayback();}
+    if(a.kind==='alpha-start'){q.setBlocked(true);}
     if(a.kind==='alpha-end')q.setBlocked(false);
    }});
  }catch(e){failure={code:e.code||'harness-error',message:e.message,details:e.details||{}};console.error('REPLAY_FAILURE',JSON.stringify(failure));}
@@ -126,7 +128,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms)),delay=monitorEventLoopDelay({re
   try{await q.stop();}catch(e){failure=failure||{code:'shutdown-error',message:e.message};}
   alpha.stop();sink.subscription?.unsubscribe();sink.decoder.delete();delay.disable();
   for(const f of files.values())fs.closeSync(f);fs.closeSync(fd);
-  const quality=validity({failure,completedMs,durationMs,maxLag,maxLateMs,inputUnavailable,inputDrops,configurationChanged:productionCommit()!==manifest.productionCommit});
+  const quality=validity({failure,completedMs,durationMs,maxLag,maxLateMs,inputUnavailable,inputDrops,configurationChanged:codeHash()!==manifest.productionCodeSha256});
   const eventLoop={p50Ms:delay.percentile(50)/1e6,p95Ms:delay.percentile(95)/1e6,maxMs:delay.max/1e6};
   trace('final',{failure,completedMs,validity:quality,eventLoop});fs.closeSync(traceFd);
   const metrics={manifest,activity,hosts,consumed,played,raw,events,errors,lags,actionTiming,failure,completedMs,validity:quality,eventLoop,inputUnavailable,inputDrops};
