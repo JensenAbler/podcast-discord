@@ -21,7 +21,7 @@ def main(source,target):
         rows=[json.loads(x) for x in (episode/'audio-journal/chunks.jsonl').read_text().splitlines()]
         start=case['startSec'];end=start+case['durationSec']
         for i,(a,b) in enumerate(spans(start,end,ref['outputBlockIntervals'])):
-            if b-a>360:raise ValueError('Listening span exceeds 360s; explicitly choose shorter fixed source windows')
+            if b-a>600:raise ValueError('Listening span exceeds 600s; explicitly choose shorter fixed source windows')
             has_pcm=any(r.get('type')=='pcm' and a*1000<=r['timelineOffsetMs']<b*1000 for r in rows)
             if not has_pcm:
                 result['excluded'].append({'sourceCase':case['id'],'startSec':a,'endSec':b,'reason':'no guest PCM'})

@@ -40,7 +40,9 @@ def main(plan_file,batch_dir):
   with (run/'reference-timing.log').open('w') as log:a=subprocess.run(['python3','eval/score-reference-timing.py',str(run)],stdout=log,stderr=subprocess.STDOUT)
   result['scorerExitCode']=a.returncode
   if not valid or a.returncode:
+   if plan.get('continueOnInvalid') and 'configuration-changed' not in m.get('validity',{}).get('reasons',[]) and not a.returncode and (m.get('failure') or {}).get('code') in ['input-loss','timing-invalid','startup-not-ready']:
+    state['status']='running';save();continue
    state['status']='blocked';state['reason']='Invalid timing, input loss, provider rejection, or analysis error; remaining cases not run';save();return 1
   save()
- state['status']='completed';save();return 0
+ state['status']='completed-with-invalid-cases' if any(c['status']!='valid' for c in state['cases'].values()) else 'completed';save();return 0
 if __name__=='__main__':sys.exit(main(*sys.argv[1:]))

@@ -81,3 +81,9 @@ The first attempt exposed sub-millisecond floating-point overlap with a previous
 Result: all 7 cases timing-valid, maximum action lag 73.782ms. At +/-0.5s: 1 matched reference, 6 missed references, 11 extra vocalizations (precision 8.3%, recall 14.3%, F1 10.5%). These seven automatic reference labels are too small and uncertain a sample for a full baseline or subjective quality conclusion. See QUARTZ_TURN_PILOT_20261015.json for per-case results. Durable raw artifacts: turn-pilot-v3 under the data root above.
 
 Usage: first run python3 eval/plan-turn-replays.py SOURCE_PLAN NEW_PLAN, then python3 eval/run-listener-batch.py NEW_PLAN NEW_OUTPUT. Each case gets its own process/session; mode is recorded in batch and replay manifests. Failures still stop the batch and receive no timing score.
+
+## Expanded full-fixture plan
+
+The subsequent full-turn-plan.json covers both complete aligned fixture ranges: 235 listening cases, 11,650.975 seconds (3h14m11s), alternating interviews in source order. 172 spans with no guest PCM are explicitly excluded. The source has 64 scorable automatic references before case-boundary exclusions. The longest natural span is 451.19s, so the case ceiling is now 600s in planner and harness; real-time drift tolerance remains 100ms.
+
+The explicit continueOnInvalid option records timing/input/startup-invalid cases without scores and proceeds to the next independent case without retrying. Provider errors, configuration changes, missing metrics, or scorer failure still block the batch. Final status is completed-with-invalid-cases if any independent cases failed, never an unconditional successful baseline. This plan includes the pilot regions in a new full run; pilot scores are not combined into its aggregate.

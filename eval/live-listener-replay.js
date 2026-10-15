@@ -8,7 +8,7 @@ const {runTimeline,ReplayIntegrityError,validity}=require('./replay-timing');
 const root='/opt/podcast-discord';
 const [episode,out,startArg='0',durationArg='300',warmupArg='0',replayMode='continuous']=process.argv.slice(2);
 const startMs=Math.round(Number(startArg)*1000),durationMs=Math.round(Number(durationArg)*1000),warmupMs=Math.round(Number(warmupArg)*1000),endMs=startMs+durationMs,maxLateMs=100;
-if(!episode||!out||fs.existsSync(out)||![startMs,durationMs,warmupMs].every(Number.isFinite)||startMs<0||durationMs<=0||durationMs>360000||warmupMs<0||warmupMs>=durationMs)throw Error('Need unique output, nonnegative start and warmup, and duration <=360 seconds');
+if(!episode||!out||fs.existsSync(out)||![startMs,durationMs,warmupMs].every(Number.isFinite)||startMs<0||durationMs<=0||durationMs>600000||warmupMs<0||warmupMs>=durationMs)throw Error('Need unique output, nonnegative start and warmup, and duration <=600 seconds');
 const lock='/var/lib/praxis-root/home/quartz-eval.lock';
 let lockFd;
 try{lockFd=fs.openSync(lock,'wx',0o600);fs.writeSync(lockFd,JSON.stringify({pid:process.pid,out,startedAt:new Date().toISOString()}));}
