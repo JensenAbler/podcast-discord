@@ -1582,6 +1582,8 @@ async function runTests() {
             systemPrompt.includes('Do not use slash-delimited line breaks') &&
             systemPrompt.includes('visual separators like " / "') &&
             systemPrompt.includes('meta-comment naming a missed signal') &&
+            systemPrompt.includes('Audience asides are a valid host move:') &&
+            systemPrompt.includes('- Audience aside:') &&
             !systemPrompt.includes('Structured hosting:') &&
             !systemPrompt.includes('Screen exploration and standby') &&
             !systemPrompt.includes('The mistake to avoid:') &&
