@@ -26,7 +26,7 @@ def main(plan_file,batch_dir):
   for key in ['journalSha256','transcriptSha256','referenceSha256']:
    paths={'journalSha256':'audio-journal/chunks.jsonl','transcriptSha256':'transcript.jsonl','referenceSha256':'reference.json'}
    if digest(Path(case['episode'])/paths[key])!=case[key]:raise ValueError('Prepared input changed')
-  command=['node','eval/live-listener-replay.js',case['episode'],str(run),str(case['startSec']),str(case['durationSec']),str(case.get('warmupSec',30))]
+  command=['node','eval/live-listener-replay.js',case['episode'],str(run),str(case['startSec']),str(case['durationSec']),str(case.get('warmupSec',30)),plan.get('mode','continuous')]
   with (out/(cid+'.log')).open('w') as log:r=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT)
   metrics=run/'metrics.json'
   if not metrics.exists():state['cases'][cid]={'status':'invalid','exitCode':r.returncode,'reason':'missing-metrics'};state['status']='blocked';save();return 1

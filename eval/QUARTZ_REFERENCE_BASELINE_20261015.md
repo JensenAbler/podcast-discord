@@ -69,3 +69,15 @@ python3 -m unittest discover -s eval -p test_reference_integrity.py
 Plan format is an object with a cases array; each case supplies id, episode directory, startSec, durationSec (<=360), warmupSec, journalSha256, transcriptSha256, and referenceSha256. The exact pilot plan and all attempts are under the data root above. An interrupted batch may resume only if identities match and no incomplete/blocked case exists. Review failures before creating a new attempt; do not erase checkpoints or remove a live lock.
 
 These changes are eval-only. No production deployment or runtime behavior change was made.
+
+## Turn-isolated pilot (user-requested per-turn restart)
+
+The continuous replay already called the production per-turn reset. Short recorded host blocks could end before reconnection. The new plan-turn-replays.py partitions fixed source windows at substantive/uncertain output blocks and launches a fresh deployed Quartz instance for each listening span. Reference backchannels remain inside spans. Session setup happens outside the source clock; guest input retains real-time timing within each span. Startup guest-speaking context must be acknowledged before replay starts. No guest audio or future reference label is supplied during setup.
+
+This is a separate turn-isolated benchmark, not evidence that continuous production handoff is fixed. Context across spans is intentionally discarded; startup waits and host intervals are outside scored time. The scorer retains one-second boundary exclusions; there is no additional turn warmup exclusion. Long spans above 360s are rejected rather than silently split. No production code was changed or deployed.
+
+The first attempt exposed sub-millisecond floating-point overlap with a previous host interval; replay boundaries now use the same integer millisecond precision as transcript timestamps. The second attempt exposed context-delivery-lag during startup. Both failed attempts remain recorded. The third attempt waits for startup context acceptance and completed all seven spans (237.52s) from the original fixed pilot windows. Two spans had no guest PCM and are explicitly excluded.
+
+Result: all 7 cases timing-valid, maximum action lag 73.782ms. At +/-0.5s: 1 matched reference, 6 missed references, 11 extra vocalizations (precision 8.3%, recall 14.3%, F1 10.5%). These seven automatic reference labels are too small and uncertain a sample for a full baseline or subjective quality conclusion. See QUARTZ_TURN_PILOT_20261015.json for per-case results. Durable raw artifacts: turn-pilot-v3 under the data root above.
+
+Usage: first run python3 eval/plan-turn-replays.py SOURCE_PLAN NEW_PLAN, then python3 eval/run-listener-batch.py NEW_PLAN NEW_OUTPUT. Each case gets its own process/session; mode is recorded in batch and replay manifests. Failures still stop the batch and receive no timing score.

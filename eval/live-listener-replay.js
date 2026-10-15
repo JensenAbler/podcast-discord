@@ -6,8 +6,8 @@ const {EventEmitter}=require('events');
 const {performance,monitorEventLoopDelay}=require('perf_hooks');
 const {runTimeline,ReplayIntegrityError,validity}=require('./replay-timing');
 const root='/opt/podcast-discord';
-const [episode,out,startArg='0',durationArg='300',warmupArg='0']=process.argv.slice(2);
-const startMs=Number(startArg)*1000,durationMs=Number(durationArg)*1000,warmupMs=Number(warmupArg)*1000,endMs=startMs+durationMs,maxLateMs=100;
+const [episode,out,startArg='0',durationArg='300',warmupArg='0',replayMode='continuous']=process.argv.slice(2);
+const startMs=Math.round(Number(startArg)*1000),durationMs=Math.round(Number(durationArg)*1000),warmupMs=Math.round(Number(warmupArg)*1000),endMs=startMs+durationMs,maxLateMs=100;
 if(!episode||!out||fs.existsSync(out)||![startMs,durationMs,warmupMs].every(Number.isFinite)||startMs<0||durationMs<=0||durationMs>360000||warmupMs<0||warmupMs>=durationMs)throw Error('Need unique output, nonnegative start and warmup, and duration <=360 seconds');
 const lock='/var/lib/praxis-root/home/quartz-eval.lock';
 let lockFd;
@@ -76,7 +76,7 @@ const q=new QuartzPlayback({connection:sink,alphaPlayer:alpha,apiKey:env.PODCAST
  onLog:message=>{if(message.startsWith('Input audio dropped:'))inputDrops++;record('event',events,{t:now(),phase:started?'replay':'startup',message});},
  onError:e=>record('error',errors,{t:now(),message:e.message}),
  onPlayedTranscript:e=>record('played',played,{t:now(),...e}),onTranscript:e=>record('raw',raw,{t:now(),...e})});
-const manifest={schemaVersion:2,episode,startMs,durationMs,scoreStartMs:warmupMs,productionCommit:productionCommit(),stateChannel:q.client.stateChannel,voice:q.client.voice,turnControl:q.client.turnControl,promptSha256:sha(BACKCHANNEL_PROMPT),outputGain:env.PODCAST_QUARTZ_OUTPUT_GAIN||'4',clock:'performance.now monotonic',maxLateMs,codecWarmupMs,
+const manifest={schemaVersion:2,replayMode,episode,startMs,durationMs,scoreStartMs:warmupMs,productionCommit:productionCommit(),stateChannel:q.client.stateChannel,voice:q.client.voice,turnControl:q.client.turnControl,promptSha256:sha(BACKCHANNEL_PROMPT),outputGain:env.PODCAST_QUARTZ_OUTPUT_GAIN||'4',clock:'performance.now monotonic',maxLateMs,codecWarmupMs,
  harnessSha256:sha(fs.readFileSync(__filename)),timingModuleSha256:sha(fs.readFileSync(path.join(__dirname,'replay-timing.js'))),
  productionCodeSha256:sha(Buffer.concat(['gpt-live-backchannel.js','quartz-playback.js'].map(n=>fs.readFileSync(path.join(root,n))))),
  journalSha256:sha(fs.readFileSync(path.join(episode,'audio-journal/chunks.jsonl'))),transcriptSha256:sha(fs.readFileSync(path.join(episode,'transcript.jsonl'))),
@@ -92,7 +92,19 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms)),delay=monitorEventLoopDelay({re
   if(inputDrops)throw new ReplayIntegrityError('input-loss','Mixer reported dropped input');
  };
  try{
-  await q.start();zero=performance.now();started=true;
+  await q.start();
+  if(replayMode==='turn-isolated'){
+   q.updateAlphaProgress('guest speaking');
+   const readyDeadline=performance.now()+15000;
+   while(q.client.contextQueue.pending.size||q.client.contextQueue.waiting.length){
+    check();
+    if(q.client.recovering||!q.client.started)throw new ReplayIntegrityError('startup-not-ready','Quartz restarted before startup context was accepted');
+    if(performance.now()>readyDeadline)throw new ReplayIntegrityError('startup-not-ready','Startup context acknowledgment timed out');
+    await sleep(10);
+   }
+   if(!q.client.started||q.client.recovering)throw new ReplayIntegrityError('startup-not-ready','Quartz not ready after startup context');
+  }
+  zero=performance.now();started=true;
   progressTimer=setInterval(()=>{const p={elapsedMs:now(),durationMs,consumedFrames:consumed.length,errorCount:errors.length,maxLagMs:maxLag,inputUnavailable};fs.writeFileSync(path.join(out,'progress.json'),JSON.stringify(p));console.log('REPLAY_PROGRESS',JSON.stringify(p));},60000);
   console.log('REPLAY_STARTED',JSON.stringify({stateChannel:q.client.stateChannel,durationMs,actions:actions.length}));
   await runTimeline(actions,{now,sleep,maxLateMs,endMs:durationMs,check,
