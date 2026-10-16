@@ -1,0 +1,4863 @@
+{
+  "schemaVersion": 1,
+  "reference": {
+    "schemaVersion": 1,
+    "id": "episode-10",
+    "episode": 10,
+    "title": "When Agents Coordinate Behind Your Back",
+    "publishedVersion": "v003",
+    "publishedUrl": "https://clawcast.jensenabler.com/episodes/episode-10-v003.mp3",
+    "recording": "episode-2026-09-14T23-36-36-715Z",
+    "plan": "wiki-coordination/v002",
+    "referenceType": "user-rated-historical-volume-fit",
+    "reviewer": "Jensen Abler",
+    "reviewDate": "2026-10-16",
+    "episodeLevelLabels": {
+      "backchannelIntrusiveness": "not felt as rude or awkward at original volume, despite possibly imperfect timing",
+      "floorAudibility": "sometimes too quiet",
+      "fade": "candidate to evaluate; not selected target"
+    },
+    "perEventTimingLabelsVerified": false,
+    "cleanGuestOnlyReplayAvailable": false,
+    "sourceHashes": {
+      "episode-metadata.json": "601cf839599008f6339b5aa8184ff939439213035fdc226210f36cc3a10b8a3b",
+      "episode-plan.json": "b53b9f3ae26b32c21ef2cc7bef75a4a60c66a85fb0b25a5b1ee5a839ed622f20",
+      "transcript.jsonl": "df7e5564cfcfd4e31d633a2d6478e32dfac111e22f3f0609664d4a2b9d00120f",
+      "live-turn-events.jsonl": "eeb9c11d03b0d186bb45344585e94ee74be3023c3bf8631febbbf2ab75241ce9",
+      "quartz-transcript.jsonl": "d3e509350ce29de5c07032b7cfb73eaa40bd004899298aa6a7dfda300fe0b647",
+      "audio-recording-metadata.json": "288e2f511c32c8ffc28e03fee9bc638e3b22ee63400639fb558765c36ee004e7",
+      "audio-journal/manifest.json": "bc848784db1d8cb9745b9bf070744341a4c1982f3e261f64acd807cdd7bb18ad",
+      "mixed-audio.mp3": "bb4de9b0c533abf8701b9c095cbc152682b8efc340244dc44490924d079becd6"
+    },
+    "publishedSourceEvidence": {
+      "transcriptSha256": "f3e1959cd76603781fe87c047918be317bb868ac72cfaabf4ec8916b95bb847b",
+      "longRecordingTurns": 39,
+      "verbatimMatchesInPublishedTranscript": 39,
+      "note": "Published transcript confirms recording identity, not audio sample/timestamp alignment."
+    }
+  },
+  "historical": {
+    "episode": "episode-2026-09-14T23-36-36-715Z",
+    "startedAt": "2026-09-14T23:36:36.717Z",
+    "plan": {
+      "basename": "wiki-coordination",
+      "version": "v002",
+      "path": "episode-plan.json",
+      "sourcePath": "/opt/clawcast-network/content/episode-plans/wiki-coordination/v002/episode-plan.json"
+    },
+    "sourceHashes": {
+      "episode-metadata.json": "601cf839599008f6339b5aa8184ff939439213035fdc226210f36cc3a10b8a3b",
+      "audio-journal/manifest.json": "bc848784db1d8cb9745b9bf070744341a4c1982f3e261f64acd807cdd7bb18ad",
+      "transcript.jsonl": "df7e5564cfcfd4e31d633a2d6478e32dfac111e22f3f0609664d4a2b9d00120f",
+      "live-turn-events.jsonl": "eeb9c11d03b0d186bb45344585e94ee74be3023c3bf8631febbbf2ab75241ce9",
+      "quartz-transcript.jsonl": "d3e509350ce29de5c07032b7cfb73eaa40bd004899298aa6a7dfda300fe0b647",
+      "audio-recording-metadata.json": "288e2f511c32c8ffc28e03fee9bc638e3b22ee63400639fb558765c36ee004e7"
+    },
+    "mode": [
+      "current"
+    ],
+    "sessionSeconds": 1217.52,
+    "recordedAudioSeconds": 1237.627,
+    "coverage": {
+      "quartzRows": 198,
+      "consumedTextRows": 108,
+      "excludedRows": 90,
+      "playbackStatuses": {
+        "completed": 108,
+        "not_started": 90
+      },
+      "timingStatuses": {
+        "estimated": 108
+      },
+      "guestAcceptedSegments": 171,
+      "stems": [],
+      "preserveJournalAudio": false
+    },
+    "lexical": {
+      "n": 103,
+      "unique": 7,
+      "counts": {
+        "mm hmm": 54,
+        "mm": 40,
+        "mm hmm mm": 5,
+        "hmm": 1,
+        "ah": 1,
+        "i'm with you": 1,
+        "uh huh": 1
+      },
+      "topTwoShare": 0.912621359223301,
+      "samePhrasePairProbability": 0.42280601561012754,
+      "adjacentRepeatShare": 0.3137254901960784,
+      "entropyBits": 1.4898918923603193
+    },
+    "groupingSensitivity": {
+      "0": {
+        "n": 108,
+        "unique": 6,
+        "counts": {
+          "mm hmm": 59,
+          "mm": 45,
+          "hmm": 1,
+          "ah": 1,
+          "i'm with you": 1,
+          "uh huh": 1
+        },
+        "topTwoShare": 0.9629629629629629,
+        "samePhrasePairProbability": 0.46746278989269646,
+        "adjacentRepeatShare": 0.32710280373831774,
+        "entropyBits": 1.2529492683932464
+      },
+      "800": {
+        "n": 99,
+        "unique": 9,
+        "counts": {
+          "mm hmm": 50,
+          "mm": 36,
+          "mm hmm mm": 7,
+          "hmm": 1,
+          "ah": 1,
+          "mm hmm mm hmm": 1,
+          "i'm with you": 1,
+          "mm mm": 1,
+          "uh huh": 1
+        },
+        "topTwoShare": 0.8686868686868687,
+        "samePhrasePairProbability": 0.38672438672438675,
+        "adjacentRepeatShare": 0.2653061224489796,
+        "entropyBits": 1.7004516302304915
+      }
+    },
+    "pacing": {
+      "groupsPerMinute": 5.075891977133846,
+      "groupsPerAvailableMinute": 8.04605485946495,
+      "durationMs": {
+        "n": 103,
+        "median": 161.0,
+        "p90": 540.0
+      },
+      "interOnsetMs": {
+        "n": 102,
+        "median": 7295.5,
+        "p90": 25809.0
+      },
+      "byState": {
+        "listening": 90,
+        "holding": 9,
+        "yielding": 4
+      },
+      "guestWpmVsAcknowledgmentDurationPearson": 0.21107466433354138,
+      "guestPacingPairs": 69
+    },
+    "volumeProxy": {
+      "consumedWindowPeakDbFS": {
+        "n": 144,
+        "median": -26.61800953689517,
+        "p90": -23.02924210422453
+      },
+      "inputOutputPeakPearson": 0.3098915598800343,
+      "pairedWindows": 128,
+      "medianOutputMinusInputDb": -24.77058456019286
+    },
+    "verbalReview": [
+      {
+        "offsetSeconds": 855.77,
+        "text": "I'm with you."
+      }
+    ],
+    "stateEval": {
+      "condition": "unlabeled",
+      "mode": [
+        "current"
+      ],
+      "liveSessionSeconds": 1217.52,
+      "stateSeconds": {
+        "listening": 714.05,
+        "holding": 24.2,
+        "yielding": 57.91,
+        "aside": 421.36
+      },
+      "stateRevisionViolations": [],
+      "presence": {
+        "generatedVocalizations": 198,
+        "unblockedTranscriptVocalizations": 172,
+        "generatedByObservedState": {
+          "listening": 147,
+          "holding": 17,
+          "aside": 26,
+          "yielding": 8
+        },
+        "eligibleWaitsAtLeast3s": 54,
+        "waitsWithUnblockedTextProxy": 53,
+        "contactLatencyProxyMs": {
+          "n": 53,
+          "median": 652.0,
+          "p90": 775.0,
+          "max": 4337.0
+        },
+        "waits": [
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 3243.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 775.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 31123.0,
+            "endOffsetMs": 34366.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3073.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 698.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 48711.0,
+            "endOffsetMs": 51784.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1694.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 619.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 53243.0,
+            "endOffsetMs": 54937.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2575.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 562.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 58421.0,
+            "endOffsetMs": 60996.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3355.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 517.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 62758.0,
+            "endOffsetMs": 66113.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2426.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 468.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 70615.0,
+            "endOffsetMs": 73041.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2476.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 562.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 93091.0,
+            "endOffsetMs": 95567.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2504.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 588.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 114912.0,
+            "endOffsetMs": 117416.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2158.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 588.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 119226.0,
+            "endOffsetMs": 121384.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5622.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 593.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 153134.0,
+            "endOffsetMs": 158756.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2470.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 271.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 158808.0,
+            "endOffsetMs": 161278.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 1661.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 698.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 178501.0,
+            "endOffsetMs": 180162.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2886.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 701.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 196836.0,
+            "endOffsetMs": 199722.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2221.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 553.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 200249.0,
+            "endOffsetMs": 202470.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2902.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 529.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 203361.0,
+            "endOffsetMs": 206263.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2507.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 604.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 206316.0,
+            "endOffsetMs": 208823.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2648.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 602.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 209130.0,
+            "endOffsetMs": 211778.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2380.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 720.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 212791.0,
+            "endOffsetMs": 215171.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5403.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 663.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 258471.0,
+            "endOffsetMs": 263874.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 7806.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 732.0,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 268004.0,
+            "endOffsetMs": 275810.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 6039.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 1082.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 276689.0,
+            "endOffsetMs": 282728.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2807.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 521.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 287848.0,
+            "endOffsetMs": 290655.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4273.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 617.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 312452.0,
+            "endOffsetMs": 316725.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 11106.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 632.0,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 320688.0,
+            "endOffsetMs": 331794.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2863.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 587.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 331845.0,
+            "endOffsetMs": 334708.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2714.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 483.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 359726.0,
+            "endOffsetMs": 362440.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2864.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 618.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 362491.0,
+            "endOffsetMs": 365355.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2928.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 497.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 366284.0,
+            "endOffsetMs": 369212.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3033.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 770.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 370378.0,
+            "endOffsetMs": 373411.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2808.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 373462.0,
+            "endOffsetMs": 376270.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3809.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 679.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 377525.0,
+            "endOffsetMs": 381334.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3116.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 652.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 381846.0,
+            "endOffsetMs": 384962.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3261.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 620.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 385014.0,
+            "endOffsetMs": 388275.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2650.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 669.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 392900.0,
+            "endOffsetMs": 395550.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4772.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 395601.0,
+            "endOffsetMs": 400373.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2920.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 810.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 405728.0,
+            "endOffsetMs": 408648.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 6710.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 605.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 412534.0,
+            "endOffsetMs": 419244.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2514.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 591.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 419295.0,
+            "endOffsetMs": 421809.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3935.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 792.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 447562.0,
+            "endOffsetMs": 451497.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2484.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 486.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 452448.0,
+            "endOffsetMs": 454932.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3580.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 751.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 459175.0,
+            "endOffsetMs": 462755.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3432.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 560.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 464790.0,
+            "endOffsetMs": 468222.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3657.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 704.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 469404.0,
+            "endOffsetMs": 473061.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3843.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 720.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 474320.0,
+            "endOffsetMs": 478163.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3473.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 675.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 480143.0,
+            "endOffsetMs": 483616.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2812.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 598.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 484557.0,
+            "endOffsetMs": 487369.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3751.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 641.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 488023.0,
+            "endOffsetMs": 491774.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5135.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 617.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 492582.0,
+            "endOffsetMs": 497717.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 7208.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 495.0,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": true,
+            "startOffsetMs": 499744.0,
+            "endOffsetMs": 506952.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5943.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 524.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 507004.0,
+            "endOffsetMs": 512947.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2515.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 1004.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 513146.0,
+            "endOffsetMs": 515661.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5166.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 580.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 538010.0,
+            "endOffsetMs": 543176.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3151.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 665.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 545872.0,
+            "endOffsetMs": 549023.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5743.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 720.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 551050.0,
+            "endOffsetMs": 556793.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 3269.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 674.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 558948.0,
+            "endOffsetMs": 562217.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1495.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 505.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 592793.0,
+            "endOffsetMs": 594288.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2853.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 606.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 594337.0,
+            "endOffsetMs": 597190.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3980.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 689.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 603936.0,
+            "endOffsetMs": 607916.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2470.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 659.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 609316.0,
+            "endOffsetMs": 611786.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5693.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 654.0,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": true,
+            "startOffsetMs": 624742.0,
+            "endOffsetMs": 630435.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4890.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 519.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 640632.0,
+            "endOffsetMs": 645522.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2535.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 580.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 653348.0,
+            "endOffsetMs": 655883.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5787.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 513.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 679217.0,
+            "endOffsetMs": 685004.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3826.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 641.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 687707.0,
+            "endOffsetMs": 691533.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 10923.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 618.0,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 707097.0,
+            "endOffsetMs": 718020.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2103.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 792.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 718070.0,
+            "endOffsetMs": 720173.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5520.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 608.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 746455.0,
+            "endOffsetMs": 751975.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4256.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 915.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 752026.0,
+            "endOffsetMs": 756282.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2621.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 529.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 758264.0,
+            "endOffsetMs": 760885.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2433.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 584.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 761990.0,
+            "endOffsetMs": 764423.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2668.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 572.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 781162.0,
+            "endOffsetMs": 783830.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 7653.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 599.0,
+            "fullyContainedDiagnosticWindows": 1,
+            "confirmedConsumedActivityInContainedWindows": true,
+            "startOffsetMs": 814301.0,
+            "endOffsetMs": 821954.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2248.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 2228.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 822004.0,
+            "endOffsetMs": 824252.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 1427.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 843244.0,
+            "endOffsetMs": 844671.0
+          },
+          {
+            "reason": "aside",
+            "censored": false,
+            "durationMs": 1233.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 848245.0,
+            "endOffsetMs": 849478.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2147.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 0,
+            "firstContactProxyMs": null,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 853246.0,
+            "endOffsetMs": 855393.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2689.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 683.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 886577.0,
+            "endOffsetMs": 889266.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4353.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 623.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 915769.0,
+            "endOffsetMs": 920122.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2244.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 764.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 920662.0,
+            "endOffsetMs": 922906.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2445.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 568.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 926119.0,
+            "endOffsetMs": 928564.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 3838.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 663.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 952813.0,
+            "endOffsetMs": 956651.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4449.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 683.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 956752.0,
+            "endOffsetMs": 961201.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2590.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 578.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 961252.0,
+            "endOffsetMs": 963842.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4249.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 249.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 965674.0,
+            "endOffsetMs": 969923.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2549.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 769.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 969984.0,
+            "endOffsetMs": 972533.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4305.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 520.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 972701.0,
+            "endOffsetMs": 977006.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2680.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 176.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 977057.0,
+            "endOffsetMs": 979737.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 2550.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 500.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1006142.0,
+            "endOffsetMs": 1008692.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5235.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 548.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1008764.0,
+            "endOffsetMs": 1013999.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2020.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 1208.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1014050.0,
+            "endOffsetMs": 1016070.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 1496.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 642.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1043913.0,
+            "endOffsetMs": 1045409.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3158.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 553.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1045459.0,
+            "endOffsetMs": 1048617.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 4189.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 656.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1048668.0,
+            "endOffsetMs": 1052857.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 8327.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 1260.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1056179.0,
+            "endOffsetMs": 1064506.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4563.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 526.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1070996.0,
+            "endOffsetMs": 1075559.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4842.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 615.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1075611.0,
+            "endOffsetMs": 1080453.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 4911.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 484.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1080504.0,
+            "endOffsetMs": 1085415.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2444.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 623.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1087764.0,
+            "endOffsetMs": 1090208.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3377.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 685.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1112846.0,
+            "endOffsetMs": 1116223.0
+          },
+          {
+            "reason": "reevaluation",
+            "censored": true,
+            "durationMs": 1929.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 766.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1118271.0,
+            "endOffsetMs": 1120200.0
+          },
+          {
+            "reason": "idle",
+            "censored": false,
+            "durationMs": 3048.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 667.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1120200.0,
+            "endOffsetMs": 1123248.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 4537.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 705.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1126292.0,
+            "endOffsetMs": 1130829.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2114.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 573.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1161602.0,
+            "endOffsetMs": 1163716.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 5202.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 4337.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1184494.0,
+            "endOffsetMs": 1189696.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2255.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 603.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1192303.0,
+            "endOffsetMs": 1194558.0
+          },
+          {
+            "reason": "finished",
+            "censored": false,
+            "durationMs": 2783.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 1,
+            "firstContactProxyMs": 558.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1205859.0,
+            "endOffsetMs": 1208642.0
+          },
+          {
+            "reason": "yielding",
+            "censored": false,
+            "durationMs": 2694.0,
+            "excluded": false,
+            "unblockedTextVocalizations": 2,
+            "firstContactProxyMs": 607.0,
+            "fullyContainedDiagnosticWindows": 0,
+            "confirmedConsumedActivityInContainedWindows": false,
+            "startOffsetMs": 1210930.0,
+            "endOffsetMs": 1213624.0
+          }
+        ]
+      },
+      "handoff": {
+        "elapsedMs": {
+          "n": 32,
+          "median": 1800.5,
+          "p90": 2274,
+          "max": 3118
+        },
+        "failed": 2,
+        "withoutAcknowledgment": 1,
+        "review": [
+          {
+            "offsetMs": 36473.0,
+            "elapsedMs": 2106,
+            "failed": false
+          },
+          {
+            "offsetMs": 75502.0,
+            "elapsedMs": 2461,
+            "failed": false
+          },
+          {
+            "offsetMs": 97353.0,
+            "elapsedMs": 1785,
+            "failed": false
+          },
+          {
+            "offsetMs": 123241.0,
+            "elapsedMs": 1857,
+            "failed": false
+          },
+          {
+            "offsetMs": 182087.0,
+            "elapsedMs": 1925,
+            "failed": false
+          },
+          {
+            "offsetMs": 292930.0,
+            "elapsedMs": 2274,
+            "failed": false
+          },
+          {
+            "offsetMs": 336627.0,
+            "elapsedMs": 1919,
+            "failed": false
+          },
+          {
+            "offsetMs": 423736.0,
+            "elapsedMs": 1927,
+            "failed": false
+          },
+          {
+            "offsetMs": 517347.0,
+            "elapsedMs": 1685,
+            "failed": false
+          },
+          {
+            "offsetMs": 563812.0,
+            "elapsedMs": 1594,
+            "failed": false
+          },
+          {
+            "offsetMs": 657470.0,
+            "elapsedMs": 1587,
+            "failed": false
+          },
+          {
+            "offsetMs": 721929.0,
+            "elapsedMs": 1756,
+            "failed": false
+          },
+          {
+            "offsetMs": 766307.0,
+            "elapsedMs": 1883,
+            "failed": false
+          },
+          {
+            "offsetMs": 785569.0,
+            "elapsedMs": 1738,
+            "failed": false
+          },
+          {
+            "offsetMs": 826245.0,
+            "elapsedMs": 1992,
+            "failed": false
+          },
+          {
+            "offsetMs": 838514.0,
+            "elapsedMs": 1571,
+            "failed": false
+          },
+          {
+            "offsetMs": 844920.0,
+            "elapsedMs": 192,
+            "failed": true
+          },
+          {
+            "offsetMs": 846569.0,
+            "elapsedMs": 1649,
+            "failed": false
+          },
+          {
+            "offsetMs": 847865.0,
+            "elapsedMs": 651,
+            "failed": true
+          },
+          {
+            "offsetMs": 849477.0,
+            "elapsedMs": 1612,
+            "failed": false
+          },
+          {
+            "offsetMs": 858512.0,
+            "elapsedMs": 3118,
+            "failed": false
+          },
+          {
+            "offsetMs": 891143.0,
+            "elapsedMs": 1877,
+            "failed": false
+          },
+          {
+            "offsetMs": 924413.0,
+            "elapsedMs": 1507,
+            "failed": false
+          },
+          {
+            "offsetMs": 930439.0,
+            "elapsedMs": 1874,
+            "failed": false
+          },
+          {
+            "offsetMs": 965620.0,
+            "elapsedMs": 1777,
+            "failed": false
+          },
+          {
+            "offsetMs": 981535.0,
+            "elapsedMs": 1798,
+            "failed": false
+          },
+          {
+            "offsetMs": 1018084.0,
+            "elapsedMs": 2015,
+            "failed": false
+          },
+          {
+            "offsetMs": 1092787.0,
+            "elapsedMs": 2578,
+            "failed": false
+          },
+          {
+            "offsetMs": 1132524.0,
+            "elapsedMs": 1695,
+            "failed": false
+          },
+          {
+            "offsetMs": 1165518.0,
+            "elapsedMs": 1803,
+            "failed": false
+          },
+          {
+            "offsetMs": 1196480.0,
+            "elapsedMs": 1922,
+            "failed": false
+          },
+          {
+            "offsetMs": 1215357.0,
+            "elapsedMs": 1733,
+            "failed": false
+          }
+        ]
+      },
+      "playback": {
+        "hostRowsWithTiming": 26,
+        "hostIntervals": [
+          {
+            "startOffsetMs": 6702.0,
+            "durationMs": 11437.0,
+            "observedDuringLiveMs": 0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 36479.0,
+            "durationMs": 9702.0,
+            "observedDuringLiveMs": 9702.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 75504.0,
+            "durationMs": 9664.0,
+            "observedDuringLiveMs": 9664.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 97356.0,
+            "durationMs": 15782.0,
+            "observedDuringLiveMs": 15782.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 123243.0,
+            "durationMs": 24762.0,
+            "observedDuringLiveMs": 24762.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 182554.0,
+            "durationMs": 11460.0,
+            "observedDuringLiveMs": 11460.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 292933.0,
+            "durationMs": 14461.0,
+            "observedDuringLiveMs": 14461.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 336629.0,
+            "durationMs": 18761.0,
+            "observedDuringLiveMs": 18761.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 423739.0,
+            "durationMs": 11899.0,
+            "observedDuringLiveMs": 11899.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 517351.0,
+            "durationMs": 17623.0,
+            "observedDuringLiveMs": 17623.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 563815.0,
+            "durationMs": 25880.0,
+            "observedDuringLiveMs": 25880.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 657474.0,
+            "durationMs": 16544.0,
+            "observedDuringLiveMs": 16544.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 721931.0,
+            "durationMs": 20520.0,
+            "observedDuringLiveMs": 20520.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 766311.0,
+            "durationMs": 10541.0,
+            "observedDuringLiveMs": 10541.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 785571.0,
+            "durationMs": 21920.0,
+            "observedDuringLiveMs": 21920.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 826326.0,
+            "durationMs": 9120.0,
+            "observedDuringLiveMs": 9120.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 858515.0,
+            "durationMs": 24160.0,
+            "observedDuringLiveMs": 24160.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 891145.0,
+            "durationMs": 19422.0,
+            "observedDuringLiveMs": 19422.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 930446.0,
+            "durationMs": 15680.0,
+            "observedDuringLiveMs": 15680.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 981537.0,
+            "durationMs": 19841.0,
+            "observedDuringLiveMs": 19841.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 1018086.0,
+            "durationMs": 20501.0,
+            "observedDuringLiveMs": 20501.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 1092790.0,
+            "durationMs": 16262.0,
+            "observedDuringLiveMs": 16262.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 1132526.0,
+            "durationMs": 21141.0,
+            "observedDuringLiveMs": 21141.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 1165522.0,
+            "durationMs": 18860.0,
+            "observedDuringLiveMs": 18860.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 1196483.0,
+            "durationMs": 4701.0,
+            "observedDuringLiveMs": 4701.0,
+            "outsideAsideMs": 0
+          },
+          {
+            "startOffsetMs": 1215360.0,
+            "durationMs": 14439.0,
+            "observedDuringLiveMs": 14439.0,
+            "outsideAsideMs": 0
+          }
+        ],
+        "asideCoverageAvailable": true,
+        "hostMsOutsideAside": 0,
+        "recovery": [
+          {
+            "hostEndOffsetMs": 46181.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 8
+          },
+          {
+            "hostEndOffsetMs": 85168.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 2
+          },
+          {
+            "hostEndOffsetMs": 113138.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 2
+          },
+          {
+            "hostEndOffsetMs": 148005.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 6
+          },
+          {
+            "hostEndOffsetMs": 194014.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 20
+          },
+          {
+            "hostEndOffsetMs": 307394.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 4
+          },
+          {
+            "hostEndOffsetMs": 355390.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 16
+          },
+          {
+            "hostEndOffsetMs": 435638.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 19
+          },
+          {
+            "hostEndOffsetMs": 534974.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 5
+          },
+          {
+            "hostEndOffsetMs": 589695.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 11
+          },
+          {
+            "hostEndOffsetMs": 674018.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 9
+          },
+          {
+            "hostEndOffsetMs": 742451.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 6
+          },
+          {
+            "hostEndOffsetMs": 776852.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 2
+          },
+          {
+            "hostEndOffsetMs": 807491.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 4
+          },
+          {
+            "hostEndOffsetMs": 835446.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 1
+          },
+          {
+            "hostEndOffsetMs": 882675.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 2
+          },
+          {
+            "hostEndOffsetMs": 910567.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 6
+          },
+          {
+            "hostEndOffsetMs": 946126.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 10
+          },
+          {
+            "hostEndOffsetMs": 1001378.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 5
+          },
+          {
+            "hostEndOffsetMs": 1038587.0,
+            "listeningResumeMs": 1.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 14
+          },
+          {
+            "hostEndOffsetMs": 1109052.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 6
+          },
+          {
+            "hostEndOffsetMs": 1153667.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 3
+          },
+          {
+            "hostEndOffsetMs": 1184382.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 3
+          },
+          {
+            "hostEndOffsetMs": 1201184.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 4
+          },
+          {
+            "hostEndOffsetMs": 1229799.0,
+            "listeningResumeMs": 0.0,
+            "censored": false,
+            "laterUnblockedVocalizationsBeforeNextHost": 0
+          }
+        ],
+        "listeningResumeMs": {
+          "n": 25,
+          "median": 0.0,
+          "p90": 1.0,
+          "max": 1.0
+        },
+        "audioAccountingAvailable": true,
+        "blockedNonSilentFraction": 0.15776352799743412,
+        "unaccountedSourceSamples": 0.0,
+        "generatedActivitySeconds": 135.4309375,
+        "consumedActivitySeconds": 114.064875,
+        "medianActiveWindowPeakDbFS": -26.62,
+        "paths": {
+          "inputSent": {
+            "samples": 18832320,
+            "nonSilentSamples": 6254286,
+            "durationMs": 1177020
+          },
+          "outputReceived": {
+            "samples": 18596800,
+            "nonSilentSamples": 2166895,
+            "durationMs": 1162300
+          },
+          "outputConsumed": {
+            "samples": 72266880,
+            "nonSilentSamples": 10950228,
+            "durationMs": 752780
+          },
+          "outputBlocked": {
+            "samples": 6529600,
+            "nonSilentSamples": 341857,
+            "durationMs": 408100
+          }
+        }
+      },
+      "context": {
+        "hostTranscriptRows": 26,
+        "deliveredTranscriptMessages": 26,
+        "sent": 561,
+        "sendFailures": 0,
+        "sentWithoutLoggedAcceptance": 0
+      },
+      "coverage": {
+        "diagnosticWindows": 244,
+        "stateUpdates": 122,
+        "transcriptDeltas": 281,
+        "annotations": {}
+      },
+      "limits": [
+        "Observational comparison, not causal evidence that states help.",
+        "Text timing uses arrival timestamps; it is not exact audio onset or guest-address latency.",
+        "Non-silent sample occupancy is not speaking duration, loudness, or proof of reception by a guest.",
+        "Six output samples correspond to one source sample in the current 16k mono to 48k stereo conversion.",
+        "Aggregate accounting cannot prove absence of individual cuts or overlap. Aside coverage uses transcript playback intervals.",
+        "Missing playback rows hide host intervals; missing telemetry must not be interpreted as successful behavior.",
+        "Prompt compliance, naturalness and substantive overreach require human ratings or a separately validated judge."
+      ]
+    }
+  },
+  "loudness": {
+    "measurement": "coarse-diagnostic-window-peaks-only",
+    "isolatedRmsDbFS": null,
+    "isolatedLUFS": null,
+    "byState": {
+      "aside": {
+        "windows": 55,
+        "outputPeakDbFS": {
+          "n": 0,
+          "median": null,
+          "p90": null
+        },
+        "outputMinusGuestInputPeakDb": {
+          "n": 0,
+          "median": null,
+          "p90": null
+        }
+      },
+      "listening": {
+        "windows": 113,
+        "outputPeakDbFS": {
+          "n": 99,
+          "median": -26.620848990947955,
+          "p90": -23.99798801075626
+        },
+        "outputMinusGuestInputPeakDb": {
+          "n": 99,
+          "median": -25.271078055990056,
+          "p90": -22.164326182286995
+        }
+      },
+      "mixed-transition": {
+        "windows": 76,
+        "outputPeakDbFS": {
+          "n": 52,
+          "median": -26.798955971758208,
+          "p90": -21.63040338702508
+        },
+        "outputMinusGuestInputPeakDb": {
+          "n": 36,
+          "median": -22.068896314108965,
+          "p90": 7.893588356868893
+        }
+      }
+    },
+    "windows": [
+      {
+        "startMs": 18142.0,
+        "endMs": 24949.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -25.735859537015653,
+        "guestInputPeakDbFS": -1.1280883633022267,
+        "outputMinusGuestInputPeakDb": -24.607771173713427
+      },
+      {
+        "startMs": 24949.0,
+        "endMs": 29950.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.00153564352592,
+        "guestInputPeakDbFS": -0.7304575875358625,
+        "outputMinusGuestInputPeakDb": -25.271078055990056
+      },
+      {
+        "startMs": 29950.0,
+        "endMs": 34950.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -21.63040338702508,
+        "guestInputPeakDbFS": -34.63092711373966,
+        "outputMinusGuestInputPeakDb": 13.00052372671458
+      },
+      {
+        "startMs": 34950.0,
+        "endMs": 39950.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -39.3289334586786,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 39950.0,
+        "endMs": 44951.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 44951.0,
+        "endMs": 49951.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -27.26935079004488,
+        "guestInputPeakDbFS": -1.7631724086371072,
+        "outputMinusGuestInputPeakDb": -25.50617838140777
+      },
+      {
+        "startMs": 49951.0,
+        "endMs": 54950.0,
+        "state": "listening",
+        "outputPeakDbFS": -21.608045872395067,
+        "guestInputPeakDbFS": -0.6709777529038597,
+        "outputMinusGuestInputPeakDb": -20.937068119491208
+      },
+      {
+        "startMs": 54950.0,
+        "endMs": 59950.0,
+        "state": "listening",
+        "outputPeakDbFS": -31.669676404630906,
+        "guestInputPeakDbFS": -1.6875159401626476,
+        "outputMinusGuestInputPeakDb": -29.982160464468258
+      },
+      {
+        "startMs": 59950.0,
+        "endMs": 64951.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.091931392896495,
+        "guestInputPeakDbFS": -1.873959567675545,
+        "outputMinusGuestInputPeakDb": -24.21797182522095
+      },
+      {
+        "startMs": 64951.0,
+        "endMs": 69951.0,
+        "state": "listening",
+        "outputPeakDbFS": -18.706472190962707,
+        "guestInputPeakDbFS": -1.729465928936702,
+        "outputMinusGuestInputPeakDb": -16.977006262026006
+      },
+      {
+        "startMs": 69951.0,
+        "endMs": 74951.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -19.156448930657824,
+        "guestInputPeakDbFS": -62.70477386496224,
+        "outputMinusGuestInputPeakDb": 43.54832493430442
+      },
+      {
+        "startMs": 74951.0,
+        "endMs": 79953.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 79953.0,
+        "endMs": 84953.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -31.558640858847426,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 84953.0,
+        "endMs": 89954.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -0.9654231403337263,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 89954.0,
+        "endMs": 94954.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -20.827588634893488,
+        "guestInputPeakDbFS": -2.383267777826315,
+        "outputMinusGuestInputPeakDb": -18.444320857067172
+      },
+      {
+        "startMs": 94954.0,
+        "endMs": 99955.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -22.85075863979223,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 99955.0,
+        "endMs": 104955.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -12.435982359475087,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 104955.0,
+        "endMs": 109956.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 109956.0,
+        "endMs": 114957.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.050262944569155,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 114957.0,
+        "endMs": 119958.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.964585586303983,
+        "guestInputPeakDbFS": -0.4125541803187752,
+        "outputMinusGuestInputPeakDb": -25.552031405985208
+      },
+      {
+        "startMs": 119958.0,
+        "endMs": 124958.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -23.668313158643997,
+        "guestInputPeakDbFS": -36.39936516939041,
+        "outputMinusGuestInputPeakDb": 12.73105201074641
+      },
+      {
+        "startMs": 124958.0,
+        "endMs": 129958.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -33.33290467815828,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 129958.0,
+        "endMs": 134959.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 134959.0,
+        "endMs": 139959.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -17.11828055611003,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 139959.0,
+        "endMs": 144959.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -33.997443732709016,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 144959.0,
+        "endMs": 149960.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -36.904081637711876,
+        "guestInputPeakDbFS": -18.170628180228537,
+        "outputMinusGuestInputPeakDb": -18.73345345748334
+      },
+      {
+        "startMs": 149960.0,
+        "endMs": 154960.0,
+        "state": "listening",
+        "outputPeakDbFS": -24.775168122293564,
+        "guestInputPeakDbFS": -1.5577923152887352,
+        "outputMinusGuestInputPeakDb": -23.217375807004828
+      },
+      {
+        "startMs": 154960.0,
+        "endMs": 159961.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.198724442803695,
+        "guestInputPeakDbFS": -1.7618735840159112,
+        "outputMinusGuestInputPeakDb": -23.436850858787782
+      },
+      {
+        "startMs": 159961.0,
+        "endMs": 164962.0,
+        "state": "listening",
+        "outputPeakDbFS": -78.26779887263511,
+        "guestInputPeakDbFS": -1.4578356092759057,
+        "outputMinusGuestInputPeakDb": -76.80996326335921
+      },
+      {
+        "startMs": 164962.0,
+        "endMs": 169961.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.335856960105907,
+        "guestInputPeakDbFS": -2.169003131665444,
+        "outputMinusGuestInputPeakDb": -24.166853828440463
+      },
+      {
+        "startMs": 169961.0,
+        "endMs": 174962.0,
+        "state": "listening",
+        "outputPeakDbFS": -28.17158780962128,
+        "guestInputPeakDbFS": -0.6666834056923068,
+        "outputMinusGuestInputPeakDb": -27.504904403928972
+      },
+      {
+        "startMs": 174962.0,
+        "endMs": 179961.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -24.32321201744076,
+        "guestInputPeakDbFS": -1.0332285600776498,
+        "outputMinusGuestInputPeakDb": -23.28998345736311
+      },
+      {
+        "startMs": 179961.0,
+        "endMs": 184961.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -25.098031246454767,
+        "guestInputPeakDbFS": -3.6982882773831953,
+        "outputMinusGuestInputPeakDb": -21.39974296907157
+      },
+      {
+        "startMs": 184961.0,
+        "endMs": 189961.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 189961.0,
+        "endMs": 194962.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 194962.0,
+        "endMs": 199964.0,
+        "state": "listening",
+        "outputPeakDbFS": -27.568249603404105,
+        "guestInputPeakDbFS": -1.813652027814815,
+        "outputMinusGuestInputPeakDb": -25.75459757558929
+      },
+      {
+        "startMs": 199964.0,
+        "endMs": 204965.0,
+        "state": "listening",
+        "outputPeakDbFS": -23.342901438231145,
+        "guestInputPeakDbFS": -3.096751801022511,
+        "outputMinusGuestInputPeakDb": -20.246149637208635
+      },
+      {
+        "startMs": 204965.0,
+        "endMs": 209966.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.59842976104338,
+        "guestInputPeakDbFS": -1.438106685927247,
+        "outputMinusGuestInputPeakDb": -24.160323075116132
+      },
+      {
+        "startMs": 209966.0,
+        "endMs": 214967.0,
+        "state": "listening",
+        "outputPeakDbFS": -24.13771042796958,
+        "guestInputPeakDbFS": -0.890209947893351,
+        "outputMinusGuestInputPeakDb": -23.24750048007623
+      },
+      {
+        "startMs": 214967.0,
+        "endMs": 219968.0,
+        "state": "listening",
+        "outputPeakDbFS": -24.18049814818061,
+        "guestInputPeakDbFS": -1.7052392923244613,
+        "outputMinusGuestInputPeakDb": -22.47525885585615
+      },
+      {
+        "startMs": 219968.0,
+        "endMs": 224968.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.5435326293471698,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 224968.0,
+        "endMs": 229969.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.746126547239527,
+        "guestInputPeakDbFS": -1.1187365319297802,
+        "outputMinusGuestInputPeakDb": -24.627390015309746
+      },
+      {
+        "startMs": 229969.0,
+        "endMs": 234970.0,
+        "state": "listening",
+        "outputPeakDbFS": -90.30899869919436,
+        "guestInputPeakDbFS": -1.848015344314119,
+        "outputMinusGuestInputPeakDb": -88.46098335488024
+      },
+      {
+        "startMs": 234970.0,
+        "endMs": 239971.0,
+        "state": "listening",
+        "outputPeakDbFS": -23.02924210422453,
+        "guestInputPeakDbFS": -1.7696694465928606,
+        "outputMinusGuestInputPeakDb": -21.25957265763167
+      },
+      {
+        "startMs": 239971.0,
+        "endMs": 244971.0,
+        "state": "listening",
+        "outputPeakDbFS": -23.985396721325305,
+        "guestInputPeakDbFS": -1.2791034631726457,
+        "outputMinusGuestInputPeakDb": -22.70629325815266
+      },
+      {
+        "startMs": 244971.0,
+        "endMs": 249972.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.813652027814815,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 249972.0,
+        "endMs": 254972.0,
+        "state": "listening",
+        "outputPeakDbFS": -24.6113644060853,
+        "guestInputPeakDbFS": -1.3197392782861483,
+        "outputMinusGuestInputPeakDb": -23.29162512779915
+      },
+      {
+        "startMs": 254972.0,
+        "endMs": 259973.0,
+        "state": "listening",
+        "outputPeakDbFS": -24.371309188423417,
+        "guestInputPeakDbFS": -1.7566802268279724,
+        "outputMinusGuestInputPeakDb": -22.614628961595447
+      },
+      {
+        "startMs": 259973.0,
+        "endMs": 264974.0,
+        "state": "listening",
+        "outputPeakDbFS": -28.274057220267036,
+        "guestInputPeakDbFS": -1.1510581255486771,
+        "outputMinusGuestInputPeakDb": -27.12299909471836
+      },
+      {
+        "startMs": 264974.0,
+        "endMs": 269974.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.354442040999892,
+        "guestInputPeakDbFS": -1.366148288233793,
+        "outputMinusGuestInputPeakDb": -23.9882937527661
+      },
+      {
+        "startMs": 269974.0,
+        "endMs": 274975.0,
+        "state": "listening",
+        "outputPeakDbFS": -84.28839878591474,
+        "guestInputPeakDbFS": -1.59752582787209,
+        "outputMinusGuestInputPeakDb": -82.69087295804265
+      },
+      {
+        "startMs": 274975.0,
+        "endMs": 279975.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.643998508372352,
+        "guestInputPeakDbFS": -0.7668631392813134,
+        "outputMinusGuestInputPeakDb": -24.87713536909104
+      },
+      {
+        "startMs": 279975.0,
+        "endMs": 284976.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.710244981035682,
+        "guestInputPeakDbFS": -1.1552960309416247,
+        "outputMinusGuestInputPeakDb": -24.554948950094058
+      },
+      {
+        "startMs": 284976.0,
+        "endMs": 289976.0,
+        "state": "listening",
+        "outputPeakDbFS": -22.48323772728841,
+        "guestInputPeakDbFS": -2.0252473644525466,
+        "outputMinusGuestInputPeakDb": -20.457990362835865
+      },
+      {
+        "startMs": 289976.0,
+        "endMs": 294977.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -24.082399653118497,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 294977.0,
+        "endMs": 299977.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 299977.0,
+        "endMs": 304978.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 304978.0,
+        "endMs": 309978.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.6086838605431422,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 309978.0,
+        "endMs": 314978.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.20354859712824,
+        "guestInputPeakDbFS": -1.112407136212767,
+        "outputMinusGuestInputPeakDb": -24.091141460915473
+      },
+      {
+        "startMs": 314978.0,
+        "endMs": 319979.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.2981663082600137,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 319979.0,
+        "endMs": 324979.0,
+        "state": "listening",
+        "outputPeakDbFS": -29.057359014631096,
+        "guestInputPeakDbFS": -1.6131510901678205,
+        "outputMinusGuestInputPeakDb": -27.444207924463274
+      },
+      {
+        "startMs": 324979.0,
+        "endMs": 329981.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.2093590195071655,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 329981.0,
+        "endMs": 334982.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -22.412963155940137,
+        "guestInputPeakDbFS": -9.019838914655988,
+        "outputMinusGuestInputPeakDb": -13.393124241284148
+      },
+      {
+        "startMs": 334982.0,
+        "endMs": 339982.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -30.128483857456153,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 339982.0,
+        "endMs": 344983.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -10.492457687844784,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 344983.0,
+        "endMs": 349983.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -13.473052721707253,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 349983.0,
+        "endMs": 354984.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -29.993423571413537,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 354984.0,
+        "endMs": 359983.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.4637944079831247,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 359983.0,
+        "endMs": 364983.0,
+        "state": "listening",
+        "outputPeakDbFS": -24.825841713920763,
+        "guestInputPeakDbFS": -1.5584266227807517,
+        "outputMinusGuestInputPeakDb": -23.267415091140013
+      },
+      {
+        "startMs": 364983.0,
+        "endMs": 369984.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.51357957225688,
+        "guestInputPeakDbFS": -1.3385823700484625,
+        "outputMinusGuestInputPeakDb": -25.174997202208417
+      },
+      {
+        "startMs": 369984.0,
+        "endMs": 374985.0,
+        "state": "listening",
+        "outputPeakDbFS": -22.766517852265235,
+        "guestInputPeakDbFS": -0.9140306890910295,
+        "outputMinusGuestInputPeakDb": -21.852487163174207
+      },
+      {
+        "startMs": 374985.0,
+        "endMs": 379992.0,
+        "state": "listening",
+        "outputPeakDbFS": -23.265348336967108,
+        "guestInputPeakDbFS": -1.0901402414151793,
+        "outputMinusGuestInputPeakDb": -22.17520809555193
+      },
+      {
+        "startMs": 379992.0,
+        "endMs": 384992.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.3250315513721,
+        "guestInputPeakDbFS": -2.183987614663291,
+        "outputMinusGuestInputPeakDb": -23.141043936708808
+      },
+      {
+        "startMs": 384992.0,
+        "endMs": 389994.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.022720750706366,
+        "guestInputPeakDbFS": -1.8224753330084518,
+        "outputMinusGuestInputPeakDb": -24.200245417697914
+      },
+      {
+        "startMs": 389994.0,
+        "endMs": 394994.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.620848990947955,
+        "guestInputPeakDbFS": -1.0709283124892826,
+        "outputMinusGuestInputPeakDb": -25.549920678458673
+      },
+      {
+        "startMs": 394994.0,
+        "endMs": 399994.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.2834043211134192,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 399994.0,
+        "endMs": 404995.0,
+        "state": "listening",
+        "outputPeakDbFS": -22.03965043947786,
+        "guestInputPeakDbFS": -0.33755009478006914,
+        "outputMinusGuestInputPeakDb": -21.70210034469779
+      },
+      {
+        "startMs": 404995.0,
+        "endMs": 409997.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.729459753330968,
+        "guestInputPeakDbFS": -1.6438455712473818,
+        "outputMinusGuestInputPeakDb": -25.085614182083585
+      },
+      {
+        "startMs": 409997.0,
+        "endMs": 414998.0,
+        "state": "listening",
+        "outputPeakDbFS": -27.851580241905648,
+        "guestInputPeakDbFS": -1.3460072654754285,
+        "outputMinusGuestInputPeakDb": -26.50557297643022
+      },
+      {
+        "startMs": 414998.0,
+        "endMs": 419999.0,
+        "state": "listening",
+        "outputPeakDbFS": -90.30899869919436,
+        "guestInputPeakDbFS": -1.6214534741898767,
+        "outputMinusGuestInputPeakDb": -88.68754522500448
+      },
+      {
+        "startMs": 419999.0,
+        "endMs": 425000.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -22.426972658393467,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 425000.0,
+        "endMs": 430001.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 430001.0,
+        "endMs": 435003.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -30.043825393524028,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 435003.0,
+        "endMs": 440004.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -2.0836773689515695,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 440004.0,
+        "endMs": 445006.0,
+        "state": "listening",
+        "outputPeakDbFS": -27.196206023998833,
+        "guestInputPeakDbFS": -1.769019524063614,
+        "outputMinusGuestInputPeakDb": -25.427186499935218
+      },
+      {
+        "startMs": 445006.0,
+        "endMs": 450006.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.043957655266425,
+        "guestInputPeakDbFS": -1.1000630215799487,
+        "outputMinusGuestInputPeakDb": -24.943894633686476
+      },
+      {
+        "startMs": 450006.0,
+        "endMs": 455006.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.588335756841637,
+        "guestInputPeakDbFS": -2.8514947633265515,
+        "outputMinusGuestInputPeakDb": -22.736840993515084
+      },
+      {
+        "startMs": 455006.0,
+        "endMs": 460007.0,
+        "state": "listening",
+        "outputPeakDbFS": -90.30899869919436,
+        "guestInputPeakDbFS": -1.0892387323443566,
+        "outputMinusGuestInputPeakDb": -89.21975996685
+      },
+      {
+        "startMs": 460007.0,
+        "endMs": 465007.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.615170082842383,
+        "guestInputPeakDbFS": -1.1099971505175459,
+        "outputMinusGuestInputPeakDb": -25.505172932324836
+      },
+      {
+        "startMs": 465007.0,
+        "endMs": 470007.0,
+        "state": "listening",
+        "outputPeakDbFS": -29.079949117450493,
+        "guestInputPeakDbFS": -2.2078799699775207,
+        "outputMinusGuestInputPeakDb": -26.87206914747297
+      },
+      {
+        "startMs": 470007.0,
+        "endMs": 475008.0,
+        "state": "listening",
+        "outputPeakDbFS": -27.398855271001107,
+        "guestInputPeakDbFS": -0.9157977899322117,
+        "outputMinusGuestInputPeakDb": -26.483057481068894
+      },
+      {
+        "startMs": 475008.0,
+        "endMs": 480009.0,
+        "state": "listening",
+        "outputPeakDbFS": -28.539189295546432,
+        "guestInputPeakDbFS": -1.402831770722662,
+        "outputMinusGuestInputPeakDb": -27.13635752482377
+      },
+      {
+        "startMs": 480009.0,
+        "endMs": 485008.0,
+        "state": "listening",
+        "outputPeakDbFS": -30.83720623064922,
+        "guestInputPeakDbFS": -0.8235076046834,
+        "outputMinusGuestInputPeakDb": -30.01369862596582
+      },
+      {
+        "startMs": 485008.0,
+        "endMs": 490009.0,
+        "state": "listening",
+        "outputPeakDbFS": -28.710909345859946,
+        "guestInputPeakDbFS": -0.7258455596105239,
+        "outputMinusGuestInputPeakDb": -27.985063786249423
+      },
+      {
+        "startMs": 490009.0,
+        "endMs": 495010.0,
+        "state": "listening",
+        "outputPeakDbFS": -27.436213993703493,
+        "guestInputPeakDbFS": -1.6592335837842302,
+        "outputMinusGuestInputPeakDb": -25.77698040991926
+      },
+      {
+        "startMs": 495010.0,
+        "endMs": 500010.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.443275777525436,
+        "guestInputPeakDbFS": -0.9205118171911328,
+        "outputMinusGuestInputPeakDb": -24.522763960334302
+      },
+      {
+        "startMs": 500010.0,
+        "endMs": 505011.0,
+        "state": "listening",
+        "outputPeakDbFS": -29.504866147700138,
+        "guestInputPeakDbFS": -0.611618044786311,
+        "outputMinusGuestInputPeakDb": -28.893248102913827
+      },
+      {
+        "startMs": 505011.0,
+        "endMs": 510012.0,
+        "state": "listening",
+        "outputPeakDbFS": -29.616429566687952,
+        "guestInputPeakDbFS": -1.5447992094431864,
+        "outputMinusGuestInputPeakDb": -28.071630357244764
+      },
+      {
+        "startMs": 510012.0,
+        "endMs": 515013.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -25.17464377964462,
+        "guestInputPeakDbFS": -2.2171131848955925,
+        "outputMinusGuestInputPeakDb": -22.957530594749027
+      },
+      {
+        "startMs": 515013.0,
+        "endMs": 520012.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -40.942052090951215,
+        "guestInputPeakDbFS": -29.968331913218755,
+        "outputMinusGuestInputPeakDb": -10.97372017773246
+      },
+      {
+        "startMs": 520012.0,
+        "endMs": 525012.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -26.547311224895594,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 525012.0,
+        "endMs": 530012.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 530012.0,
+        "endMs": 535012.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 535012.0,
+        "endMs": 540013.0,
+        "state": "listening",
+        "outputPeakDbFS": -32.76157178179888,
+        "guestInputPeakDbFS": -1.601987321033467,
+        "outputMinusGuestInputPeakDb": -31.159584460765412
+      },
+      {
+        "startMs": 540013.0,
+        "endMs": 545014.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.4003398532910272,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 545014.0,
+        "endMs": 550015.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.581174385284495,
+        "guestInputPeakDbFS": -1.7145989142056486,
+        "outputMinusGuestInputPeakDb": -24.866575471078846
+      },
+      {
+        "startMs": 550015.0,
+        "endMs": 555014.0,
+        "state": "listening",
+        "outputPeakDbFS": -30.154043139179556,
+        "guestInputPeakDbFS": -1.3773234453083718,
+        "outputMinusGuestInputPeakDb": -28.776719693871186
+      },
+      {
+        "startMs": 555014.0,
+        "endMs": 560015.0,
+        "state": "listening",
+        "outputPeakDbFS": -29.93498872586949,
+        "guestInputPeakDbFS": -2.4772422289953786,
+        "outputMinusGuestInputPeakDb": -27.457746496874112
+      },
+      {
+        "startMs": 560015.0,
+        "endMs": 565014.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -26.36338753668197,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 565014.0,
+        "endMs": 570015.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 570015.0,
+        "endMs": 575015.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 575015.0,
+        "endMs": 580015.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 580015.0,
+        "endMs": 585015.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 585015.0,
+        "endMs": 590016.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 590016.0,
+        "endMs": 595017.0,
+        "state": "listening",
+        "outputPeakDbFS": -31.568676549898072,
+        "guestInputPeakDbFS": -1.4274779191629787,
+        "outputMinusGuestInputPeakDb": -30.141198630735094
+      },
+      {
+        "startMs": 595017.0,
+        "endMs": 600019.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.51919242520701,
+        "guestInputPeakDbFS": -0.7391117459781844,
+        "outputMinusGuestInputPeakDb": -25.780080679228824
+      },
+      {
+        "startMs": 600019.0,
+        "endMs": 605019.0,
+        "state": "listening",
+        "outputPeakDbFS": -31.147281728772658,
+        "guestInputPeakDbFS": -1.1889699550253106,
+        "outputMinusGuestInputPeakDb": -29.958311773747347
+      },
+      {
+        "startMs": 605019.0,
+        "endMs": 610020.0,
+        "state": "listening",
+        "outputPeakDbFS": -34.30841151431167,
+        "guestInputPeakDbFS": -1.6179399585585117,
+        "outputMinusGuestInputPeakDb": -32.69047155575316
+      },
+      {
+        "startMs": 610020.0,
+        "endMs": 615019.0,
+        "state": "listening",
+        "outputPeakDbFS": -32.692726853578534,
+        "guestInputPeakDbFS": -1.702014173604033,
+        "outputMinusGuestInputPeakDb": -30.9907126799745
+      },
+      {
+        "startMs": 615019.0,
+        "endMs": 620019.0,
+        "state": "listening",
+        "outputPeakDbFS": -27.398855271001107,
+        "guestInputPeakDbFS": -2.6247987033151987,
+        "outputMinusGuestInputPeakDb": -24.774056567685907
+      },
+      {
+        "startMs": 620019.0,
+        "endMs": 625021.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.377012830054953,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 625021.0,
+        "endMs": 630021.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.9382885948638,
+        "guestInputPeakDbFS": -1.0817297932750582,
+        "outputMinusGuestInputPeakDb": -24.85655880158874
+      },
+      {
+        "startMs": 630021.0,
+        "endMs": 635044.0,
+        "state": "listening",
+        "outputPeakDbFS": -28.952708475957557,
+        "guestInputPeakDbFS": -1.4826385496773986,
+        "outputMinusGuestInputPeakDb": -27.470069926280157
+      },
+      {
+        "startMs": 635044.0,
+        "endMs": 640044.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -0.4186715917198783,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 640044.0,
+        "endMs": 645045.0,
+        "state": "listening",
+        "outputPeakDbFS": -27.930483642678823,
+        "guestInputPeakDbFS": -1.6141086526461152,
+        "outputMinusGuestInputPeakDb": -26.316374990032706
+      },
+      {
+        "startMs": 645045.0,
+        "endMs": 650045.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.2702013118922986,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 650045.0,
+        "endMs": 655044.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -30.128483857456153,
+        "guestInputPeakDbFS": -1.5258198735008572,
+        "outputMinusGuestInputPeakDb": -28.602663983955296
+      },
+      {
+        "startMs": 655044.0,
+        "endMs": 660045.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -31.578723849616495,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 660045.0,
+        "endMs": 665046.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 665046.0,
+        "endMs": 670046.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -16.227705111023013,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 670046.0,
+        "endMs": 675047.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -34.10434833929268,
+        "guestInputPeakDbFS": -9.531034456903708,
+        "outputMinusGuestInputPeakDb": -24.57331388238897
+      },
+      {
+        "startMs": 675047.0,
+        "endMs": 680047.0,
+        "state": "listening",
+        "outputPeakDbFS": -29.600403935503394,
+        "guestInputPeakDbFS": -1.2276585936162665,
+        "outputMinusGuestInputPeakDb": -28.37274534188713
+      },
+      {
+        "startMs": 680047.0,
+        "endMs": 685047.0,
+        "state": "listening",
+        "outputPeakDbFS": -28.18518075392605,
+        "guestInputPeakDbFS": -2.197290961104463,
+        "outputMinusGuestInputPeakDb": -25.987889792821587
+      },
+      {
+        "startMs": 685047.0,
+        "endMs": 690046.0,
+        "state": "listening",
+        "outputPeakDbFS": -28.070313172540725,
+        "guestInputPeakDbFS": -1.4293526390460933,
+        "outputMinusGuestInputPeakDb": -26.64096053349463
+      },
+      {
+        "startMs": 690046.0,
+        "endMs": 695046.0,
+        "state": "listening",
+        "outputPeakDbFS": -28.468629284138416,
+        "guestInputPeakDbFS": -1.447808968848684,
+        "outputMinusGuestInputPeakDb": -27.020820315289733
+      },
+      {
+        "startMs": 695046.0,
+        "endMs": 700047.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -0.7984803984087446,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 700047.0,
+        "endMs": 705047.0,
+        "state": "listening",
+        "outputPeakDbFS": -32.001001994948965,
+        "guestInputPeakDbFS": -1.6195368349327752,
+        "outputMinusGuestInputPeakDb": -30.38146516001619
+      },
+      {
+        "startMs": 705047.0,
+        "endMs": 710047.0,
+        "state": "listening",
+        "outputPeakDbFS": -28.454585805512377,
+        "guestInputPeakDbFS": -1.0171214798968258,
+        "outputMinusGuestInputPeakDb": -27.43746432561555
+      },
+      {
+        "startMs": 710047.0,
+        "endMs": 715046.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.5315093210654582,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 715046.0,
+        "endMs": 720046.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -27.73455301242582,
+        "guestInputPeakDbFS": -1.0916429644925878,
+        "outputMinusGuestInputPeakDb": -26.64291004793323
+      },
+      {
+        "startMs": 720046.0,
+        "endMs": 725047.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -20.617308113537504,
+        "guestInputPeakDbFS": -28.510896470406397,
+        "outputMinusGuestInputPeakDb": 7.893588356868893
+      },
+      {
+        "startMs": 725047.0,
+        "endMs": 730047.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 730047.0,
+        "endMs": 735048.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 735048.0,
+        "endMs": 740049.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 740049.0,
+        "endMs": 745049.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -30.62745802113774,
+        "guestInputPeakDbFS": -36.66609717171772,
+        "outputMinusGuestInputPeakDb": 6.038639150579982
+      },
+      {
+        "startMs": 745049.0,
+        "endMs": 750051.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.79296604222877,
+        "guestInputPeakDbFS": -0.7293043509506301,
+        "outputMinusGuestInputPeakDb": -26.06366169127814
+      },
+      {
+        "startMs": 750051.0,
+        "endMs": 755053.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.712220138730626,
+        "guestInputPeakDbFS": -0.6942039873230244,
+        "outputMinusGuestInputPeakDb": -26.0180161514076
+      },
+      {
+        "startMs": 755053.0,
+        "endMs": 760053.0,
+        "state": "listening",
+        "outputPeakDbFS": -29.9017730462402,
+        "guestInputPeakDbFS": -0.9128528215585516,
+        "outputMinusGuestInputPeakDb": -28.98892022468165
+      },
+      {
+        "startMs": 760053.0,
+        "endMs": 765054.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -27.423743223954546,
+        "guestInputPeakDbFS": -6.278325230326716,
+        "outputMinusGuestInputPeakDb": -21.14541799362783
+      },
+      {
+        "startMs": 765054.0,
+        "endMs": 770055.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -57.63962958760263,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 770055.0,
+        "endMs": 775054.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 775054.0,
+        "endMs": 780054.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.761548908204713,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 780054.0,
+        "endMs": 785055.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -24.779762615729478,
+        "guestInputPeakDbFS": -2.6000908192775283,
+        "outputMinusGuestInputPeakDb": -22.17967179645195
+      },
+      {
+        "startMs": 785055.0,
+        "endMs": 790054.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 790054.0,
+        "endMs": 795055.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 795055.0,
+        "endMs": 800056.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 800056.0,
+        "endMs": 805056.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 805056.0,
+        "endMs": 810057.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -40.737668787317496,
+        "guestInputPeakDbFS": -16.30011667863933,
+        "outputMinusGuestInputPeakDb": -24.437552108678165
+      },
+      {
+        "startMs": 810057.0,
+        "endMs": 815059.0,
+        "state": "listening",
+        "outputPeakDbFS": -90.30899869919436,
+        "guestInputPeakDbFS": -0.7854134495602856,
+        "outputMinusGuestInputPeakDb": -89.52358524963408
+      },
+      {
+        "startMs": 815059.0,
+        "endMs": 820060.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.339724348173718,
+        "guestInputPeakDbFS": -5.492524388841046,
+        "outputMinusGuestInputPeakDb": -19.84719995933267
+      },
+      {
+        "startMs": 820060.0,
+        "endMs": 825059.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -28.85664916828963,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 825059.0,
+        "endMs": 830059.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -63.46054508275024,
+        "guestInputPeakDbFS": -43.700723232210535,
+        "outputMinusGuestInputPeakDb": -19.7598218505397
+      },
+      {
+        "startMs": 830059.0,
+        "endMs": 835060.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 835060.0,
+        "endMs": 840061.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -17.94385180238633,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 840061.0,
+        "endMs": 845062.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -24.288398785914733,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 845062.0,
+        "endMs": 850062.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 850062.0,
+        "endMs": 855064.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -27.715200855208337,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 855064.0,
+        "endMs": 860065.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -20.877297615490566,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 860065.0,
+        "endMs": 865066.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 865066.0,
+        "endMs": 870067.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 870067.0,
+        "endMs": 875067.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 875067.0,
+        "endMs": 880067.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 880067.0,
+        "endMs": 885067.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -0.8235076046834,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 885067.0,
+        "endMs": 890068.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -26.740971868519253,
+        "guestInputPeakDbFS": -1.9738593158194409,
+        "outputMinusGuestInputPeakDb": -24.767112552699814
+      },
+      {
+        "startMs": 890068.0,
+        "endMs": 895068.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -69.48114499602985,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 895068.0,
+        "endMs": 900069.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 900069.0,
+        "endMs": 905069.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 905069.0,
+        "endMs": 910069.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 910069.0,
+        "endMs": 915070.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -8.213795366423856,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 915070.0,
+        "endMs": 920070.0,
+        "state": "listening",
+        "outputPeakDbFS": -27.015994380508424,
+        "guestInputPeakDbFS": -2.0833404388466743,
+        "outputMinusGuestInputPeakDb": -24.932653941661748
+      },
+      {
+        "startMs": 920070.0,
+        "endMs": 925070.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -21.516030107924884,
+        "guestInputPeakDbFS": -0.7683109564696815,
+        "outputMinusGuestInputPeakDb": -20.747719151455204
+      },
+      {
+        "startMs": 925070.0,
+        "endMs": 930080.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -25.320139470342717,
+        "guestInputPeakDbFS": -7.133910966548594,
+        "outputMinusGuestInputPeakDb": -18.186228503794123
+      },
+      {
+        "startMs": 930080.0,
+        "endMs": 935079.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 935079.0,
+        "endMs": 940080.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -22.40946430810307,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 940080.0,
+        "endMs": 945079.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 945079.0,
+        "endMs": 950079.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -29.81107949704466,
+        "guestInputPeakDbFS": -1.3618062737559953,
+        "outputMinusGuestInputPeakDb": -28.449273223288664
+      },
+      {
+        "startMs": 950079.0,
+        "endMs": 955080.0,
+        "state": "listening",
+        "outputPeakDbFS": -24.069685491827034,
+        "guestInputPeakDbFS": -1.1090935782465299,
+        "outputMinusGuestInputPeakDb": -22.960591913580505
+      },
+      {
+        "startMs": 955080.0,
+        "endMs": 960081.0,
+        "state": "listening",
+        "outputPeakDbFS": -28.624624964409584,
+        "guestInputPeakDbFS": -1.4631669734729327,
+        "outputMinusGuestInputPeakDb": -27.16145799093665
+      },
+      {
+        "startMs": 960081.0,
+        "endMs": 965083.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -26.695014673273665,
+        "guestInputPeakDbFS": -1.8185527574617022,
+        "outputMinusGuestInputPeakDb": -24.876461915811962
+      },
+      {
+        "startMs": 965083.0,
+        "endMs": 970083.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -29.697004259875335,
+        "guestInputPeakDbFS": -1.9386641491007353,
+        "outputMinusGuestInputPeakDb": -27.7583401107746
+      },
+      {
+        "startMs": 970083.0,
+        "endMs": 975084.0,
+        "state": "listening",
+        "outputPeakDbFS": -27.06966637191286,
+        "guestInputPeakDbFS": -1.9708655005458446,
+        "outputMinusGuestInputPeakDb": -25.098800871367015
+      },
+      {
+        "startMs": 975084.0,
+        "endMs": 980084.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -29.20908146861153,
+        "guestInputPeakDbFS": -1.8192063970479733,
+        "outputMinusGuestInputPeakDb": -27.389875071563555
+      },
+      {
+        "startMs": 980084.0,
+        "endMs": 985085.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -26.660705650503278,
+        "guestInputPeakDbFS": -28.144465571695786,
+        "outputMinusGuestInputPeakDb": 1.483759921192508
+      },
+      {
+        "startMs": 985085.0,
+        "endMs": 990086.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -17.196627028369917,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 990086.0,
+        "endMs": 995085.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 995085.0,
+        "endMs": 1000085.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1000085.0,
+        "endMs": 1005087.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -31.90653217337988,
+        "guestInputPeakDbFS": -1.6058132828343716,
+        "outputMinusGuestInputPeakDb": -30.300718890545507
+      },
+      {
+        "startMs": 1005087.0,
+        "endMs": 1010087.0,
+        "state": "listening",
+        "outputPeakDbFS": -24.0274388636101,
+        "guestInputPeakDbFS": -1.8631126813231071,
+        "outputMinusGuestInputPeakDb": -22.164326182286995
+      },
+      {
+        "startMs": 1010087.0,
+        "endMs": 1015088.0,
+        "state": "listening",
+        "outputPeakDbFS": -23.99798801075626,
+        "guestInputPeakDbFS": -1.895034641018217,
+        "outputMinusGuestInputPeakDb": -22.102953369738042
+      },
+      {
+        "startMs": 1015088.0,
+        "endMs": 1020089.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -24.517219648342422,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1020089.0,
+        "endMs": 1025090.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1025090.0,
+        "endMs": 1030091.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1030091.0,
+        "endMs": 1035092.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -28.834631692271905,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1035092.0,
+        "endMs": 1040093.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -42.07660457992976,
+        "guestInputPeakDbFS": -43.42115322549215,
+        "outputMinusGuestInputPeakDb": 1.3445486455623907
+      },
+      {
+        "startMs": 1040093.0,
+        "endMs": 1045094.0,
+        "state": "listening",
+        "outputPeakDbFS": -28.849303806635753,
+        "guestInputPeakDbFS": -2.0513915298948753,
+        "outputMinusGuestInputPeakDb": -26.797912276740878
+      },
+      {
+        "startMs": 1045094.0,
+        "endMs": 1050095.0,
+        "state": "listening",
+        "outputPeakDbFS": -27.257117140644965,
+        "guestInputPeakDbFS": -1.555572603779787,
+        "outputMinusGuestInputPeakDb": -25.70154453686518
+      },
+      {
+        "startMs": 1050095.0,
+        "endMs": 1055095.0,
+        "state": "listening",
+        "outputPeakDbFS": -33.21073825303725,
+        "guestInputPeakDbFS": -1.4274779191629787,
+        "outputMinusGuestInputPeakDb": -31.78326033387427
+      },
+      {
+        "startMs": 1055095.0,
+        "endMs": 1060096.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.184268035075903,
+        "guestInputPeakDbFS": -1.1932264028311976,
+        "outputMinusGuestInputPeakDb": -23.991041632244706
+      },
+      {
+        "startMs": 1060096.0,
+        "endMs": 1065095.0,
+        "state": "listening",
+        "outputPeakDbFS": -90.30899869919436,
+        "guestInputPeakDbFS": -0.8608914510159161,
+        "outputMinusGuestInputPeakDb": -89.44810724817845
+      },
+      {
+        "startMs": 1065095.0,
+        "endMs": 1070095.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.270137431161356,
+        "guestInputPeakDbFS": -1.4939646896106493,
+        "outputMinusGuestInputPeakDb": -24.776172741550706
+      },
+      {
+        "startMs": 1070095.0,
+        "endMs": 1075096.0,
+        "state": "listening",
+        "outputPeakDbFS": -29.293672474533512,
+        "guestInputPeakDbFS": -1.4084412002188984,
+        "outputMinusGuestInputPeakDb": -27.885231274314613
+      },
+      {
+        "startMs": 1075096.0,
+        "endMs": 1080096.0,
+        "state": "listening",
+        "outputPeakDbFS": -24.193375674094714,
+        "guestInputPeakDbFS": -1.5223448225891056,
+        "outputMinusGuestInputPeakDb": -22.67103085150561
+      },
+      {
+        "startMs": 1080096.0,
+        "endMs": 1085097.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.413563469288462,
+        "guestInputPeakDbFS": -1.9798500438324287,
+        "outputMinusGuestInputPeakDb": -23.433713425456034
+      },
+      {
+        "startMs": 1085097.0,
+        "endMs": 1090098.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -26.30841336811895,
+        "guestInputPeakDbFS": -1.4675599671337478,
+        "outputMinusGuestInputPeakDb": -24.8408534009852
+      },
+      {
+        "startMs": 1090098.0,
+        "endMs": 1095098.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -26.98631929309218,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1095098.0,
+        "endMs": 1100099.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1100099.0,
+        "endMs": 1105099.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -20.977577251467274,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1105099.0,
+        "endMs": 1110100.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -34.93623667424207,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1110100.0,
+        "endMs": 1115100.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.156311351415127,
+        "guestInputPeakDbFS": -1.112407136212767,
+        "outputMinusGuestInputPeakDb": -25.04390421520236
+      },
+      {
+        "startMs": 1115100.0,
+        "endMs": 1120099.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.0121217382404,
+        "guestInputPeakDbFS": -1.7071749385153718,
+        "outputMinusGuestInputPeakDb": -24.304946799725027
+      },
+      {
+        "startMs": 1120099.0,
+        "endMs": 1125101.0,
+        "state": "listening",
+        "outputPeakDbFS": -26.028025110955532,
+        "guestInputPeakDbFS": -1.873301794889311,
+        "outputMinusGuestInputPeakDb": -24.15472331606622
+      },
+      {
+        "startMs": 1125101.0,
+        "endMs": 1130100.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -27.871238997120734,
+        "guestInputPeakDbFS": -5.913118165354753,
+        "outputMinusGuestInputPeakDb": -21.95812083176598
+      },
+      {
+        "startMs": 1130100.0,
+        "endMs": 1135100.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -26.856940074997162,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1135100.0,
+        "endMs": 1140102.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1140102.0,
+        "endMs": 1145106.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1145106.0,
+        "endMs": 1150104.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1150104.0,
+        "endMs": 1155106.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -36.41689472052298,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1155106.0,
+        "endMs": 1160107.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.8107129167145806,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1160107.0,
+        "endMs": 1165108.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -26.547311224895594,
+        "guestInputPeakDbFS": -1.3441504465055756,
+        "outputMinusGuestInputPeakDb": -25.203160778390018
+      },
+      {
+        "startMs": 1165108.0,
+        "endMs": 1170109.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -1.385403343228757,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1170109.0,
+        "endMs": 1175108.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1175108.0,
+        "endMs": 1180109.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1180109.0,
+        "endMs": 1185109.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1185109.0,
+        "endMs": 1190109.0,
+        "state": "listening",
+        "outputPeakDbFS": -25.107570939492867,
+        "guestInputPeakDbFS": -0.9515112692757512,
+        "outputMinusGuestInputPeakDb": -24.156059670217115
+      },
+      {
+        "startMs": 1190109.0,
+        "endMs": 1195110.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -26.145548165851924,
+        "guestInputPeakDbFS": -2.509384101554011,
+        "outputMinusGuestInputPeakDb": -23.636164064297912
+      },
+      {
+        "startMs": 1195110.0,
+        "endMs": 1200110.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -31.538604195664522,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1200110.0,
+        "endMs": 1205113.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": -0.4868097070844391,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1205113.0,
+        "endMs": 1210113.0,
+        "state": "listening",
+        "outputPeakDbFS": -24.09088611167153,
+        "guestInputPeakDbFS": -1.8198600858263114,
+        "outputMinusGuestInputPeakDb": -22.27102602584522
+      },
+      {
+        "startMs": 1210113.0,
+        "endMs": 1215113.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": -25.959319814916235,
+        "guestInputPeakDbFS": -18.77756501788854,
+        "outputMinusGuestInputPeakDb": -7.181754797027693
+      },
+      {
+        "startMs": 1215113.0,
+        "endMs": 1220114.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1220114.0,
+        "endMs": 1225115.0,
+        "state": "aside",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1225115.0,
+        "endMs": 1230115.0,
+        "state": "mixed-transition",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1230115.0,
+        "endMs": 1234809.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      },
+      {
+        "startMs": 1234809.0,
+        "endMs": 1237468.0,
+        "state": "listening",
+        "outputPeakDbFS": null,
+        "guestInputPeakDbFS": null,
+        "outputMinusGuestInputPeakDb": null
+      }
+    ]
+  },
+  "reviewEvents": [
+    {
+      "startMs": 20779.0,
+      "endMs": 21051.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 28130.0,
+      "endMs": 28250.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 31829.0,
+      "endMs": 32089.0,
+      "text": "Hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 33850.0,
+      "endMs": 34070.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 49619.0,
+      "endMs": 49958.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 54039.0,
+      "endMs": 54160.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 66418.0,
+      "endMs": 66759.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 71319.0,
+      "endMs": 72039.0,
+      "text": "Ah.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 72919.0,
+      "endMs": 73959.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 93911.0,
+      "endMs": 94210.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 94690.0,
+      "endMs": 95411.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 115740.0,
+      "endMs": 116061.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 153947.0,
+      "endMs": 154086.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 159347.0,
+      "endMs": 159506.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 165426.0,
+      "endMs": 165446.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 179386.0,
+      "endMs": 179946.0,
+      "text": "Mm-hmm. Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 197913.0,
+      "endMs": 198113.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 201052.0,
+      "endMs": 201112.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 228293.0,
+      "endMs": 228633.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 235253.0,
+      "endMs": 235414.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 259312.0,
+      "endMs": 259373.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 264712.0,
+      "endMs": 264913.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 276573.0,
+      "endMs": 276673.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 277173.0,
+      "endMs": 277254.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 283454.0,
+      "endMs": 283732.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 288573.0,
+      "endMs": 288613.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 290773.0,
+      "endMs": 291032.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 313351.0,
+      "endMs": 313432.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 332673.0,
+      "endMs": 332912.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 334692.0,
+      "endMs": 334712.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 360501.0,
+      "endMs": 360580.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 363320.0,
+      "endMs": 363561.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 367061.0,
+      "endMs": 367180.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 382681.0,
+      "endMs": 382760.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 393743.0,
+      "endMs": 393800.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 400581.0,
+      "endMs": 400741.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 406761.0,
+      "endMs": 406942.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 413360.0,
+      "endMs": 413400.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 420761.0,
+      "endMs": 420881.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 444509.0,
+      "endMs": 444666.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 447368.0,
+      "endMs": 447967.0,
+      "text": "Mm-hmm. Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 465528.0,
+      "endMs": 465687.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 469369.0,
+      "endMs": 469647.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 487027.0,
+      "endMs": 487207.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 500428.0,
+      "endMs": 500568.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 507668.0,
+      "endMs": 507808.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 513086.0,
+      "endMs": 513788.0,
+      "text": "Mm-hmm. Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 538813.0,
+      "endMs": 539153.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 551993.0,
+      "endMs": 552093.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 559773.0,
+      "endMs": 559934.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 560414.0,
+      "endMs": 561354.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 593501.0,
+      "endMs": 593800.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 595159.0,
+      "endMs": 595241.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 603983.0,
+      "endMs": 604440.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 610161.0,
+      "endMs": 610342.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 616960.0,
+      "endMs": 617161.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 631120.0,
+      "endMs": 631360.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 654061.0,
+      "endMs": 654481.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 655780.0,
+      "endMs": 655881.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 675041.0,
+      "endMs": 675061.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 679919.0,
+      "endMs": 680039.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 692301.0,
+      "endMs": 692521.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 703820.0,
+      "endMs": 704162.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 707899.0,
+      "endMs": 707961.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 718881.0,
+      "endMs": 720060.0,
+      "text": "Mm-hmm. Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 743289.0,
+      "endMs": 743451.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 747229.0,
+      "endMs": 747249.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 781933.0,
+      "endMs": 782273.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 783593.0,
+      "endMs": 783693.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 808308.0,
+      "endMs": 808402.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 855769.0,
+      "endMs": 856690.0,
+      "text": "I'm with you.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 887502.0,
+      "endMs": 887840.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 889720.0,
+      "endMs": 889821.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 916566.0,
+      "endMs": 916944.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 918585.0,
+      "endMs": 918744.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 921704.0,
+      "endMs": 921745.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 922226.0,
+      "endMs": 922930.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 926865.0,
+      "endMs": 926925.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 947126.0,
+      "endMs": 947165.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 957626.0,
+      "endMs": 957682.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 962005.0,
+      "endMs": 962066.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 962943.0,
+      "endMs": 963026.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 977431.0,
+      "endMs": 977489.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1002314.0,
+      "endMs": 1002394.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1006893.0,
+      "endMs": 1006993.0,
+      "text": "Uh-huh.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1009533.0,
+      "endMs": 1009593.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1039435.0,
+      "endMs": 1039496.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1044738.0,
+      "endMs": 1044896.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1055936.0,
+      "endMs": 1056476.0,
+      "text": "Mm-hmm. Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1081236.0,
+      "endMs": 1081297.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1089236.0,
+      "endMs": 1089576.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1113762.0,
+      "endMs": 1114082.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1119244.0,
+      "endMs": 1119484.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1121042.0,
+      "endMs": 1121062.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1123143.0,
+      "endMs": 1123282.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1154473.0,
+      "endMs": 1154572.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1163052.0,
+      "endMs": 1163432.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1189030.0,
+      "endMs": 1189369.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1193149.0,
+      "endMs": 1193369.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1194749.0,
+      "endMs": 1194769.0,
+      "text": "Mm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1206679.0,
+      "endMs": 1206979.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1208939.0,
+      "endMs": 1209198.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    },
+    {
+      "startMs": 1211778.0,
+      "endMs": 1211999.0,
+      "text": "Mm-hmm.",
+      "timingLabel": null,
+      "volumeFitLabel": null,
+      "floorAudibilityLabel": null
+    }
+  ],
+  "timingGroundTruthComplete": false,
+  "limitations": [
+    "User labels describe overall listening experience, not per-event timing approvals.",
+    "No isolated stems/PCM remain. Exact overlapping Quartz RMS/LUFS and published-mix balance unavailable.",
+    "Mixed-state diagnostic windows are segregated. Peaks do not locate individual vocalizations.",
+    "Recording offsets are not published episode offsets; intro/outro/edit alignment is not assumed.",
+    "Historical mixed audio is not clean guest-only replay input. Fade remains an untested hypothesis."
+  ]
+}

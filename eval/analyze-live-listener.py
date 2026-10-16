@@ -1,5 +1,6 @@
 import json, math, struct, statistics, re, sys
 from pathlib import Path
+from backchannel_loudness import replay_loudness
 out=Path(sys.argv[1]); manifest=json.loads((out/'manifest.json').read_text()); p=Path(manifest['episode']); startMs=manifest['startMs']; durationMs=manifest['durationMs']
 earlyMetrics=out/'metrics.json'
 if earlyMetrics.exists():
@@ -49,6 +50,7 @@ if metrics.exists():
  states={}
  for f in frames:
   state=f['state'];v=states.setdefault(state,{'frames':0,'activeFrames':0});v['frames']+=1;v['activeFrames']+=int(f['rms']>80)
+ summary['loudness']=replay_loudness(frames, [f for ff in data.values() for f in ff])
  events=m['events'];stateTimes={}
  last=0;state='listening'
  for e in events:
@@ -62,4 +64,5 @@ target=out/('summary.json' if metrics.exists() else 'human-baseline.json')
 target.write_text(json.dumps(summary,indent=2))
 compact={k:v for k,v in summary.items() if k not in ['rawTranscript','playedTranscript','configuration']}
 if 'quartz' in compact:compact['quartz']={k:v for k,v in compact['quartz'].items() if k not in ['perTurn','groups']}
+if 'loudness' in compact:compact['loudness']={k:v for k,v in compact['loudness'].items() if k!='events'}
 print(json.dumps(compact,indent=2))

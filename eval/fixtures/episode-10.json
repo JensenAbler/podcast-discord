@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "episode-10",
+  "episode": 10,
+  "title": "When Agents Coordinate Behind Your Back",
+  "publishedVersion": "v003",
+  "publishedUrl": "https://clawcast.jensenabler.com/episodes/episode-10-v003.mp3",
+  "recording": "episode-2026-09-14T23-36-36-715Z",
+  "plan": "wiki-coordination/v002",
+  "referenceType": "user-rated-historical-volume-fit",
+  "reviewer": "Jensen Abler",
+  "reviewDate": "2026-10-16",
+  "episodeLevelLabels": {
+    "backchannelIntrusiveness": "not felt as rude or awkward at original volume, despite possibly imperfect timing",
+    "floorAudibility": "sometimes too quiet",
+    "fade": "candidate to evaluate; not selected target"
+  },
+  "perEventTimingLabelsVerified": false,
+  "cleanGuestOnlyReplayAvailable": false,
+  "sourceHashes": {
+    "episode-metadata.json": "601cf839599008f6339b5aa8184ff939439213035fdc226210f36cc3a10b8a3b",
+    "episode-plan.json": "b53b9f3ae26b32c21ef2cc7bef75a4a60c66a85fb0b25a5b1ee5a839ed622f20",
+    "transcript.jsonl": "df7e5564cfcfd4e31d633a2d6478e32dfac111e22f3f0609664d4a2b9d00120f",
+    "live-turn-events.jsonl": "eeb9c11d03b0d186bb45344585e94ee74be3023c3bf8631febbbf2ab75241ce9",
+    "quartz-transcript.jsonl": "d3e509350ce29de5c07032b7cfb73eaa40bd004899298aa6a7dfda300fe0b647",
+    "audio-recording-metadata.json": "288e2f511c32c8ffc28e03fee9bc638e3b22ee63400639fb558765c36ee004e7",
+    "audio-journal/manifest.json": "bc848784db1d8cb9745b9bf070744341a4c1982f3e261f64acd807cdd7bb18ad",
+    "mixed-audio.mp3": "bb4de9b0c533abf8701b9c095cbc152682b8efc340244dc44490924d079becd6"
+  },
+  "publishedSourceEvidence": {
+    "transcriptSha256": "f3e1959cd76603781fe87c047918be317bb868ac72cfaabf4ec8916b95bb847b",
+    "longRecordingTurns": 39,
+    "verbatimMatchesInPublishedTranscript": 39,
+    "note": "Published transcript confirms recording identity, not audio sample/timestamp alignment."
+  }
+}
