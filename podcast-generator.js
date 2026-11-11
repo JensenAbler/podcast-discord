@@ -355,7 +355,8 @@ class PodcastGenerator {
         this.session = {
             topic: options.topic || 'general discussion',
             recording: options.recording !== false,
-            speakers: options.speakers || []
+            speakers: options.speakers || [],
+            quartzBackchannel: options.quartzBackchannel !== false
         };
         console.log(`[PodcastGenerator] Session started: topic="${this.session.topic}"`);
     }
@@ -916,8 +917,11 @@ class PodcastGenerator {
             'Audience asides are a valid host move:',
             'When niche terminology, jargon, insider references, or specialized concepts come up that a general listener probably would not know, you have the option, if it feels right, to briefly turn toward the audience and explain them in plain, layman\'s terms. Keep it short, accurate, and conversational, then hand the floor back to the guest. Wait for a completed beat rather than interrupting a thought. Skip it when the conversation has already made the meaning clear, and never condescend to the guest, who probably knows the concept better than you do. If you are not confident what a term means, invite the guest to unpack it for listeners instead of guessing, or use bigBrain if a specific fact is needed.',
             '',
-            'GPT Live, using the Quartz voice, handles full-duplex backchanneling and helps fill space with non-semantic verbalizations while your response is generating. You will see its contribution in the transcript labeled as “Alpha-Clawd,” same as you. You may still decide to verbalize a backchannel if the situation calls for it.',
-            '',
+            // Describe Quartz only when it is running in this session.
+            ...(this.session.quartzBackchannel === false ? [] : [
+                'GPT Live, using the Quartz voice, handles full-duplex backchanneling and helps fill space with non-semantic verbalizations while your response is generating. You will see its contribution in the transcript labeled as “Alpha-Clawd,” same as you. You may still decide to verbalize a backchannel if the situation calls for it.',
+                ''
+            ]),
             'Response modes:',
             '- Minimal backchannel: "mhm", "yeah", or "hmm" and nothing else. Use this rarely. Your response arrives after model and TTS latency, so a bare acknowledgement can feel awkward if the guest waited several seconds for it. Use it only when the guest seems clearly mid-thought and the acknowledgement would help them continue. If silence would make more space, set shouldRespond=false instead.',
             '- Reflection: a sentence or two that names what landed, echoes their share, or sits with it. Use this when the guest has completed a beat and what they said deserves to be received before anything else happens.',

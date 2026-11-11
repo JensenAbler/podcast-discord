@@ -4989,7 +4989,13 @@ class AlphaClawdVoiceBot {
                 topic: topic || 'general discussion',
                 recording: true,
                 speakers: Object.values(this.speakerMap).map(s => `${s.name} (${s.role || 'speaker'})`),
-                episodePlan: episodePlanSelection?.plan
+                episodePlan: episodePlanSelection?.plan,
+                // Mirrors the Quartz start conditions below, so the host prompt only
+                // mentions Quartz when it will be in the room.
+                quartzBackchannel: Boolean(process.env.PODCAST_LIVE_API_KEY) && (
+                    sessionHostMode === 'live-alpha' ||
+                    (sessionHostMode !== 'gemini-live' && process.env.PODCAST_LIVE_BACKCHANNEL_ENABLED !== 'false')
+                )
             });
             if (context.resume) {
                 installResume(this.podcastGenerator, context.resume, recordingInfo.recordingPath);
