@@ -319,6 +319,8 @@ class PodcastGenerator {
             ? Boolean(options.allowJsonObjectFallback)
             : process.env.PODCAST_GENERATOR_JSON_OBJECT_FALLBACK !== 'false';
         this.temperature = process.env.PODCAST_GENERATOR_TEMPERATURE;
+        // Anthropic-only thinking depth (low|medium|high|xhigh|max). Empty leaves the provider default.
+        this.effort = String(options.effort || '').trim().toLowerCase();
         this.freeKeyCooldownUntil = 0;
         this.paidSessionSpendUsd = 0;
         this.paidDailySpendUsd = 0;
@@ -638,7 +640,8 @@ class PodcastGenerator {
                 },
                 body: {
                     ...buildAnthropicMessagesBody(body, {
-                        cacheControl: shouldUseAnthropicPromptCache(this.baseUrl)
+                        cacheControl: shouldUseAnthropicPromptCache(this.baseUrl),
+                        effort: this.effort
                     }),
                     stream: true
                 }
@@ -2868,7 +2871,8 @@ class PodcastGenerator {
                 baseUrl: this.baseUrl,
                 apiKey: this.apiKey,
                 body,
-                timeout: this.timeout
+                timeout: this.timeout,
+                effort: this.effort
             });
         }
 
