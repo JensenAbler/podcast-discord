@@ -2994,14 +2994,97 @@ class AlphaClawdVoiceBot {
     async buildPlanningMessageRecord(message) {
         const memberName = message.member?.displayName || message.author?.globalName || message.author?.username || 'Human';
         const baseText = String(message.content || '').trim();
+        const textAttachments = await this.readPlanningTextAttachments(message);
         const audioTranscriptions = await this.transcribePlanningAudioAttachments(message);
-        const parts = [baseText, ...audioTranscriptions.map((item) => item.text)].filter(Boolean);
+        const parts = [
+            baseText,
+            ...textAttachments.map((item) => item.text),
+            ...audioTranscriptions.map((item) => item.text)
+        ].filter(Boolean);
         return {
             speaker: memberName,
             userId: message.author?.id || null,
             timestamp: message.createdAt instanceof Date ? message.createdAt.toISOString() : new Date().toISOString(),
             text: parts.join('\n\n')
         };
+    }
+
+    async readPlanningTextAttachments(message) {
+        const attachments = this.getDiscordMessageAttachments(message)
+            .filter((attachment) => this.isPlanningTextAttachment(attachment));
+        if (attachments.length === 0) {
+            return [];
+        }
+
+        const results = [];
+        for (const attachment of attachments) {
+            const name = attachment.name || 'text attachment';
+            try {
+                console.log(
+                    '[Bot] Podcast planning reading text attachment: ' +
+                    'channel=' + (message.channelId || message.channel?.id || 'unknown') + ', name=' + name +
+                    ', contentType=' + (attachment.contentType || 'unknown') + ', size=' + (attachment.size || 'unknown')
+                );
+                const buffer = await this.downloadPlanningTextAttachment(attachment);
+                let text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+                text = text.replace(/^\uFEFF/, '').trim();
+                if (text.includes('\u0000')) {
+                    throw new Error('text attachment contains binary data');
+                }
+                if (!text) {
+                    console.log('[Bot] Podcast planning text attachment was empty: ' + name);
+                    continue;
+                }
+                results.push({
+                    attachment,
+                    text: '[Text attachment: ' + name + ']\n' + text
+                });
+                console.log('[Bot] Podcast planning text attachment read: name=' + name + ', chars=' + text.length);
+            } catch (error) {
+                console.warn('[Bot] Podcast planning text attachment read failed for ' + name + ': ' + error.message);
+                results.push({
+                    attachment,
+                    text: '[Text attachment could not be read: ' + name + ' - ' + error.message + ']'
+                });
+            }
+        }
+        return results;
+    }
+
+    isPlanningTextAttachment(attachment = {}) {
+        const contentType = String(attachment.contentType || '').toLowerCase();
+        const name = String(attachment.name || '').toLowerCase();
+        return name.endsWith('.txt') || contentType.split(';', 1)[0].trim() === 'text/plain';
+    }
+
+    async downloadPlanningTextAttachment(attachment = {}) {
+        const url = String(attachment.url || attachment.proxyURL || '').trim();
+        if (!url) {
+            throw new Error('attachment has no download URL');
+        }
+        const declaredSize = Number(attachment.size || 0);
+        const maxBytes = Number.isFinite(this.planningTextMaxBytes) && this.planningTextMaxBytes > 0
+            ? this.planningTextMaxBytes
+            : 1024 * 1024;
+        if (Number.isFinite(declaredSize) && declaredSize > maxBytes) {
+            throw new Error('text attachment is too large (' + declaredSize + ' bytes; limit ' + maxBytes + ')');
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), this.planningTextDownloadTimeoutMs || 30000);
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            if (!response.ok) {
+                throw new Error('download failed: ' + response.status);
+            }
+            const buffer = Buffer.from(await response.arrayBuffer());
+            if (buffer.byteLength > maxBytes) {
+                throw new Error('text attachment is too large (' + buffer.byteLength + ' bytes; limit ' + maxBytes + ')');
+            }
+            return buffer;
+        } finally {
+            clearTimeout(timeout);
+        }
     }
 
     async transcribePlanningAudioAttachments(message) {

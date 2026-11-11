@@ -4147,6 +4147,49 @@ async function runTests() {
             throw new Error(`Planning audio attachment was not transcribed into showrunner text: ${JSON.stringify({ audioPlanningCalls, downloadedPlanningAudio, decodedPlanningAudio, transcribedPlanningAudio, audioPlanningMessages })}`);
         }
 
+        const textPlanningBot = Object.create(AlphaClawdVoiceBot.prototype);
+        textPlanningBot.planningSessions = new Map();
+        textPlanningBot.planningAudioTranscriptionEnabled = false;
+        textPlanningBot.planningTextMaxBytes = 1024;
+        let downloadedPlanningText = null;
+        textPlanningBot.downloadPlanningTextAttachment = async (attachment) => {
+            downloadedPlanningText = attachment;
+            return Buffer.from('Guest background: Jordan studies lucid dreaming.\nDesired arc: connect the relic dream to consciousness training.', 'utf8');
+        };
+        const textPlanningRecord = await textPlanningBot.buildPlanningMessageRecord({
+            channelId: 'channel-text-plan',
+            content: 'Please use the attached notes.',
+            createdAt: new Date('2026-05-15T00:01:45.000Z'),
+            author: { id: 'producer-text', username: 'producer-text', bot: false },
+            member: { displayName: 'producer-text' },
+            attachments: new Map([
+                ['episode-notes', {
+                    id: 'episode-notes',
+                    name: 'episode-notes.txt',
+                    url: 'https://cdn.discord.test/episode-notes.txt',
+                    contentType: 'text/plain; charset=utf-8',
+                    size: 120
+                }],
+                ['reference-pdf', {
+                    id: 'reference-pdf',
+                    name: 'reference.pdf',
+                    url: 'https://cdn.discord.test/reference.pdf',
+                    contentType: 'application/pdf',
+                    size: 120
+                }]
+            ])
+        });
+        if (
+            downloadedPlanningText?.name !== 'episode-notes.txt' ||
+            !textPlanningRecord.text.includes('Please use the attached notes.') ||
+            !textPlanningRecord.text.includes('[Text attachment: episode-notes.txt]') ||
+            !textPlanningRecord.text.includes('Guest background: Jordan studies lucid dreaming.') ||
+            !textPlanningRecord.text.includes('connect the relic dream to consciousness training') ||
+            textPlanningRecord.text.includes('reference.pdf')
+        ) {
+            throw new Error('Planning TXT attachment was not included as text context: ' + JSON.stringify({ textPlanningRecord, downloadedPlanningText }));
+        }
+
         const burstBot = Object.create(AlphaClawdVoiceBot.prototype);
         burstBot.planningSessions = new Map();
         burstBot.planningControllerEnabled = true;
