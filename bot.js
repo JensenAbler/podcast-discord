@@ -3026,20 +3026,32 @@ class AlphaClawdVoiceBot {
                     ', contentType=' + (attachment.contentType || 'unknown') + ', size=' + (attachment.size || 'unknown')
                 );
                 const buffer = await this.downloadPlanningTextAttachment(attachment);
-                let text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+                const isPdf = this.isPlanningPdfAttachment(attachment);
+                let text = isPdf
+                    ? await this.extractPlanningPdfText(buffer)
+                    : new TextDecoder('utf-8', { fatal: true }).decode(buffer);
                 text = text.replace(/^\uFEFF/, '').trim();
-                if (text.includes('\u0000')) {
+                if (!isPdf && text.includes('\u0000')) {
                     throw new Error('text attachment contains binary data');
                 }
                 if (!text) {
-                    console.log('[Bot] Podcast planning text attachment was empty: ' + name);
+                    const detail = isPdf
+                        ? 'no extractable text (scanned/image-only PDFs require OCR)'
+                        : 'empty';
+                    console.log('[Bot] Podcast planning attachment was ' + detail + ': ' + name);
+                    if (isPdf) {
+                        results.push({
+                            attachment,
+                            text: '[PDF attachment: ' + name + ' - no extractable text; scanned/image-only PDFs are not OCRed]'
+                        });
+                    }
                     continue;
                 }
                 results.push({
                     attachment,
-                    text: '[Text attachment: ' + name + ']\n' + text
+                    text: (isPdf ? '[PDF attachment: ' : '[Text attachment: ') + name + ']\n' + text
                 });
-                console.log('[Bot] Podcast planning text attachment read: name=' + name + ', chars=' + text.length);
+                console.log('[Bot] Podcast planning attachment read: name=' + name + ', chars=' + text.length);
             } catch (error) {
                 console.warn('[Bot] Podcast planning text attachment read failed for ' + name + ': ' + error.message);
                 results.push({
@@ -3051,10 +3063,53 @@ class AlphaClawdVoiceBot {
         return results;
     }
 
-    isPlanningTextAttachment(attachment = {}) {
-        const contentType = String(attachment.contentType || '').toLowerCase();
+    isPlanningPdfAttachment(attachment = {}) {
+        const contentType = String(attachment.contentType || '').toLowerCase().split(';', 1)[0].trim();
         const name = String(attachment.name || '').toLowerCase();
-        return name.endsWith('.txt') || contentType.split(';', 1)[0].trim() === 'text/plain';
+        return name.endsWith('.pdf') || contentType === 'application/pdf';
+    }
+
+    isPlanningTextAttachment(attachment = {}) {
+        const contentType = String(attachment.contentType || '').toLowerCase().split(';', 1)[0].trim();
+        const name = String(attachment.name || '').toLowerCase();
+        return name.endsWith('.txt') || contentType === 'text/plain' || this.isPlanningPdfAttachment(attachment);
+    }
+
+    async extractPlanningPdfText(buffer) {
+        return new Promise((resolve, reject) => {
+            const child = spawn('pdftotext', ['-', '-'], { stdio: ['pipe', 'pipe', 'pipe'] });
+            const stdout = [];
+            const stderr = [];
+            let settled = false;
+            const timeoutMs = this.planningPdfExtractionTimeoutMs || 30000;
+            const finish = (error, value) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                if (error) reject(error);
+                else resolve(value);
+            };
+            const timeout = setTimeout(() => {
+                child.kill('SIGKILL');
+                finish(new Error('PDF text extraction timed out after ' + timeoutMs + 'ms'));
+            }, timeoutMs);
+
+            child.stdout.on('data', (chunk) => stdout.push(chunk));
+            child.stderr.on('data', (chunk) => {
+                if (stderr.reduce((total, item) => total + item.length, 0) < 4096) stderr.push(chunk);
+            });
+            child.on('error', (error) => finish(new Error('could not start pdftotext: ' + error.message)));
+            child.on('close', (code) => {
+                if (code !== 0) {
+                    const detail = Buffer.concat(stderr).toString('utf8').trim();
+                    finish(new Error('pdftotext failed' + (detail ? ': ' + detail : ' (exit ' + code + ')')));
+                    return;
+                }
+                finish(null, Buffer.concat(stdout).toString('utf8'));
+            });
+            child.stdin.on('error', (error) => finish(new Error('could not pass PDF to pdftotext: ' + error.message)));
+            child.stdin.end(buffer);
+        });
     }
 
     async downloadPlanningTextAttachment(attachment = {}) {

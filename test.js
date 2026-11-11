@@ -4151,11 +4151,12 @@ async function runTests() {
         textPlanningBot.planningSessions = new Map();
         textPlanningBot.planningAudioTranscriptionEnabled = false;
         textPlanningBot.planningTextMaxBytes = 1024;
-        let downloadedPlanningText = null;
+        const downloadedPlanningText = [];
         textPlanningBot.downloadPlanningTextAttachment = async (attachment) => {
-            downloadedPlanningText = attachment;
+            downloadedPlanningText.push(attachment);
             return Buffer.from('Guest background: Jordan studies lucid dreaming.\nDesired arc: connect the relic dream to consciousness training.', 'utf8');
         };
+        textPlanningBot.extractPlanningPdfText = async () => 'PDF source: the guest is a climate scientist.';
         const textPlanningRecord = await textPlanningBot.buildPlanningMessageRecord({
             channelId: 'channel-text-plan',
             content: 'Please use the attached notes.',
@@ -4180,12 +4181,14 @@ async function runTests() {
             ])
         });
         if (
-            downloadedPlanningText?.name !== 'episode-notes.txt' ||
+            !downloadedPlanningText.some((attachment) => attachment.name === 'episode-notes.txt') ||
+            !downloadedPlanningText.some((attachment) => attachment.name === 'reference.pdf') ||
             !textPlanningRecord.text.includes('Please use the attached notes.') ||
             !textPlanningRecord.text.includes('[Text attachment: episode-notes.txt]') ||
             !textPlanningRecord.text.includes('Guest background: Jordan studies lucid dreaming.') ||
             !textPlanningRecord.text.includes('connect the relic dream to consciousness training') ||
-            textPlanningRecord.text.includes('reference.pdf')
+            !textPlanningRecord.text.includes('[PDF attachment: reference.pdf]') ||
+            !textPlanningRecord.text.includes('PDF source: the guest is a climate scientist.')
         ) {
             throw new Error('Planning TXT attachment was not included as text context: ' + JSON.stringify({ textPlanningRecord, downloadedPlanningText }));
         }
