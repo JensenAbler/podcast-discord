@@ -314,8 +314,6 @@ class AlphaClawdVoiceBot {
             timeout: process.env.PODCAST_GENERATOR_TIMEOUT_MS,
             maxCompletionTokens: process.env.PODCAST_GENERATOR_MAX_TOKENS,
             maxHistoryTurns: process.env.PODCAST_GENERATOR_HISTORY_TURNS,
-            effort: process.env.PODCAST_GENERATOR_EFFORT,
-            maxRetries: process.env.PODCAST_GENERATOR_RETRIES,
             voiceMode: this.voiceProvider.mode,
             fishAudioModel: this.voiceProvider.tts?.model || process.env.FISH_AUDIO_MODEL || 's2-pro'
         };

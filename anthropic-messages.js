@@ -205,32 +205,7 @@ function buildAnthropicMessagesBody(body = {}, options = {}) {
         };
     }
 
-    // Opt-in only. Effort trades thinking depth for latency on models that
-    // think by default; an unset or unrecognized value leaves the request as-is.
-    const effort = normalizeAnthropicEffort(options.effort);
-    if (effort) {
-        anthropicBody.output_config = { ...(anthropicBody.output_config || {}), effort };
-    }
-
     return anthropicBody;
-}
-
-const ANTHROPIC_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
-
-function normalizeAnthropicEffort(value) {
-    const effort = String(value || '').trim().toLowerCase();
-    return ANTHROPIC_EFFORT_LEVELS.includes(effort) ? effort : '';
-}
-
-// A safety decline arrives as HTTP 200 with stop_reason "refusal" and no text.
-// Report it the way OpenAI-compatible routes do, so callers stay quiet on a
-// decline instead of treating the empty content as a broken response.
-function describeAnthropicRefusal(json = {}) {
-    if (json.stop_reason !== 'refusal') {
-        return '';
-    }
-    const details = json.stop_details || {};
-    return String(details.explanation || details.category || 'refusal');
 }
 
 function extractTextContent(content = []) {
@@ -270,7 +245,6 @@ function extractResponseHeaders(headers) {
 function normalizeAnthropicResponse(json = {}, headers = {}, baseUrl = '') {
     const content = extractTextContent(json.content);
     const usage = json.usage || {};
-    const refusal = describeAnthropicRefusal(json);
     return {
         id: json.id,
         model: json.model,
@@ -278,11 +252,9 @@ function normalizeAnthropicResponse(json = {}, headers = {}, baseUrl = '') {
         choices: [{
             message: {
                 role: 'assistant',
-                content,
-                ...(refusal ? { refusal } : {})
+                content
             },
-            finish_reason: json.stop_reason || null,
-            stop_details: json.stop_details || null
+            finish_reason: json.stop_reason || null
         }],
         usage: {
             prompt_tokens: Number(usage.input_tokens || 0),
@@ -302,7 +274,6 @@ async function fetchAnthropicMessages({
     apiKey,
     body,
     timeout,
-    effort,
     version = process.env.ANTHROPIC_VERSION || process.env.PODCAST_ANTHROPIC_VERSION || DEFAULT_ANTHROPIC_VERSION
 }) {
     const controller = new AbortController();
@@ -317,8 +288,7 @@ async function fetchAnthropicMessages({
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(buildAnthropicMessagesBody(body, {
-                cacheControl: shouldUseAnthropicPromptCache(baseUrl),
-                effort
+                cacheControl: shouldUseAnthropicPromptCache(baseUrl)
             })),
             signal: controller.signal
         });
@@ -353,7 +323,6 @@ module.exports = {
     fetchAnthropicMessages,
     getAnthropicCompatibleProvider,
     isAnthropicBaseUrl,
-    normalizeAnthropicEffort,
     normalizeBaseUrl,
     normalizeAnthropicResponse,
     shouldUseAnthropicPromptCache

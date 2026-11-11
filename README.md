@@ -129,30 +129,6 @@ performance controls. Fish S2 models use bracket controls such as `[short pause]
 models use `(break)` and `(long-break)`. Other voice modes should use punctuation
 and wording for pacing instead of Fish tags.
 
-### Failed host turns
-
-A host turn that fails is announced out loud ("I hit a generator error…") and that announcement
-is part of the recording. Before that happens the generator now makes one quiet second attempt
-when another attempt can plausibly help: a timeout, a dropped connection, a provider 5xx or
-overload response, or a reply cut off by the token cap (retried with a larger cap). Rate limits
-keep the key-routing behavior above, and request errors such as 400, 401 and 413 are not
-repeated. Set `PODCAST_GENERATOR_RETRIES=0` to turn the second attempt off. The retry covers the
-non-streaming request, which is also where a streaming turn lands when it fails before its first
-word.
-
-On Anthropic routes a safety decline (`stop_reason: "refusal"`) is now treated like a refusal
-from any other provider: Alpha stays quiet for that turn and the reason is logged, instead of the
-empty reply being reported as a generator error.
-
-Models that always think (Opus 5.5, Fable 5.x) spend thinking tokens inside
-`PODCAST_GENERATOR_MAX_TOKENS` and can be silent for longer than `PODCAST_GENERATOR_TIMEOUT_MS`
-before the first word, so raise both for those models. `PODCAST_GENERATOR_EFFORT`
-(`low`, `medium`, `high`, `xhigh`, `max`; Anthropic routes only, unset by default) sets the
-thinking depth; a lower value shortens the wait before Alpha speaks. None of this has been
-exercised against a live provider: the tests use stubbed responses.
-
-Run the checks with `node --test test-generator-recovery.js`; they also run in `npm test`.
-
 Contract files live in `../clawcast-network/contracts`.
 
 ## Image comprehension with Astra
