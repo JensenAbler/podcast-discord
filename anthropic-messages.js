@@ -205,7 +205,20 @@ function buildAnthropicMessagesBody(body = {}, options = {}) {
         };
     }
 
+    // Opt-in thinking depth. An unset or unrecognized value leaves the request unchanged.
+    const effort = normalizeAnthropicEffort(options.effort);
+    if (effort) {
+        anthropicBody.output_config = { ...(anthropicBody.output_config || {}), effort };
+    }
+
     return anthropicBody;
+}
+
+const ANTHROPIC_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+function normalizeAnthropicEffort(value) {
+    const effort = String(value || '').trim().toLowerCase();
+    return ANTHROPIC_EFFORT_LEVELS.includes(effort) ? effort : '';
 }
 
 function extractTextContent(content = []) {
@@ -274,6 +287,7 @@ async function fetchAnthropicMessages({
     apiKey,
     body,
     timeout,
+    effort,
     version = process.env.ANTHROPIC_VERSION || process.env.PODCAST_ANTHROPIC_VERSION || DEFAULT_ANTHROPIC_VERSION
 }) {
     const controller = new AbortController();
@@ -288,7 +302,8 @@ async function fetchAnthropicMessages({
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(buildAnthropicMessagesBody(body, {
-                cacheControl: shouldUseAnthropicPromptCache(baseUrl)
+                cacheControl: shouldUseAnthropicPromptCache(baseUrl),
+                effort
             })),
             signal: controller.signal
         });
@@ -323,6 +338,7 @@ module.exports = {
     fetchAnthropicMessages,
     getAnthropicCompatibleProvider,
     isAnthropicBaseUrl,
+    normalizeAnthropicEffort,
     normalizeBaseUrl,
     normalizeAnthropicResponse,
     shouldUseAnthropicPromptCache
