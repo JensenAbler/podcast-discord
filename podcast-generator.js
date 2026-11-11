@@ -319,6 +319,10 @@ class PodcastGenerator {
             ? Boolean(options.allowJsonObjectFallback)
             : process.env.PODCAST_GENERATOR_JSON_OBJECT_FALLBACK !== 'false';
         this.temperature = process.env.PODCAST_GENERATOR_TEMPERATURE;
+        // Anthropic-only thinking depth (low|medium|high|xhigh|max). Empty leaves the provider default.
+        this.effort = String(options.effort || '').trim().toLowerCase();
+        // Quiet re-attempts of a host turn before the failure is spoken on the recording.
+        this.maxRetries = this.parseRetryCount(options.maxRetries, 1);
         this.freeKeyCooldownUntil = 0;
         this.paidSessionSpendUsd = 0;
         this.paidDailySpendUsd = 0;
@@ -378,7 +382,7 @@ class PodcastGenerator {
         const messages = this.buildMessages(input);
 
         const startTime = Date.now();
-        const result = await this.fetchCompletion(messages, input);
+        const result = await this.fetchCompletionWithRecovery(messages, input);
         const duration = Date.now() - startTime;
         const choice = result.choices?.[0];
         const content = choice?.message?.content;
@@ -638,7 +642,8 @@ class PodcastGenerator {
                 },
                 body: {
                     ...buildAnthropicMessagesBody(body, {
-                        cacheControl: shouldUseAnthropicPromptCache(this.baseUrl)
+                        cacheControl: shouldUseAnthropicPromptCache(this.baseUrl),
+                        effort: this.effort
                     }),
                     stream: true
                 }
@@ -1387,7 +1392,7 @@ class PodcastGenerator {
         const body = {
             model: this.model,
             messages,
-            max_completion_tokens: this.maxCompletionTokens
+            max_completion_tokens: Number(options.maxCompletionTokens) || this.maxCompletionTokens
         };
 
         if (responseFormat === 'json_schema') {
@@ -1609,8 +1614,8 @@ class PodcastGenerator {
             });
     }
 
-    async fetchCompletion(messages, input = {}) {
-        const body = this.buildRequestBody(messages);
+    async fetchCompletion(messages, input = {}, bodyOptions = {}) {
+        const body = this.buildRequestBody(messages, bodyOptions);
 
         try {
             return await this.fetchJsonWithKeyRouting('/chat/completions', body, input);
@@ -1621,10 +1626,86 @@ class PodcastGenerator {
 
             console.warn('[PodcastGenerator] Model rejected json_schema response_format; retrying with json_object');
             return this.fetchJsonWithKeyRouting('/chat/completions', this.buildRequestBody(messages, {
+                ...bodyOptions,
                 responseFormat: 'json_object',
                 reasoningFormat: this.reasoningFormat || 'hidden'
             }), input);
         }
+    }
+
+    /**
+     * A failed host turn is otherwise announced out loud on the recording, so
+     * give it one quiet second attempt first. Only failures another attempt
+     * can plausibly fix are retried: timeouts, dropped connections, provider
+     * 5xx/overload, and output cut off by the token cap (retried with more
+     * room). Rate limits keep their existing key-routing behavior, and
+     * request errors such as 400/401/413 are never repeated.
+     */
+    async fetchCompletionWithRecovery(messages, input = {}) {
+        let bodyOptions = {};
+        for (let attempt = 0; ; attempt += 1) {
+            const canRetry = attempt < this.maxRetries;
+            try {
+                const result = await this.fetchCompletion(messages, input, bodyOptions);
+                if (!canRetry || !this.isTruncatedCompletion(result)) {
+                    return result;
+                }
+                const retryTokens = this.getTruncationRetryTokens(bodyOptions.maxCompletionTokens);
+                console.warn(`[PodcastGenerator] Output hit the token cap before a complete reply; retrying with max tokens ${retryTokens}`);
+                bodyOptions = { ...bodyOptions, maxCompletionTokens: retryTokens };
+            } catch (error) {
+                if (!canRetry || !this.isTransientGeneratorError(error)) {
+                    throw error;
+                }
+                console.warn(`[PodcastGenerator] Transient generator failure (${this.describeTransientError(error)}); retrying once`);
+            }
+        }
+    }
+
+    isTruncatedCompletion(result) {
+        const choice = result?.choices?.[0];
+        if (!['max_tokens', 'length'].includes(choice?.finish_reason)) {
+            return false;
+        }
+        const content = choice?.message?.content;
+        if (!content) {
+            return true;
+        }
+        try {
+            this.parseJsonContent(content, 'Podcast generator');
+            return false;
+        } catch {
+            return true;
+        }
+    }
+
+    getTruncationRetryTokens(previous) {
+        const base = Number(previous) || this.maxCompletionTokens || 0;
+        return Math.max(base * 4, 6000);
+    }
+
+    isTransientGeneratorError(error) {
+        if (!error) return false;
+        if (error.name === 'AbortError' || error.name === 'TimeoutError') return true;
+        const status = Number(error.status);
+        if (Number.isFinite(status) && status > 0) {
+            return status === 408 || status === 409 || status >= 500;
+        }
+        const code = String(error.cause?.code || error.code || '');
+        if (/^(ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE|UND_ERR_)/.test(code)) return true;
+        return error.name === 'TypeError' && /fetch failed|network|terminated/i.test(String(error.message || ''));
+    }
+
+    describeTransientError(error) {
+        if (error?.name === 'AbortError' || error?.name === 'TimeoutError') return `timeout after ${this.timeout}ms`;
+        if (error?.status) return `HTTP ${error.status}`;
+        return String(error?.cause?.code || error?.code || error?.message || 'unknown').slice(0, 120);
+    }
+
+    parseRetryCount(value, fallback) {
+        if (value === undefined || value === null || value === '') return fallback;
+        const parsed = Number(value);
+        return Number.isInteger(parsed) && parsed >= 0 ? Math.min(parsed, 3) : fallback;
     }
 
     shouldRetryWithJsonObject(error, body) {
@@ -2862,7 +2943,8 @@ class PodcastGenerator {
                 baseUrl: this.baseUrl,
                 apiKey: this.apiKey,
                 body,
-                timeout: this.timeout
+                timeout: this.timeout,
+                effort: this.effort
             });
         }
 
