@@ -4190,6 +4190,24 @@ async function runTests() {
             throw new Error('Planning TXT attachment was not included as text context: ' + JSON.stringify({ textPlanningRecord, downloadedPlanningText }));
         }
 
+        const originalFetchForPlanningText = global.fetch;
+        textPlanningBot.downloadPlanningTextAttachment = AlphaClawdVoiceBot.prototype.downloadPlanningTextAttachment;
+        try {
+            const oversizedPlanningText = Buffer.alloc(1024 * 1024 + 1, 0x61);
+            global.fetch = async () => ({ ok: true, arrayBuffer: async () => oversizedPlanningText });
+            textPlanningBot.planningTextMaxBytes = 1;
+            const downloadedLargePlanningText = await textPlanningBot.downloadPlanningTextAttachment({
+                name: 'large-episode-notes.txt',
+                url: 'https://cdn.discord.test/large-episode-notes.txt',
+                size: oversizedPlanningText.length
+            });
+            if (downloadedLargePlanningText.length !== oversizedPlanningText.length) {
+                throw new Error('Planning TXT attachment was truncated or capped: ' + downloadedLargePlanningText.length);
+            }
+        } finally {
+            global.fetch = originalFetchForPlanningText;
+        }
+
         const burstBot = Object.create(AlphaClawdVoiceBot.prototype);
         burstBot.planningSessions = new Map();
         burstBot.planningControllerEnabled = true;

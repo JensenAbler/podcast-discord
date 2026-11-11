@@ -3062,14 +3062,6 @@ class AlphaClawdVoiceBot {
         if (!url) {
             throw new Error('attachment has no download URL');
         }
-        const declaredSize = Number(attachment.size || 0);
-        const maxBytes = Number.isFinite(this.planningTextMaxBytes) && this.planningTextMaxBytes > 0
-            ? this.planningTextMaxBytes
-            : 1024 * 1024;
-        if (Number.isFinite(declaredSize) && declaredSize > maxBytes) {
-            throw new Error('text attachment is too large (' + declaredSize + ' bytes; limit ' + maxBytes + ')');
-        }
-
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), this.planningTextDownloadTimeoutMs || 30000);
         try {
@@ -3077,11 +3069,7 @@ class AlphaClawdVoiceBot {
             if (!response.ok) {
                 throw new Error('download failed: ' + response.status);
             }
-            const buffer = Buffer.from(await response.arrayBuffer());
-            if (buffer.byteLength > maxBytes) {
-                throw new Error('text attachment is too large (' + buffer.byteLength + ' bytes; limit ' + maxBytes + ')');
-            }
-            return buffer;
+            return Buffer.from(await response.arrayBuffer());
         } finally {
             clearTimeout(timeout);
         }
