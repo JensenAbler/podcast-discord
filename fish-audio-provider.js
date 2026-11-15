@@ -664,7 +664,11 @@ class FishAudioProvider {
             result: {
                 text: result.text || '',
                 language: options.language || this.language,
-                confidence: result.text ? 0.8 : 0,
+                // Fish ASR returns no confidence or probability (response is text,
+                // duration, segments {text,start,end}). Report it as unknown rather
+                // than stamping a fixed placeholder that reads like a measurement.
+                confidence: null,
+                confidenceSource: 'unavailable',
                 // Fish reports timing in seconds for either sample rate; preserve it verbatim.
                 words: this.extractSegments(result),
                 duration: result.duration || duration,
@@ -728,7 +732,7 @@ class FishAudioProvider {
                 text: segment.text,
                 start: segment.start,
                 end: segment.end,
-                confidence: 0.8,
+                confidence: null,
                 type: 'segment'
             }));
         }
@@ -738,7 +742,7 @@ class FishAudioProvider {
                 text: result.text,
                 start: 0,
                 end: result.duration || 0,
-                confidence: 0.8,
+                confidence: null,
                 type: 'segment'
             }];
         }

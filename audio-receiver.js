@@ -855,7 +855,8 @@ class AudioReceiver {
                     const normalized = this.normalizeTranscription(rawTranscription);
                     transcription = normalized.transcription;
                     audioEvents = normalized.audioEvents;
-                    transcriptionConfidence = sttResult.confidence || 0;
+                    // null = the provider reports no confidence (e.g. Fish ASR).
+                    transcriptionConfidence = Number.isFinite(sttResult.confidence) ? sttResult.confidence : null;
                     wordLevelData = sttResult.words || [];
                     language = sttResult.language || null;
 
@@ -873,9 +874,10 @@ class AudioReceiver {
                     }
 
                     // Log low-confidence words for debugging
-                    const lowConfidenceWords = wordLevelData.filter(w => (w.confidence || 0) < 0.7);
+                    // Only words with a measured confidence can be low-confidence.
+                    const lowConfidenceWords = wordLevelData.filter(w => Number.isFinite(w.confidence) && w.confidence < 0.7);
                     if (lowConfidenceWords.length > 0) {
-                        console.log(`[AudioReceiver] Low confidence words: ${lowConfidenceWords.map(w => `"${w.text}"(${Math.round((w.confidence || 0) * 100)}%)`).join(', ')}`);
+                        console.log(`[AudioReceiver] Low confidence words: ${lowConfidenceWords.map(w => `"${w.text}"(${Math.round(w.confidence * 100)}%)`).join(', ')}`);
                     }
                 } catch (sttError) {
                     console.error('[AudioReceiver] STT error:', sttError.message);
